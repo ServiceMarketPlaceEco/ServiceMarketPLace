@@ -1,277 +1,178 @@
 <template>
-  <div v-if="isOpen && service" class="booking-overlay" @click.self="closePanel">
+  <div class="booking-overlay">
     <aside class="booking-panel">
       <div class="booking-header">
         <div>
-          <h3>Book Service</h3>
-          <p>{{ service.title }}</p>
+          <p class="eyebrow">Step {{ step }} of 3</p>
+          <h3>{{ service.title }}</h3>
+          <p>Base price: ৳{{ service.price }} · Rajshahi service</p>
         </div>
-        <button class="close-btn" @click="closePanel">✕</button>
+        <button class="close-btn" @click="$emit('close')">×</button>
       </div>
 
-      <div class="booking-body" v-if="!bookingConfirmed">
-        <div class="booking-section">
-          <label class="booking-label">Service</label>
-          <div class="location-box">
+      <div class="step-bar">
+        <span :class="{ active: step >= 1 }"></span>
+        <span :class="{ active: step >= 2 }"></span>
+        <span :class="{ active: step >= 3 }"></span>
+      </div>
+
+      <form class="booking-body" @submit.prevent="handleSubmit">
+        <section v-if="step === 1" class="booking-section">
+          <h4>Contact details</h4>
+
+          <label>Full name *</label>
+          <input v-model.trim="form.fullName" class="booking-input" placeholder="Your full name" />
+
+          <label>Phone number *</label>
+          <input v-model.trim="form.phone" class="booking-input" placeholder="e.g. 017XXXXXXXX" />
+
+          <label>Rajshahi area *</label>
+          <select v-model="form.area" class="booking-input">
+            <option value="">Select area</option>
+            <option v-for="area in areas" :key="area">{{ area }}</option>
+          </select>
+
+          <label>Full address *</label>
+          <textarea v-model.trim="form.address" class="booking-input booking-textarea" placeholder="House, road, landmark"></textarea>
+        </section>
+
+        <section v-if="step === 2" class="booking-section">
+          <h4>Schedule and task details</h4>
+
+          <div class="booking-two-col">
             <div>
-              <strong>{{ service.title }}</strong>
-              <p>{{ service.provider }}</p>
+              <label>Date *</label>
+              <input v-model="form.date" type="date" class="booking-input" />
             </div>
-            <span>{{ formatPrice(service) }}</span>
-          </div>
-        </div>
-
-        <div class="booking-section">
-          <label class="booking-label">Booking type</label>
-          <div class="booking-type-grid">
-            <button
-              type="button"
-              class="booking-type-card"
-              :class="{ active: bookingType === 'one-time' }"
-              @click="bookingType = 'one-time'"
-            >
-              One-time
-              <span>Single booking</span>
-            </button>
-
-            <button
-              type="button"
-              class="booking-type-card"
-              :class="{ active: bookingType === 'recurring' }"
-              @click="bookingType = 'recurring'"
-            >
-              Recurring
-              <span>Repeat service</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="booking-section booking-two-col">
-          <div>
-            <label class="booking-label">Date</label>
-            <input v-model="bookingDate" type="date" class="booking-input" />
+            <div>
+              <label>Time *</label>
+              <input v-model="form.time" type="time" class="booking-input" />
+            </div>
           </div>
 
-          <div>
-            <label class="booking-label">Time</label>
-            <input v-model="bookingTime" type="time" class="booking-input" />
-          </div>
-        </div>
-
-        <div class="booking-section" v-if="service.pricingType === 'hourly'">
-          <label class="booking-label">Hours needed</label>
-          <input
-            v-model.number="hours"
-            type="number"
-            min="1"
-            class="booking-input"
-          />
-        </div>
-
-        <div class="booking-section">
-          <label class="booking-label">Address</label>
-          <input
-            v-model="address"
-            type="text"
-            class="booking-input"
-            placeholder="Enter your service address"
-          />
-        </div>
-
-        <div class="booking-section">
-          <label class="booking-label">Additional notes</label>
+          <label>Task details *</label>
           <textarea
-            v-model="notes"
+            v-model.trim="form.notes"
             class="booking-input booking-textarea"
-            placeholder="Describe the issue or request"
+            placeholder="Example: Buy vegetables from Shaheb Bazar and call before replacing any item."
           ></textarea>
-        </div>
 
-        <div class="booking-section">
-          <label class="booking-label">Pricing summary</label>
+          <label>Urgency *</label>
+          <select v-model="form.urgency" class="booking-input">
+            <option value="">Select urgency</option>
+            <option>Today</option>
+            <option>Tomorrow</option>
+            <option>This week</option>
+          </select>
+        </section>
+
+        <section v-if="step === 3" class="booking-section">
+          <h4>Confirm booking</h4>
+
+          <label>Payment method *</label>
+          <select v-model="form.payment" class="booking-input">
+            <option value="">Select payment</option>
+            <option>Cash after service</option>
+            <option>bKash</option>
+            <option>Nagad</option>
+          </select>
+
           <div class="pricing-box">
             <div class="pricing-row">
-              <span>Pricing model</span>
-              <span>{{ pricingModelLabel }}</span>
-            </div>
-
-            <div class="pricing-row" v-if="service.pricingType === 'hourly'">
-              <span>Rate</span>
-              <span>{{ formatCurrency(service.price) }}/hr</span>
-            </div>
-
-            <div class="pricing-row" v-if="service.pricingType === 'hourly'">
-              <span>Hours</span>
-              <span>{{ hours }}</span>
-            </div>
-
-            <div class="pricing-row" v-if="service.pricingType === 'estimated'">
-              <span>Estimated range</span>
-              <span>{{ formatPrice(service) }}</span>
-            </div>
-
-            <div class="pricing-row" v-if="service.pricingType === 'fixed'">
               <span>Service price</span>
-              <span>{{ formatCurrency(service.price) }}</span>
+              <strong>৳{{ service.price }}</strong>
             </div>
-
+            <div class="pricing-row">
+              <span>Service Hub platform fee</span>
+              <strong>৳30</strong>
+            </div>
             <div class="pricing-row total">
-              <span>Total</span>
-              <span>{{ totalDisplay }}</span>
+              <span>Total estimate</span>
+              <strong>৳{{ total }}</strong>
             </div>
           </div>
 
-          <p v-if="service.pricingType === 'estimated'" class="error-text">
-            Final price may vary after inspection.
+          <p class="small-note">
+            Final cost may change if the task becomes larger than described. Helper should confirm before extra cost.
           </p>
-        </div>
-      </div>
+        </section>
 
-      <div v-else class="booking-body">
-        <div class="success-state">
-          <h3>Booking confirmed</h3>
-          <p>Your request has been submitted successfully.</p>
+        <p v-if="error" class="error-text">{{ error }}</p>
+      </form>
 
-          <div class="success-summary">
-            <p><strong>Service:</strong> {{ service.title }}</p>
-            <p><strong>Date:</strong> {{ bookingDate || 'Not selected' }}</p>
-            <p><strong>Time:</strong> {{ bookingTime || 'Not selected' }}</p>
-            <p><strong>Address:</strong> {{ address || 'Not provided' }}</p>
-            <p><strong>Total:</strong> {{ totalDisplay }}</p>
-          </div>
-
-          <button class="confirm-btn" @click="closePanel">Done</button>
-        </div>
-      </div>
-
-      <div class="booking-footer" v-if="!bookingConfirmed">
-        <button class="confirm-btn" @click="submitBooking">Confirm Booking</button>
+      <div class="booking-footer">
+        <button v-if="step > 1" class="secondary-btn" @click="step--">Back</button>
+        <button v-if="step < 3" class="confirm-btn" @click="nextStep">Next</button>
+        <button v-else class="confirm-btn" @click="handleSubmit">Confirm booking</button>
       </div>
     </aside>
   </div>
 </template>
 
-<script setup>
-import { computed, ref, watch } from 'vue'
-
-const props = defineProps({
-  isOpen: {
-    type: Boolean,
-    default: false
+<script>
+export default {
+  name: 'BookingPanel',
+  props: {
+    service: { type: Object, required: true },
+    areas: { type: Array, required: true }
   },
-  service: {
-    type: Object,
-    default: null
-  }
-})
+  emits: ['close', 'confirm-booking'],
+  data() {
+    return {
+      step: 1,
+      error: '',
+      form: {
+        fullName: '',
+        phone: '',
+        area: '',
+        address: '',
+        date: '',
+        time: '',
+        notes: '',
+        urgency: '',
+        payment: ''
+      }
+    }
+  },
+  computed: {
+    total() {
+      return this.service.price + 30
+    }
+  },
+  methods: {
+    validateStep() {
+      this.error = ''
 
-const emit = defineEmits(['close', 'submit-booking'])
+      if (this.step === 1) {
+        if (!this.form.fullName || !this.form.phone || !this.form.area || !this.form.address) {
+          this.error = 'Please fill in all contact and address fields.'
+          return false
+        }
+      }
 
-const bookingType = ref('one-time')
-const bookingDate = ref('')
-const bookingTime = ref('')
-const address = ref('')
-const notes = ref('')
-const hours = ref(2)
-const bookingConfirmed = ref(false)
+      if (this.step === 2) {
+        if (!this.form.date || !this.form.time || !this.form.notes || !this.form.urgency) {
+          this.error = 'Please complete the schedule and task details.'
+          return false
+        }
+      }
 
-function formatCurrency(value) {
-  return new Intl.NumberFormat('en-AU', {
-    style: 'currency',
-    currency: 'AUD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2
-  }).format(value)
-}
+      if (this.step === 3) {
+        if (!this.form.payment) {
+          this.error = 'Please select a payment method.'
+          return false
+        }
+      }
 
-function formatPrice(service) {
-  if (!service) return ''
-
-  if (service.pricingType === 'hourly') {
-    return `${formatCurrency(service.price)}/hr`
-  }
-
-  if (service.pricingType === 'estimated') {
-    return `${formatCurrency(service.basePrice)}–${formatCurrency(service.maxPrice)}`
-  }
-
-  return formatCurrency(service.price)
-}
-
-const pricingModelLabel = computed(() => {
-  if (!props.service) return ''
-
-  if (props.service.pricingType === 'hourly') return 'Hourly'
-  if (props.service.pricingType === 'estimated') return 'Estimated'
-  return 'Fixed'
-})
-
-const estimatedTotal = computed(() => {
-  if (!props.service) return 0
-
-  if (props.service.pricingType === 'hourly') {
-    return props.service.price * Math.max(1, Number(hours.value || 1))
-  }
-
-  if (props.service.pricingType === 'estimated') {
-    return props.service.basePrice
-  }
-
-  return props.service.price
-})
-
-const totalDisplay = computed(() => {
-  if (!props.service) return ''
-
-  if (props.service.pricingType === 'estimated') {
-    return `${formatCurrency(props.service.basePrice)}+`
-  }
-
-  return formatCurrency(estimatedTotal.value)
-})
-
-function resetForm() {
-  bookingType.value = 'one-time'
-  bookingDate.value = ''
-  bookingTime.value = ''
-  address.value = ''
-  notes.value = ''
-  hours.value = 2
-  bookingConfirmed.value = false
-}
-
-function closePanel() {
-  emit('close')
-}
-
-function submitBooking() {
-  bookingConfirmed.value = true
-
-  emit('submit-booking', {
-    service: props.service,
-    bookingType: bookingType.value,
-    bookingDate: bookingDate.value,
-    bookingTime: bookingTime.value,
-    address: address.value,
-    notes: notes.value,
-    hours: hours.value,
-    total: totalDisplay.value
-  })
-}
-
-watch(
-  () => props.isOpen,
-  (newValue) => {
-    if (newValue) {
-      resetForm()
+      return true
+    },
+    nextStep() {
+      if (this.validateStep()) this.step++
+    },
+    handleSubmit() {
+      if (!this.validateStep()) return
+      this.$emit('confirm-booking', { ...this.form })
     }
   }
-)
-
-watch(
-  () => props.service,
-  () => {
-    resetForm()
-  }
-)
+}
 </script>

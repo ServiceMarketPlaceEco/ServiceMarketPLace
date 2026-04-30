@@ -1,27 +1,34 @@
 <template>
   <article class="service-card">
-    <div class="service-card-top">
-      <div class="service-icon">⚙️</div>
-      <span class="service-badge">{{ pricingBadge }}</span>
-    </div>
+    <img :src="service.image" :alt="service.title" class="service-image" />
 
-    <h3>{{ service.title }}</h3>
-    <p class="service-description">{{ service.description }}</p>
-
-    <div class="service-meta">
-      <span>⭐ {{ service.rating }} ({{ service.reviews }})</span>
-      <span>⏱ {{ service.time }}</span>
-      <span>📍 {{ service.distance }} km</span>
-    </div>
-
-    <div class="service-price-block">
-      <div>
-        <p class="service-price-label">{{ priceLabel }}</p>
-        <p class="service-price">{{ formatPrice(service) }}</p>
-        <p class="service-provider">by {{ service.provider }}</p>
+    <div class="service-body">
+      <div class="card-topline">
+        <span>{{ service.category }}</span>
+        <strong>{{ pricingBadge }}</strong>
       </div>
 
-      <button class="book-btn" @click="$emit('book', service)">Book Now</button>
+      <h3>{{ service.title }}</h3>
+      <p class="service-description">{{ service.description }}</p>
+
+      <div class="service-meta">
+        <span>⭐ {{ service.rating }} ({{ service.reviews }})</span>
+        <span>📍 {{ service.area }} · {{ service.distance }} km</span>
+      </div>
+
+      <div class="skill-list">
+        <span v-for="skill in service.skills" :key="skill">{{ skill }}</span>
+      </div>
+
+      <div class="service-price-block">
+        <div>
+          <p class="service-price-label">{{ priceLabel }}</p>
+          <p class="service-price">{{ formatPrice(service) }}</p>
+          <p class="service-provider">by {{ service.provider }}</p>
+        </div>
+
+        <button class="book-btn" @click="$emit('book', service)">Choose helper</button>
+      </div>
     </div>
   </article>
 </template>
@@ -39,12 +46,14 @@ const props = defineProps({
 defineEmits(['book'])
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat('en-AU', {
+  const safeValue = Number(value || 0)
+
+  return new Intl.NumberFormat('en-BD', {
     style: 'currency',
-    currency: 'AUD',
+    currency: 'BDT',
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2
-  }).format(value)
+    maximumFractionDigits: 0
+  }).format(safeValue).replace('BDT', '৳')
 }
 
 function formatPrice(service) {
@@ -62,7 +71,7 @@ function formatPrice(service) {
 const priceLabel = computed(() => {
   if (props.service.pricingType === 'hourly') return 'Hourly rate'
   if (props.service.pricingType === 'estimated') return 'Estimated price'
-  return 'Fixed price'
+  return 'Starting price'
 })
 
 const pricingBadge = computed(() => {
