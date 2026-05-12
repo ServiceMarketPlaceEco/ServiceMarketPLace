@@ -44,18 +44,16 @@ export class BookingsService {
     }
 
     // Create booking with flexible fields
-    const booking = this.bookingRepository.create({
-      customerId,
-      providerServiceId: dto.providerServiceId || null,
-      date: new Date(dto.date),
-      time: dto.time,
-      notes: dto.notes || dto.serviceName || null,
-      address: dto.address,
-      totalAmount: totalAmount,
-      status: BookingStatus.PENDING,
-      // Store service/provider info in notes if no providerServiceId
-      jobId: dto.serviceId || null,
-    });
+    const booking = new Booking();
+    booking.customerId = customerId;
+    booking.providerServiceId = dto.providerServiceId || null;
+    booking.date = new Date(dto.date);
+    booking.time = dto.time;
+    booking.notes = dto.notes || dto.serviceName || null;
+    booking.address = dto.address;
+    booking.totalAmount = totalAmount;
+    booking.status = BookingStatus.PENDING;
+    booking.jobId = dto.serviceId || null;
 
     const savedBooking = await this.bookingRepository.save(booking);
 
