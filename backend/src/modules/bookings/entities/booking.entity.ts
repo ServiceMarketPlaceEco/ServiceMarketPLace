@@ -31,13 +31,13 @@ export class Booking {
   customerId: string;
 
   @Column({ name: 'provider_service_id', nullable: true })
-  providerServiceId: string;
+  providerServiceId: string | null;
 
   @Column({ name: 'job_id', nullable: true })
-  jobId: string;
+  jobId: string | null;
 
   @Column({ name: 'payment_id', nullable: true })
-  paymentId: string;
+  paymentId: string | null;
 
   @Column({ type: 'date' })
   date: Date;
@@ -53,13 +53,13 @@ export class Booking {
   status: BookingStatus;
 
   @Column({ type: 'text', nullable: true })
-  notes: string;
+  notes: string | null;
 
   @Column({ type: 'text', nullable: true })
-  address: string;
+  address: string | null;
 
   @Column({ name: 'total_amount', type: 'decimal', precision: 10, scale: 2, nullable: true })
-  totalAmount: number;
+  totalAmount: number | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

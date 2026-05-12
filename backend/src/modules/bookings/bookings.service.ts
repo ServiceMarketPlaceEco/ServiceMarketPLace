@@ -163,7 +163,7 @@ export class BookingsService {
       booking.notes = dto.notes;
     }
     if (dto.address !== undefined) {
-      booking.address = dto.address;
+    booking.address = dto.address || null;
     }
 
     return this.bookingRepository.save(booking);
