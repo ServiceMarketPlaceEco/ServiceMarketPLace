@@ -22,39 +22,55 @@ export class BookingsService {
   ) {}
 
   async create(customerId: string, dto: CreateBookingDto): Promise<Booking> {
-    // Verify provider service exists and is available
-    const providerService = await this.providerServiceRepository.findOne({
-      where: { id: dto.providerServiceId, isAvailable: true },
-      relations: ['provider', 'service'],
-    });
+    let providerService = null;
+    let totalAmount = null;
 
-    if (!providerService) {
-      throw new NotFoundException('Service not available');
+    // If providerServiceId is provided, verify it exists
+    if (dto.providerServiceId) {
+      providerService = await this.providerServiceRepository.findOne({
+        where: { id: dto.providerServiceId, isAvailable: true },
+        relations: ['provider', 'service'],
+      });
+
+      if (!providerService) {
+        throw new NotFoundException('Service not available');
+      }
+
+      if (providerService.provider.isBlocked || !providerService.provider.isActive) {
+        throw new BadRequestException('Provider is not available');
+      }
+
+      totalAmount = providerService.price;
     }
 
-    if (providerService.provider.isBlocked || !providerService.provider.isActive) {
-      throw new BadRequestException('Provider is not available');
-    }
-
+    // Create booking with flexible fields
     const booking = this.bookingRepository.create({
       customerId,
-      providerServiceId: dto.providerServiceId,
+      providerServiceId: dto.providerServiceId || null,
       date: new Date(dto.date),
       time: dto.time,
-      notes: dto.notes,
+      notes: dto.notes || dto.serviceName || null,
       address: dto.address,
-      totalAmount: providerService.price,
+      totalAmount: totalAmount,
       status: BookingStatus.PENDING,
+      // Store service/provider info in notes if no providerServiceId
+      jobId: dto.serviceId || null,
     });
 
     const savedBooking = await this.bookingRepository.save(booking);
 
-    // Send confirmation emails
-    await this.mailService.sendBookingConfirmation(
-      savedBooking,
-      providerService.provider,
-      providerService.service,
-    );
+    // Send confirmation emails if provider service exists
+    if (providerService) {
+      try {
+        await this.mailService.sendBookingConfirmation(
+          savedBooking,
+          providerService.provider,
+          providerService.service,
+        );
+      } catch (error) {
+        console.error('Failed to send booking confirmation email:', error);
+      }
+    }
 
     return savedBooking;
   }

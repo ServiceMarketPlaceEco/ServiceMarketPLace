@@ -76,13 +76,30 @@ async function fetchUserData() {
         reportsApi.getMyReports().catch(() => [])
       ])
       
-      requests.value = bookingsData
+      // Transform bookings data to match frontend format
+      requests.value = bookingsData.map(booking => ({
+        id: booking.bookingId,
+        service: booking.providerService?.service?.serviceName || booking.notes || 'Service Request',
+        provider: booking.providerService?.provider?.providerName || 'Pending Assignment',
+        area: booking.address || '',
+        date: booking.date ? new Date(booking.date).toISOString().split('T')[0] : '',
+        details: booking.notes || '',
+        status: capitalizeStatus(booking.status),
+        createdAt: booking.createdAt
+      }))
+      
       reviews.value = reviewsData
       blockReports.value = reportsData
     }
   } catch (err) {
     console.error('Error fetching user data:', err)
   }
+}
+
+// Helper to capitalize status
+function capitalizeStatus(status) {
+  if (!status) return 'Pending'
+  return status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')
 }
 
 function goTo(page) {
@@ -180,10 +197,12 @@ async function submitRequest(event) {
     const newBooking = await bookingsApi.create({
       serviceId: selectedService.value.id || selectedService.value.title,
       providerId: selectedService.value.providerId,
+      serviceName: selectedService.value.title,
+      providerName: selectedService.value.provider,
       date: form.date.value,
       time: '09:00',
       address: form.area.value,
-      notes: form.details.value
+      notes: `${selectedService.value.title} - ${form.details.value}`
     })
     
     // Add to local state
