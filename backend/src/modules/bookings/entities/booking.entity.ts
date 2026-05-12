@@ -30,14 +30,14 @@ export class Booking {
   @Column({ name: 'customer_id' })
   customerId: string;
 
-  @Column({ name: 'provider_service_id', nullable: true })
-  providerServiceId: string;
+  @Column({ name: 'provider_service_id', type: 'varchar', length: 36, nullable: true })
+  providerServiceId: string | null;
 
-  @Column({ name: 'job_id', nullable: true })
-  jobId: string;
+  @Column({ name: 'job_id', type: 'varchar', length: 36, nullable: true })
+  jobId: string | null;
 
-  @Column({ name: 'payment_id', nullable: true })
-  paymentId: string;
+  @Column({ name: 'payment_id', type: 'varchar', length: 36, nullable: true })
+  paymentId: string | null;
 
   @Column({ type: 'date' })
   date: Date;
@@ -53,13 +53,13 @@ export class Booking {
   status: BookingStatus;
 
   @Column({ type: 'text', nullable: true })
-  notes: string;
+  notes: string | null;
 
   @Column({ type: 'text', nullable: true })
-  address: string;
+  address: string | null;
 
   @Column({ name: 'total_amount', type: 'decimal', precision: 10, scale: 2, nullable: true })
-  totalAmount: number;
+  totalAmount: number | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

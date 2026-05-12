@@ -34,6 +34,18 @@ export class BookingsController {
     return this.bookingsService.create(user.userId, dto);
   }
 
+  @Get('my-bookings')
+  @UseGuards(JwtAuthGuard, CustomerGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Get all bookings for the current customer' })
+  @ApiResponse({ status: 200, description: 'List of customer bookings' })
+  async getMyBookings(
+    @CurrentUser() user: CurrentUserData,
+    @Query() query: BookingQueryDto,
+  ) {
+    return this.bookingsService.findByCustomer(user.userId, query);
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')

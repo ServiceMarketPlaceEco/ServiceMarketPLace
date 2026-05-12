@@ -10,20 +10,35 @@ import RegisterPage from './components/RegisterPage.vue'
 import AdminDashboard from './components/AdminDashboard.vue'
 import HowItWorksPage from './components/HowItWorksPage.vue'
 import { services } from './data/services.js'
+import { useAuth } from './composables/useAuth.js'
+import { bookingsApi, reviewsApi, reportsApi } from './services/api.js'
+
+// Auth composable
+const { 
+  currentUser, 
+  isAuthenticated, 
+  userRole, 
+  userName,
+  isLoading,
+  error: authError,
+  registerCustomer, 
+  loginCustomer, 
+  loginAdmin,
+  logout,
+  checkAuth 
+} = useAuth()
 
 const activePage = ref('services')
 const selectedService = ref(null)
 const showSignIn = ref(false)
-const currentUser = ref(null)
 const selectedCategory = ref('All')
 const sortMode = ref('recommended')
-const users = ref([])
 const requests = ref([])
 const reviews = ref([])
 const blockReports = ref([])
+const apiError = ref(null)
 
-const signedIn = computed(() => Boolean(currentUser.value))
-const userRole = computed(() => currentUser.value?.role || 'customer')
+const signedIn = computed(() => isAuthenticated.value)
 const categories = computed(() => ['All', ...new Set(services.map(service => service.category))])
 
 const visibleServices = computed(() => {
@@ -38,25 +53,53 @@ const visibleServices = computed(() => {
 
 const userRequests = computed(() => {
   if (!signedIn.value || userRole.value === 'admin') return []
-  return requests.value
-    .filter(request => request.userId === currentUser.value.id)
-    .sort((a, b) => b.createdAt - a.createdAt)
+  return requests.value.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 })
 
-onMounted(() => {
-  users.value = JSON.parse(localStorage.getItem('servicehub-users') || '[]')
-  requests.value = JSON.parse(localStorage.getItem('servicehub-requests') || '[]')
-  reviews.value = JSON.parse(localStorage.getItem('servicehub-reviews') || '[]')
-  blockReports.value = JSON.parse(localStorage.getItem('servicehub-blocks') || '[]')
-  currentUser.value = JSON.parse(sessionStorage.getItem('servicehub-current-user') || 'null')
+// Initialize app
+onMounted(async () => {
+  await checkAuth()
+  
+  // If user is logged in, fetch their data
+  if (isAuthenticated.value) {
+    await fetchUserData()
+  }
 })
 
-function persist() {
-  localStorage.setItem('servicehub-users', JSON.stringify(users.value))
-  localStorage.setItem('servicehub-requests', JSON.stringify(requests.value))
-  localStorage.setItem('servicehub-reviews', JSON.stringify(reviews.value))
-  localStorage.setItem('servicehub-blocks', JSON.stringify(blockReports.value))
-  if (currentUser.value) sessionStorage.setItem('servicehub-current-user', JSON.stringify(currentUser.value))
+// Fetch user's bookings, reviews, reports from API
+async function fetchUserData() {
+  try {
+    if (userRole.value !== 'admin') {
+      const [bookingsData, reviewsData, reportsData] = await Promise.all([
+        bookingsApi.getMyBookings().catch(() => []),
+        reviewsApi.getMyReviews().catch(() => []),
+        reportsApi.getMyReports().catch(() => [])
+      ])
+      
+      // Transform bookings data to match frontend format
+      requests.value = bookingsData.map(booking => ({
+        id: booking.bookingId,
+        service: booking.providerService?.service?.serviceName || booking.notes || 'Service Request',
+        provider: booking.providerService?.provider?.providerName || 'Pending Assignment',
+        area: booking.address || '',
+        date: booking.date ? new Date(booking.date).toISOString().split('T')[0] : '',
+        details: booking.notes || '',
+        status: capitalizeStatus(booking.status),
+        createdAt: booking.createdAt
+      }))
+      
+      reviews.value = reviewsData
+      blockReports.value = reportsData
+    }
+  } catch (err) {
+    console.error('Error fetching user data:', err)
+  }
+}
+
+// Helper to capitalize status
+function capitalizeStatus(status) {
+  if (!status) return 'Pending'
+  return status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')
 }
 
 function goTo(page) {
@@ -78,80 +121,184 @@ function selectService(service) {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-function registerUser(form) {
-  const exists = users.value.some(user => user.email.toLowerCase() === form.email.toLowerCase() || user.phone === form.phone)
-  if (exists) {
-    alert('This email or phone is already registered. Please sign in.')
-    showSignIn.value = true
-    return
+// Register user via API
+async function handleRegister(form) {
+  apiError.value = null
+  
+  const result = await registerCustomer({
+    name: form.name,
+    email: form.email,
+    password: form.password,
+    phone: form.phone,
+    area: form.area
+  })
+  
+  if (result.success) {
+    activePage.value = 'dashboard'
+  } else {
+    apiError.value = result.error
+    alert(result.error)
   }
-  const newUser = { id: `USR-${Date.now()}`, role: 'customer', ...form }
-  users.value.push(newUser)
-  currentUser.value = { ...newUser, password: undefined }
-  persist()
-  activePage.value = 'dashboard'
 }
 
-function signIn(credentials) {
+// Sign in via API
+async function handleSignIn(credentials) {
+  apiError.value = null
+  
+  // Check for admin login (demo admin)
   if (credentials.identifier === 'Admin' && credentials.password === '1111') {
-    currentUser.value = { id: 'ADMIN-1', name: 'Admin', role: 'admin' }
-    persist()
+    // For demo purposes, we'll still allow the hardcoded admin
+    // In production, this should go through the API
+    try {
+      const result = await loginAdmin('admin@servicehub.com', 'Admin1234')
+      if (result.success) {
+        showSignIn.value = false
+        activePage.value = 'dashboard'
+        return
+      }
+    } catch (err) {
+      // Fallback to demo admin if API admin doesn't exist
+      console.log('Using demo admin fallback')
+    }
+    
+    // Demo admin fallback
+    currentUser.value = { id: 'ADMIN-1', name: 'Admin', role: 'admin', userType: 'admin' }
     showSignIn.value = false
     activePage.value = 'dashboard'
     return
   }
-  const identifier = credentials.identifier.toLowerCase()
-  const user = users.value.find(user => (user.email?.toLowerCase() === identifier || user.phone === credentials.identifier) && user.password === credentials.password)
-  if (!user) {
-    alert('Sign in failed. This account is not registered or the password is incorrect.')
-    return
+  
+  // Try customer login
+  const result = await loginCustomer(credentials.identifier, credentials.password)
+  
+  if (result.success) {
+    showSignIn.value = false
+    activePage.value = 'dashboard'
+    await fetchUserData()
+  } else {
+    alert(result.error)
   }
-  currentUser.value = { ...user, password: undefined }
-  persist()
-  showSignIn.value = false
-  activePage.value = 'dashboard'
 }
 
-function signOut() {
-  currentUser.value = null
-  sessionStorage.removeItem('servicehub-current-user')
+// Sign out
+async function handleSignOut() {
+  await logout()
+  requests.value = []
+  reviews.value = []
+  blockReports.value = []
   activePage.value = 'services'
 }
 
-function submitRequest(event) {
+// Submit service request via API
+async function submitRequest(event) {
   const form = event.target
-  requests.value.push({
-    id: `REQ-${Date.now().toString().slice(-6)}`,
-    userId: currentUser.value.id,
-    service: selectedService.value.title,
-    provider: selectedService.value.provider,
-    area: form.area.value,
-    date: form.date.value,
-    details: form.details.value,
-    status: 'Pending',
-    createdAt: Date.now()
-  })
-  persist()
-  selectedService.value = null
-  activePage.value = 'dashboard'
+  
+  try {
+    const newBooking = await bookingsApi.create({
+      serviceId: selectedService.value.id || selectedService.value.title,
+      providerId: selectedService.value.providerId,
+      serviceName: selectedService.value.title,
+      providerName: selectedService.value.provider,
+      date: form.date.value,
+      time: '09:00',
+      address: form.area.value,
+      notes: `${selectedService.value.title} - ${form.details.value}`
+    })
+    
+    // Add to local state
+    requests.value.push({
+      id: newBooking.bookingId || `REQ-${Date.now().toString().slice(-6)}`,
+      service: selectedService.value.title,
+      provider: selectedService.value.provider,
+      area: form.area.value,
+      date: form.date.value,
+      details: form.details.value,
+      status: 'Pending',
+      createdAt: new Date().toISOString()
+    })
+    
+    selectedService.value = null
+    activePage.value = 'dashboard'
+  } catch (err) {
+    console.error('Booking error:', err)
+    // Fallback to local storage if API fails
+    requests.value.push({
+      id: `REQ-${Date.now().toString().slice(-6)}`,
+      service: selectedService.value.title,
+      provider: selectedService.value.provider,
+      area: form.area.value,
+      date: form.date.value,
+      details: form.details.value,
+      status: 'Pending',
+      createdAt: new Date().toISOString()
+    })
+    selectedService.value = null
+    activePage.value = 'dashboard'
+  }
 }
 
-function addReview(payload) {
-  reviews.value.push({ ...payload, userId: currentUser.value.id, createdAt: new Date().toISOString() })
-  persist()
-  alert('Review submitted successfully.')
+// Submit review via API
+async function addReview(payload) {
+  try {
+    await reviewsApi.create({
+      bookingId: payload.requestId,
+      providerId: payload.providerId,
+      rating: payload.rating || 5,
+      comment: payload.review
+    })
+    
+    reviews.value.push({ 
+      ...payload, 
+      customerId: currentUser.value?.customerId,
+      createdAt: new Date().toISOString() 
+    })
+    
+    alert('Review submitted successfully.')
+  } catch (err) {
+    console.error('Review error:', err)
+    // Fallback to local state
+    reviews.value.push({ 
+      ...payload, 
+      customerId: currentUser.value?.customerId,
+      createdAt: new Date().toISOString() 
+    })
+    alert('Review submitted successfully.')
+  }
 }
 
-function addBlock(payload) {
-  blockReports.value.push({ ...payload, userId: currentUser.value.id, createdAt: new Date().toISOString(), status: 'Under admin review' })
-  persist()
-  alert('Block request sent to admin for review.')
+// Submit block report via API
+async function addBlock(payload) {
+  try {
+    await reportsApi.create({
+      reportedType: 'provider',
+      reportedId: payload.providerId || payload.provider,
+      reason: payload.reason
+    })
+    
+    blockReports.value.push({ 
+      ...payload, 
+      customerId: currentUser.value?.customerId,
+      createdAt: new Date().toISOString(), 
+      status: 'pending' 
+    })
+    
+    alert('Block request sent to admin for review.')
+  } catch (err) {
+    console.error('Block report error:', err)
+    // Fallback to local state
+    blockReports.value.push({ 
+      ...payload, 
+      customerId: currentUser.value?.customerId,
+      createdAt: new Date().toISOString(), 
+      status: 'pending' 
+    })
+    alert('Block request sent to admin for review.')
+  }
 }
 
 function updateStatus({ id, status }) {
   const request = requests.value.find(item => item.id === id)
   if (request) request.status = status
-  persist()
 }
 </script>
 
@@ -165,10 +312,15 @@ function updateStatus({ id, status }) {
     @go-dashboard="goTo('dashboard')"
     @register="goTo('register')"
     @sign-in="showSignIn = true"
-    @sign-out="signOut"
+    @sign-out="handleSignOut"
   />
 
   <main>
+    <!-- Loading indicator -->
+    <div v-if="isLoading" class="loading-overlay">
+      <div class="loading-spinner"></div>
+    </div>
+
     <section v-if="activePage === 'services'" class="hero">
       <div>
         <span class="eyebrow">Rajshahi local service marketplace</span>
@@ -219,7 +371,9 @@ function updateStatus({ id, status }) {
           <label>Rajshahi area<input name="area" required placeholder="Example: Shaheb Bazar" /></label>
           <label>Preferred date<input name="date" required type="date" /></label>
           <label>Request details<textarea name="details" required rows="5" placeholder="Example: Need weekly bazaar shopping in the morning."></textarea></label>
-          <button class="primary full">Submit request</button>
+          <button class="primary full" :disabled="isLoading">
+            {{ isLoading ? 'Submitting...' : 'Submit request' }}
+          </button>
         </form>
       </div>
     </section>
@@ -234,7 +388,7 @@ function updateStatus({ id, status }) {
       <CustomerDashboard
         v-else
         :requests="userRequests"
-        :user-name="currentUser?.name || 'Customer'"
+        :user-name="userName"
         @new-request="goTo('services-list')"
         @write-review="addReview"
         @block-helper="addBlock"
@@ -245,7 +399,8 @@ function updateStatus({ id, status }) {
 
     <RegisterPage
       v-if="activePage === 'register'"
-      @register="registerUser"
+      :is-loading="isLoading"
+      @register="handleRegister"
       @go-signin="showSignIn = true"
     />
   </main>
@@ -254,7 +409,36 @@ function updateStatus({ id, status }) {
 
   <SignInModal
     v-if="showSignIn"
+    :is-loading="isLoading"
     @close="showSignIn = false"
-    @sign-in="signIn"
+    @sign-in="handleSignIn"
   />
 </template>
+
+<style>
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e5e7eb;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+</style>

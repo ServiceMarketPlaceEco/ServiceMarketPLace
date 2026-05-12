@@ -1,11 +1,22 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID, IsDateString, IsNumber, IsEnum, Min } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID, IsDateString, IsNumber, IsEnum, Min, ValidateIf } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { BookingStatus } from '../entities/booking.entity';
 
 export class CreateBookingDto {
-  @ApiProperty({ example: 'uuid-of-provider-service' })
-  @IsUUID()
-  providerServiceId: string;
+  @ApiPropertyOptional({ example: 'uuid-of-provider-service' })
+  @IsOptional()
+  @IsString()
+  providerServiceId?: string;
+
+  @ApiPropertyOptional({ example: 'service-id-or-name' })
+  @IsOptional()
+  @IsString()
+  serviceId?: string;
+
+  @ApiPropertyOptional({ example: 'provider-id' })
+  @IsOptional()
+  @IsString()
+  providerId?: string;
 
   @ApiProperty({ example: '2024-12-25' })
   @IsDateString()
@@ -20,10 +31,20 @@ export class CreateBookingDto {
   @IsString()
   notes?: string;
 
-  @ApiPropertyOptional({ example: '123 Customer Street, Sydney' })
+  @ApiPropertyOptional({ example: '123 Customer Street' })
   @IsOptional()
   @IsString()
   address?: string;
+
+  @ApiPropertyOptional({ example: 'Service Name' })
+  @IsOptional()
+  @IsString()
+  serviceName?: string;
+
+  @ApiPropertyOptional({ example: 'Provider Name' })
+  @IsOptional()
+  @IsString()
+  providerName?: string;
 }
 
 export class UpdateBookingDto {

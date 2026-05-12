@@ -22,39 +22,53 @@ export class BookingsService {
   ) {}
 
   async create(customerId: string, dto: CreateBookingDto): Promise<Booking> {
-    // Verify provider service exists and is available
-    const providerService = await this.providerServiceRepository.findOne({
-      where: { id: dto.providerServiceId, isAvailable: true },
-      relations: ['provider', 'service'],
-    });
+    let providerService = null;
+    let totalAmount = null;
 
-    if (!providerService) {
-      throw new NotFoundException('Service not available');
+    // If providerServiceId is provided, verify it exists
+    if (dto.providerServiceId) {
+      providerService = await this.providerServiceRepository.findOne({
+        where: { id: dto.providerServiceId, isAvailable: true },
+        relations: ['provider', 'service'],
+      });
+
+      if (!providerService) {
+        throw new NotFoundException('Service not available');
+      }
+
+      if (providerService.provider.isBlocked || !providerService.provider.isActive) {
+        throw new BadRequestException('Provider is not available');
+      }
+
+      totalAmount = providerService.price;
     }
 
-    if (providerService.provider.isBlocked || !providerService.provider.isActive) {
-      throw new BadRequestException('Provider is not available');
-    }
-
-    const booking = this.bookingRepository.create({
-      customerId,
-      providerServiceId: dto.providerServiceId,
-      date: new Date(dto.date),
-      time: dto.time,
-      notes: dto.notes,
-      address: dto.address,
-      totalAmount: providerService.price,
-      status: BookingStatus.PENDING,
-    });
+    // Create booking with flexible fields
+    const booking = new Booking();
+    booking.customerId = customerId;
+    booking.providerServiceId = dto.providerServiceId || null;
+    booking.date = new Date(dto.date);
+    booking.time = dto.time;
+    booking.notes = dto.notes || dto.serviceName || null;
+    booking.address = dto.address ?? null;
+    booking.totalAmount = totalAmount;
+    booking.status = BookingStatus.PENDING;
+    booking.jobId = dto.serviceId || null;
 
     const savedBooking = await this.bookingRepository.save(booking);
 
-    // Send confirmation emails
-    await this.mailService.sendBookingConfirmation(
-      savedBooking,
-      providerService.provider,
-      providerService.service,
-    );
+    // Send confirmation emails if provider service exists
+    if (providerService) {
+      try {
+        await this.mailService.sendBookingConfirmation(
+          savedBooking,
+          providerService.provider,
+          providerService.service,
+        );
+      } catch (error) {
+        console.error('Failed to send booking confirmation email:', error);
+      }
+    }
 
     return savedBooking;
   }
@@ -149,7 +163,7 @@ export class BookingsService {
       booking.notes = dto.notes;
     }
     if (dto.address !== undefined) {
-      booking.address = dto.address;
+    booking.address = dto.address || null;
     }
 
     return this.bookingRepository.save(booking);
