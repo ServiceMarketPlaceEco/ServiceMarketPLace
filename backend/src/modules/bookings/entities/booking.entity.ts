@@ -30,13 +30,13 @@ export class Booking {
   @Column({ name: 'customer_id' })
   customerId: string;
 
-  @Column({ name: 'provider_service_id', nullable: true })
+  @Column({ name: 'provider_service_id', type: 'varchar', length: 36, nullable: true })
   providerServiceId: string | null;
 
-  @Column({ name: 'job_id', nullable: true })
+  @Column({ name: 'job_id', type: 'varchar', length: 36, nullable: true })
   jobId: string | null;
 
-  @Column({ name: 'payment_id', nullable: true })
+  @Column({ name: 'payment_id', type: 'varchar', length: 36, nullable: true })
   paymentId: string | null;
 
   @Column({ type: 'date' })
