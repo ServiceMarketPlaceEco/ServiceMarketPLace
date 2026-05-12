@@ -50,7 +50,7 @@ export class BookingsService {
     booking.date = new Date(dto.date);
     booking.time = dto.time;
     booking.notes = dto.notes || dto.serviceName || null;
-    booking.address = dto.address;
+    booking.address = dto.address ?? null;
     booking.totalAmount = totalAmount;
     booking.status = BookingStatus.PENDING;
     booking.jobId = dto.serviceId || null;
