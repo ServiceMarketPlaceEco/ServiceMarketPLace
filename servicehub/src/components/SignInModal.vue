@@ -1,3 +1,4 @@
+<!-- component note: this component keeps the original service hub layout and is annotated for easier tutor explanation. -->
 <template>
   <div class="modal-overlay">
     <form class="signin-modal" @submit.prevent="submit">

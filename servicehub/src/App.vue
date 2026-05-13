@@ -1,260 +1,277 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+// Root controller: owns simple routing, signed-in user state, service flow, requests, user location and theme.
+import { computed, onMounted, ref } from 'vue'
+
 import NavBar from './components/NavBar.vue'
-import ServiceGrid from './components/ServiceGrid.vue'
-import DownloadCTA from './components/DownloadCTA.vue'
+import HeroSection from './components/HeroSection.vue'
+import ServiceFlow from './components/ServiceFlow.vue'
+import RequestForm from './components/RequestForm.vue'
 import CustomerDashboard from './components/CustomerDashboard.vue'
-import FooterSection from './components/FooterSection.vue'
-import SignInModal from './components/SignInModal.vue'
-import RegisterPage from './components/RegisterPage.vue'
+import ProviderDashboard from './components/ProviderDashboard.vue'
 import AdminDashboard from './components/AdminDashboard.vue'
 import HowItWorksPage from './components/HowItWorksPage.vue'
+import RegisterPage from './components/RegisterPage.vue'
+import SignInPage from './components/SignInPage.vue'
+import FooterSection from './components/FooterSection.vue'
 import { services } from './data/services.js'
 
-const activePage = ref('services')
+const activePage = ref('home')
+const flowMode = ref('services')
 const selectedService = ref(null)
-const showSignIn = ref(false)
+const selectedTask = ref('')
+const selectedLocation = ref('Rajshahi City')
+const showLocationModal = ref(false)
 const currentUser = ref(null)
-const selectedCategory = ref('All')
-const sortMode = ref('recommended')
-const users = ref([])
-const requests = ref([])
-const reviews = ref([])
-const blockReports = ref([])
+const loginError = ref('')
+const theme = ref('light')
 
-const signedIn = computed(() => Boolean(currentUser.value))
-const userRole = computed(() => currentUser.value?.role || 'customer')
-const categories = computed(() => ['All', ...new Set(services.map(service => service.category))])
+// These locations are kept in App.vue so registration, navbar and request form share the same source.
+const locations = ['Rajshahi City', 'Boalia', 'Shaheb Bazar', 'Laxmipur', 'Motihar', 'Kazla', 'Uposhohor', 'Rajshahi University Area', 'Paba nearby', 'Godagari nearby']
 
-const visibleServices = computed(() => {
-  let list = [...services]
-  if (selectedCategory.value !== 'All') {
-    list = list.filter(service => service.category === selectedCategory.value)
-  }
-  if (sortMode.value === 'price-low') list.sort((a, b) => Number(a.price || a.basePrice) - Number(b.price || b.basePrice))
-  if (sortMode.value === 'rating') list.sort((a, b) => b.rating - a.rating)
-  return list
+// Prototype accounts. Later this array can be replaced by database/API users.
+const registeredUsers = ref([
+  { username: 'customer', password: '1234', role: 'customer', name: 'Customer', phone: '01700000000', location: 'Rajshahi City' },
+  { username: 'provider', password: '2222', role: 'provider', name: 'Abdul Karim', phone: '01800000000', location: 'Boalia' },
+  { username: 'admin', password: '1111', role: 'admin', name: 'Admin Panel', phone: '01900000000', location: 'Rajshahi City' }
+])
+
+// Request records are created by real signed-in customers 
+const bookings = ref([])
+
+// Block requests are created by customers/providers and reviewed by admin.
+const blockRequests = ref([])
+
+const isOpsPage = computed(() => activePage.value === 'admin' || activePage.value === 'provider')
+
+// Customer dashboard only displays the signed-in customer's own requests.
+const customerBookings = computed(() => {
+  if (!currentUser.value) return []
+  return bookings.value.filter((booking) => booking.customerId === currentUser.value.username)
 })
 
-const userRequests = computed(() => {
-  if (!signedIn.value || userRole.value === 'admin') return []
-  return requests.value
-    .filter(request => request.userId === currentUser.value.id)
-    .sort((a, b) => b.createdAt - a.createdAt)
-})
+// The displayed location belongs to the signed-in user. Guests use the global selected location.
+const displayLocation = computed(() => currentUser.value?.location || selectedLocation.value)
 
-onMounted(() => {
-  users.value = JSON.parse(localStorage.getItem('servicehub-users') || '[]')
-  requests.value = JSON.parse(localStorage.getItem('servicehub-requests') || '[]')
-  reviews.value = JSON.parse(localStorage.getItem('servicehub-reviews') || '[]')
-  blockReports.value = JSON.parse(localStorage.getItem('servicehub-blocks') || '[]')
-  currentUser.value = JSON.parse(sessionStorage.getItem('servicehub-current-user') || 'null')
-})
-
-function persist() {
-  localStorage.setItem('servicehub-users', JSON.stringify(users.value))
-  localStorage.setItem('servicehub-requests', JSON.stringify(requests.value))
-  localStorage.setItem('servicehub-reviews', JSON.stringify(reviews.value))
-  localStorage.setItem('servicehub-blocks', JSON.stringify(blockReports.value))
-  if (currentUser.value) sessionStorage.setItem('servicehub-current-user', JSON.stringify(currentUser.value))
+function applyTheme(value) {
+  theme.value = value
+  localStorage.setItem('servicehub-theme', value)
+  document.documentElement.setAttribute('data-theme', value)
 }
 
-function goTo(page) {
-  if (page === 'dashboard' && !signedIn.value) {
-    showSignIn.value = true
+function toggleTheme() {
+  applyTheme(theme.value === 'light' ? 'dark' : 'light')
+}
+
+onMounted(() => {
+  applyTheme(localStorage.getItem('servicehub-theme') || 'light')
+})
+
+function goHome() {
+  activePage.value = 'home'
+  flowMode.value = 'services'
+  selectedService.value = null
+  selectedTask.value = ''
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function goServices() {
+  activePage.value = 'services'
+  flowMode.value = 'services'
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function goHowItWorks() {
+  activePage.value = 'how'
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function goDashboard() {
+  if (!currentUser.value) {
+    activePage.value = 'signin'
     return
   }
-  activePage.value = page
+  activePage.value = currentUser.value.role === 'admin' ? 'admin' : currentUser.value.role === 'provider' ? 'provider' : 'dashboard'
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 function selectService(service) {
-  if (!signedIn.value) {
-    showSignIn.value = true
+  selectedService.value = service
+  selectedTask.value = ''
+  flowMode.value = 'detail'
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+// Guests can browse services, but they must sign in/register before opening the request form.
+function selectTask(task) {
+  selectedTask.value = task
+  if (!currentUser.value) {
+    loginError.value = 'Please sign in or create an account before requesting a service.'
+    activePage.value = 'signin'
     return
   }
-  selectedService.value = service
+  if (currentUser.value.role !== 'customer') {
+    loginError.value = 'Only customer accounts can request services.'
+    activePage.value = 'signin'
+    return
+  }
   activePage.value = 'request'
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-function registerUser(form) {
-  const exists = users.value.some(user => user.email.toLowerCase() === form.email.toLowerCase() || user.phone === form.phone)
-  if (exists) {
-    alert('This email or phone is already registered. Please sign in.')
-    showSignIn.value = true
+function submitRequest(payload) {
+  if (!currentUser.value) {
+    activePage.value = 'signin'
     return
   }
-  const newUser = { id: `USR-${Date.now()}`, role: 'customer', ...form }
-  users.value.push(newUser)
-  currentUser.value = { ...newUser, password: undefined }
-  persist()
+
+  // The form location follows the user location shown in the navbar unless the customer changes it first.
+  bookings.value.unshift({
+    id: `REQ-${Date.now().toString().slice(-6)}`,
+    serviceTitle: selectedService.value?.title || payload.serviceTitle || 'Selected service',
+    task: selectedTask.value || payload.task || 'General request',
+    provider: 'Unassigned',
+    customerId: currentUser.value.username,
+    customerName: currentUser.value.name,
+    phone: payload.phone || currentUser.value.phone,
+    city: displayLocation.value,
+    area: payload.area || displayLocation.value,
+    address: payload.address,
+    date: payload.date,
+    time: payload.time,
+    payment: payload.payment,
+    total: Number(payload.budget || selectedService.value?.price || 0),
+    status: 'Pending',
+    notes: payload.details
+  })
+
+  goDashboard()
+}
+
+function register(payload) {
+  const username = payload.phone.replace(/\D/g, '')
+  const user = {
+    username,
+    password: payload.password,
+    role: 'customer',
+    name: payload.name,
+    phone: payload.phone,
+    location: payload.location
+  }
+  registeredUsers.value.push(user)
+  currentUser.value = user
+  selectedLocation.value = user.location
   activePage.value = 'dashboard'
 }
 
-function signIn(credentials) {
-  if (credentials.identifier === 'Admin' && credentials.password === '1111') {
-    currentUser.value = { id: 'ADMIN-1', name: 'Admin', role: 'admin' }
-    persist()
-    showSignIn.value = false
-    activePage.value = 'dashboard'
-    return
-  }
-  const identifier = credentials.identifier.toLowerCase()
-  const user = users.value.find(user => (user.email?.toLowerCase() === identifier || user.phone === credentials.identifier) && user.password === credentials.password)
+function signIn({ username, password }) {
+  loginError.value = ''
+  const user = registeredUsers.value.find((account) => account.username.toLowerCase() === username.trim().toLowerCase() && account.password === password)
   if (!user) {
-    alert('Sign in failed. This account is not registered or the password is incorrect.')
+    loginError.value = 'Invalid login. Try customer/1234, provider/2222, admin/1111, or your registered phone number.'
     return
   }
-  currentUser.value = { ...user, password: undefined }
-  persist()
-  showSignIn.value = false
-  activePage.value = 'dashboard'
+  currentUser.value = user
+  selectedLocation.value = user.location || selectedLocation.value
+  goDashboard()
+}
+
+// Demo-only Google auth stub: in production, replace this with Firebase Auth or Google OAuth callback.
+function googleAuth() {
+  window.location.href = 'https://accounts.google.com/'
 }
 
 function signOut() {
   currentUser.value = null
-  sessionStorage.removeItem('servicehub-current-user')
-  activePage.value = 'services'
-}
-
-function submitRequest(event) {
-  const form = event.target
-  requests.value.push({
-    id: `REQ-${Date.now().toString().slice(-6)}`,
-    userId: currentUser.value.id,
-    service: selectedService.value.title,
-    provider: selectedService.value.provider,
-    area: form.area.value,
-    date: form.date.value,
-    details: form.details.value,
-    status: 'Pending',
-    createdAt: Date.now()
-  })
-  persist()
-  selectedService.value = null
-  activePage.value = 'dashboard'
-}
-
-function addReview(payload) {
-  reviews.value.push({ ...payload, userId: currentUser.value.id, createdAt: new Date().toISOString() })
-  persist()
-  alert('Review submitted successfully.')
-}
-
-function addBlock(payload) {
-  blockReports.value.push({ ...payload, userId: currentUser.value.id, createdAt: new Date().toISOString(), status: 'Under admin review' })
-  persist()
-  alert('Block request sent to admin for review.')
+  loginError.value = ''
+  goHome()
 }
 
 function updateStatus({ id, status }) {
-  const request = requests.value.find(item => item.id === id)
-  if (request) request.status = status
-  persist()
+  const booking = bookings.value.find((item) => item.id === id)
+  if (!booking) return
+  booking.status = status
+  if (status === 'Accepted') booking.provider = currentUser.value?.name || 'Assigned provider'
+}
+
+function chooseLocation(location) {
+  selectedLocation.value = location
+  if (currentUser.value) currentUser.value.location = location
+  showLocationModal.value = false
+}
+
+function createBlockRequest(payload) {
+  if (!currentUser.value) return
+  blockRequests.value.unshift({
+    id: `BLK-${Date.now().toString().slice(-6)}`,
+    requesterId: currentUser.value.username,
+    requesterName: currentUser.value.name,
+    requesterRole: currentUser.value.role,
+    targetName: payload.targetName,
+    targetRole: payload.targetRole,
+    reason: payload.reason,
+    status: 'Pending'
+  })
+}
+
+function updateBlockRequest({ id, status }) {
+  const item = blockRequests.value.find((request) => request.id === id)
+  if (item) item.status = status
 }
 </script>
 
 <template>
-  <NavBar
-    :signed-in="signedIn"
-    :user-role="userRole"
-    :active-page="activePage"
-    @go-home="goTo('services')"
-    @how-it-works="goTo('how')"
-    @go-dashboard="goTo('dashboard')"
-    @register="goTo('register')"
-    @sign-in="showSignIn = true"
-    @sign-out="signOut"
-  />
+  <NavBar v-if="!isOpsPage" :signed-in="!!currentUser" :active-page="activePage"
+    :user-role="currentUser?.role || 'customer'" :user-name="currentUser?.name || ''" :location="displayLocation"
+    :theme="theme" @go-home="goHome" @go-dashboard="goDashboard" @find-services="goServices"
+    @how-it-works="goHowItWorks" @sign-in="activePage = 'signin'" @register="activePage = 'register'"
+    @sign-out="signOut" @open-location="showLocationModal = true" @toggle-theme="toggleTheme" />
 
   <main>
-    <section v-if="activePage === 'services'" class="hero">
-      <div>
-        <span class="eyebrow">Rajshahi local service marketplace</span>
-        <h1>Book trusted local help for daily tasks.</h1>
-        <p>Service Hub connects customers with registered helpers for bazaar shopping, medicine pickup, delivery, cleaning, tutoring and family support.</p>
-        <div class="hero-actions">
-          <button class="primary" @click="goTo('services-list')">Find services</button>
-          <button class="secondary" @click="goTo('how')">How it works</button>
-        </div>
-      </div>
-      <div class="hero-card">
-        <strong>Suggested starting price</strong>
-        <h2>From ৳100</h2>
-        <p>Transparent local pricing before sending a request.</p>
-      </div>
-    </section>
+    <HeroSection v-if="activePage === 'home'" :location="displayLocation" @find-services="goServices"
+      @view-dashboard="goDashboard" />
 
-    <section v-if="activePage === 'services' || activePage === 'services-list'" class="page-section">
-      <div class="section-heading">
-        <span class="eyebrow">Choose a category first</span>
-        <h2>Popular services in Rajshahi</h2>
-        <p>View a service, check the suggested price, then describe your request.</p>
-      </div>
-      <ServiceGrid
-        :services="visibleServices"
-        :categories="categories"
-        :selected-category="selectedCategory"
-        :sort-mode="sortMode"
-        @update-category="selectedCategory = $event"
-        @update-sort="sortMode = $event"
-        @book-service="selectService"
-      />
-      <DownloadCTA />
-    </section>
+    <ServiceFlow v-if="activePage === 'services'" :services="services" :mode="flowMode"
+      :selected-service="selectedService" @select-service="selectService" @select-task="selectTask"
+      @back="flowMode = 'services'" />
 
-    <section v-if="activePage === 'request' && selectedService" class="page-section request-shell">
-      <button class="secondary compact" @click="goTo('services-list')">← Back to services</button>
-      <div class="request-layout">
-        <div class="request-summary">
-          <img :src="selectedService.image" :alt="selectedService.title" />
-          <h2>{{ selectedService.title }}</h2>
-          <p>{{ selectedService.description }}</p>
-          <div class="price-pill">Suggested price: ৳{{ selectedService.price || selectedService.basePrice }}</div>
-        </div>
-
-        <form class="request-form" @submit.prevent="submitRequest">
-          <h2>Describe your request</h2>
-          <label>Rajshahi area<input name="area" required placeholder="Example: Shaheb Bazar" /></label>
-          <label>Preferred date<input name="date" required type="date" /></label>
-          <label>Request details<textarea name="details" required rows="5" placeholder="Example: Need weekly bazaar shopping in the morning."></textarea></label>
-          <button class="primary full">Submit request</button>
-        </form>
-      </div>
-    </section>
-
-    <section v-if="activePage === 'dashboard'" class="page-section dash-page">
-      <AdminDashboard
-        v-if="userRole === 'admin'"
-        :bookings="requests"
-        :services="services"
-        @update-status="updateStatus"
-      />
-      <CustomerDashboard
-        v-else
-        :requests="userRequests"
-        :user-name="currentUser?.name || 'Customer'"
-        @new-request="goTo('services-list')"
-        @write-review="addReview"
-        @block-helper="addBlock"
-      />
-    </section>
+    <RequestForm v-if="activePage === 'request'" :selected-service="selectedService" :selected-task="selectedTask"
+      :selected-location="displayLocation" :locations="locations" @back="activePage = 'services'"
+      @change-location="showLocationModal = true" @submit-request="submitRequest" />
 
     <HowItWorksPage v-if="activePage === 'how'" />
 
-    <RegisterPage
-      v-if="activePage === 'register'"
-      @register="registerUser"
-      @go-signin="showSignIn = true"
-    />
+    <RegisterPage v-if="activePage === 'register'" :locations="locations" @register="register"
+      @go-signin="activePage = 'signin'" @google-auth="googleAuth" />
+
+    <SignInPage v-if="activePage === 'signin'" :error="loginError" @sign-in="signIn"
+      @go-register="activePage = 'register'" @google-auth="googleAuth" />
+
+    <CustomerDashboard v-if="activePage === 'dashboard'" :requests="customerBookings"
+      :user-name="currentUser?.name || 'Customer'" @new-request="goServices" @block-request="createBlockRequest" />
+
+    <ProviderDashboard v-if="activePage === 'provider'" :requests="bookings"
+      :provider-name="currentUser?.name || 'Provider'" @status-change="updateStatus" @block-request="createBlockRequest"
+      @sign-out="signOut" @go-home="goHome" />
+
+    <AdminDashboard v-if="activePage === 'admin'" :requests="bookings" :block-requests="blockRequests"
+      @status-change="updateStatus" @block-status-change="updateBlockRequest" @sign-out="signOut" @go-home="goHome" />
   </main>
 
-  <FooterSection />
+  <FooterSection v-if="!isOpsPage" />
 
-  <SignInModal
-    v-if="showSignIn"
-    @close="showSignIn = false"
-    @sign-in="signIn"
-  />
+  <section v-if="showLocationModal" class="modal-backdrop" @click.self="showLocationModal = false">
+    <div class="location-modal clean-card">
+      <button class="icon-close" @click="showLocationModal = false">Close</button>
+      <p class="eyebrow">service area</p>
+      <h2>Choose your Rajshahi location</h2>
+      <p class="muted">This area becomes your account location and automatically fills the request form.</p>
+      <div class="location-grid">
+        <button v-for="location in locations" :key="location" class="location-option"
+          :class="{ selected: displayLocation === location }" @click="chooseLocation(location)">
+          <strong>{{ location }}</strong>
+          <span>Use as my request location</span>
+        </button>
+      </div>
+    </div>
+  </section>
 </template>

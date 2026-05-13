@@ -1,3 +1,4 @@
+<!-- component note: this component keeps the original service hub layout and is annotated for easier tutor explanation. -->
 <template>
   <article class="service-card">
     <img :src="service.image" :alt="service.title" class="service-image" />
@@ -12,8 +13,8 @@
       <p class="service-description">{{ service.description }}</p>
 
       <div class="service-meta">
-        <span>⭐ {{ service.rating }} ({{ service.reviews }})</span>
-        <span>📍 {{ service.area }} · {{ service.distance }} km</span>
+        <span>rating {{ service.rating }} ({{ service.reviews }})</span>
+        <span>{{ service.area }} · {{ service.distance }} km</span>
       </div>
 
       <div class="skill-list">

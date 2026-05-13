@@ -1,176 +1,91 @@
 <script setup>
-import { ref, computed } from 'vue'
+// Customer dashboard component: shows customer request status and lets a real signed-in customer request a provider block.
+import { reactive, ref } from 'vue'
 
 const props = defineProps({
   requests: { type: Array, default: () => [] },
   userName: { type: String, default: 'Customer' }
 })
 
-const emit = defineEmits(['new-request', 'write-review', 'block-helper'])
-const modal = ref(null)
-const selectedRequest = ref(null)
-const reviewText = ref('')
-const blockReason = ref('')
+const emit = defineEmits(['new-request', 'block-request'])
+const showBlockForm = ref(false)
+const blockForm = reactive({ targetName: '', reason: '' })
 
-const pendingCount = computed(() => props.requests.filter(r => r.status === 'Pending').length)
-const acceptedCount = computed(() => props.requests.filter(r => r.status === 'Accepted').length)
-const completedCount = computed(() => props.requests.filter(r => r.status === 'Completed').length)
-
-function openReview(request) {
-  selectedRequest.value = request
-  reviewText.value = ''
-  modal.value = 'review'
-}
-
-function openBlock(request) {
-  selectedRequest.value = request
-  blockReason.value = ''
-  modal.value = 'block'
-}
-
-function submitReview() {
-  if (!reviewText.value.trim()) return alert('Please write your review first.')
-  emit('write-review', {
-    requestId: selectedRequest.value.id,
-    service: selectedRequest.value.service,
-    provider: selectedRequest.value.provider,
-    review: reviewText.value
-  })
-  modal.value = null
-}
-
-function submitBlock() {
-  if (!blockReason.value.trim()) return alert('Please explain why this helper should be reviewed.')
-  emit('block-helper', {
-    requestId: selectedRequest.value.id,
-    service: selectedRequest.value.service,
-    provider: selectedRequest.value.provider,
-    reason: blockReason.value
-  })
-  modal.value = null
+function submitBlockRequest() {
+  if (!blockForm.targetName.trim() || !blockForm.reason.trim()) return
+  emit('block-request', { targetName: blockForm.targetName, targetRole: 'provider', reason: blockForm.reason })
+  blockForm.targetName = ''
+  blockForm.reason = ''
+  showBlockForm.value = false
 }
 </script>
 
 <template>
-  <section class="customer-dashboard">
-    <aside class="customer-sidebar">
-      <div class="dash-brand"><span class="logo small">S</span><strong>Service Hub</strong></div>
-
-      <div class="side-profile">
-        <span class="avatar">{{ userName.charAt(0).toUpperCase() }}</span>
-        <div>
-          <p>Signed in as</p>
-          <strong>{{ userName }}</strong>
-        </div>
+  <section class="page-section dashboard-page">
+    <div class="dashboard-hero clean-card">
+      <div>
+        <p class="eyebrow">Customer dashboard</p>
+        <h2>Welcome back, {{ userName }}</h2>
+        <p>Track your own service requests, create a new task and report/block a provider when needed.</p>
       </div>
-
-      <nav class="side-nav" aria-label="Dashboard menu">
-        <button class="side-item active">My requests</button>
-        <button class="side-item" @click="$emit('new-request')">New request</button>
-      </nav>
-
-      <div class="security-note">
-        <strong>Private history</strong>
-        <p>Only requests created by this account appear here.</p>
-      </div>
-    </aside>
-
-    <div class="customer-main">
-      <header class="customer-topbar">
-        <div>
-          <p class="eyebrow">Welcome back</p>
-          <h1>{{ userName }} Dashboard</h1>
-          <p>Track your service requests, review completed jobs, and report helper issues.</p>
-        </div>
-        <button class="primary" @click="$emit('new-request')">New Request</button>
-      </header>
-
-      <section class="dashboard-hero-card">
-        <div>
-          <h2>Secure customer dashboard</h2>
-          <p>Your request history is account-protected. Guests cannot view dashboard history.</p>
-        </div>
-        <div class="secure-badge">Account protected</div>
-      </section>
-
-      <section class="metric-grid">
-        <article>
-          <span>Total requests</span>
-          <strong>{{ props.requests.length }}</strong>
-        </article>
-        <article>
-          <span>Pending</span>
-          <strong>{{ pendingCount }}</strong>
-        </article>
-        <article>
-          <span>Accepted</span>
-          <strong>{{ acceptedCount }}</strong>
-        </article>
-        <article>
-          <span>Completed</span>
-          <strong>{{ completedCount }}</strong>
-        </article>
-      </section>
-
-      <section class="request-card">
-        <div class="request-card-head">
-          <div>
-            <h2>My service requests</h2>
-            <p>Manage only the requests connected to your signed-in account.</p>
-          </div>
-        </div>
-
-        <div v-if="!props.requests.length" class="empty-dashboard-card">
-          <div class="empty-icon">＋</div>
-          <h3>No request history yet</h3>
-          <p>Create your first request to see tracking, review, and block options here.</p>
-          <button class="primary compact" @click="$emit('new-request')">Create your first request</button>
-        </div>
-
-        <div v-else class="request-table-wrap">
-          <table class="dashboard-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Service</th>
-                <th>Provider</th>
-                <th>Area</th>
-                <th>Date</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="request in props.requests" :key="request.id">
-                <td>{{ request.id }}</td>
-                <td><strong>{{ request.service }}</strong></td>
-                <td>{{ request.provider }}</td>
-                <td>{{ request.area }}</td>
-                <td>{{ request.date }}</td>
-                <td><span class="status-pill">{{ request.status }}</span></td>
-                <td>
-                  <div class="row-actions">
-                    <button @click="openReview(request)">Review</button>
-                    <button @click="openBlock(request)">Block</button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-
-    <div v-if="modal" class="modal-overlay">
-      <div class="action-modal">
-        <button class="modal-x" @click="modal = null">×</button>
-        <p class="eyebrow">Customer action</p>
-        <h2>{{ modal === 'review' ? 'Write a review' : 'Request helper block' }}</h2>
-        <p class="muted-text">{{ selectedRequest?.service }} · {{ selectedRequest?.provider }}</p>
-        <textarea v-if="modal === 'review'" v-model="reviewText" rows="5" placeholder="Write your service experience"></textarea>
-        <textarea v-else v-model="blockReason" rows="5" placeholder="Explain the safety or quality issue"></textarea>
-        <button class="primary full" @click="modal === 'review' ? submitReview() : submitBlock()">Submit</button>
+      <div class="row-actions">
+        <button class="secondary" @click="showBlockForm = true">Request provider block</button>
+        <button class="primary" @click="$emit('new-request')">New request</button>
       </div>
     </div>
+
+    <div class="stat-grid three">
+      <article class="stat-card clean-card"><span>Total requests</span><strong>{{ requests.length }}</strong></article>
+      <article class="stat-card clean-card"><span>Pending</span><strong>{{requests.filter(r => r.status ===
+        'Pending').length }}</strong></article>
+      <article class="stat-card clean-card"><span>Accepted</span><strong>{{requests.filter(r => r.status ===
+        'Accepted').length }}</strong></article>
+    </div>
+
+    <section class="clean-card table-card">
+      <div class="panel-heading">
+        <h3>Request history</h3><button class="secondary small" @click="$emit('new-request')">Create request</button>
+      </div>
+      <div v-if="requests.length === 0" class="empty-state">No request history yet. Create your first service request.
+      </div>
+      <div v-else class="responsive-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Request</th>
+              <th>Provider</th>
+              <th>Location</th>
+              <th>Schedule</th>
+              <th>Budget</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="request in requests" :key="request.id">
+              <td><strong>{{ request.serviceTitle }}</strong><small>{{ request.task }}</small></td>
+              <td>{{ request.provider }}</td>
+              <td>{{ request.area }}, {{ request.city }}</td>
+              <td>{{ request.date }} · {{ request.time }}</td>
+              <td>৳{{ request.total }}</td>
+              <td><span class="status-pill" :class="request.status.toLowerCase().replace(' ', '-')">{{ request.status
+                  }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section v-if="showBlockForm" class="modal-backdrop" @click.self="showBlockForm = false">
+      <form class="modal-card clean-card" @submit.prevent="submitBlockRequest">
+        <button type="button" class="icon-close" @click="showBlockForm = false">Close</button>
+        <p class="eyebrow">Safety request</p>
+        <h2>Request to block a provider</h2>
+        <p class="muted">Admin will review this request before any account is blocked.</p>
+        <label>Provider name<input v-model="blockForm.targetName"
+            placeholder="Provider name from your request" /></label>
+        <label>Reason<textarea v-model="blockForm.reason" placeholder="Explain what happened"></textarea></label>
+        <button class="primary">Send to admin</button>
+      </form>
+    </section>
   </section>
 </template>

@@ -1,8 +1,57 @@
+// shared service data: used by service cards, task flow, and request form summaries.
 export const services = [
-  { id: 1, title: 'Daily Bazaar Shopping', category: 'Shopping', description: 'Fresh grocery and bazaar shopping from local Rajshahi markets.', provider: 'Rahim Helper Team', area: 'Shaheb Bazar', distance: 1.4, rating: 4.9, reviews: 128, price: 150, pricingType: 'fixed', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=900&q=80', skills: ['Groceries', 'Market pickup', 'Family support'] },
-  { id: 2, title: 'Medicine Pickup', category: 'Health errands', description: 'Pick up pharmacy orders and deliver them safely to your home.', provider: 'Laxmipur Care Runner', area: 'Laxmipur', distance: 2.1, rating: 4.8, reviews: 91, price: 120, pricingType: 'fixed', image: 'https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=900&q=80', skills: ['Pharmacy', 'Urgent errands', 'Delivery'] },
-  { id: 3, title: 'Home Cleaning', category: 'Home', description: 'Reliable one-off or weekly cleaning for flats and family homes.', provider: 'Padma Cleaners', area: 'Padma Residential Area', distance: 3.2, rating: 4.7, reviews: 76, price: 300, pricingType: 'hourly', image: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=900&q=80', skills: ['Cleaning', 'Kitchen', 'Bathroom'] },
-  { id: 4, title: 'Parcel Delivery', category: 'Delivery', description: 'Local document, parcel and food delivery across Rajshahi city.', provider: 'Boalia Express', area: 'Boalia', distance: 1.8, rating: 4.6, reviews: 64, price: 100, pricingType: 'fixed', image: 'https://images.unsplash.com/photo-1616401784845-180882ba9ba8?auto=format&fit=crop&w=900&q=80', skills: ['Parcel', 'Documents', 'Same day'] },
-  { id: 5, title: 'Tutoring Support', category: 'Education', description: 'Local tutoring help for school students and exam preparation.', provider: 'Motihar Tutors', area: 'Motihar', distance: 4.6, rating: 4.9, reviews: 52, price: 400, pricingType: 'hourly', image: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=900&q=80', skills: ['Maths', 'English', 'Study support'] },
-  { id: 6, title: 'Family Assistant', category: 'Family support', description: 'Help with daily errands for elderly family members or busy households.', provider: 'Uposhohor Support', area: 'Uposhohor', distance: 2.9, rating: 4.8, reviews: 47, price: 200, pricingType: 'estimated', basePrice: 200, maxPrice: 500, image: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80', skills: ['Errands', 'Check-ins', 'Household help'] }
+  {
+    id: 'bazaar',
+    title: 'Daily Bazaar Shopping',
+    category: 'household errands',
+    description: 'Groceries, fresh produce, family shopping and local market runs.',
+    price: 150,
+    image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1200&q=80',
+    tasks: ['Fresh grocery shopping', 'Weekly family bazaar', 'Specific item pickup', 'Market price checking', 'Bulk household items']
+  },
+  {
+    id: 'medicine',
+    title: 'Medicine Pickup',
+    category: 'health support',
+    description: 'Collect medicine from pharmacies around Rajshahi with clear prescription details.',
+    price: 180,
+    image: 'https://images.unsplash.com/photo-1587854692152-cbe660dbde88?auto=format&fit=crop&w=1200&q=80',
+    tasks: ['Prescription medicine pickup', 'Pharmacy order collection', 'Emergency medicine delivery', 'Monthly medicine refill', 'Custom medicine request']
+  },
+  {
+    id: 'delivery',
+    title: 'Food & Parcel Delivery',
+    category: 'delivery',
+    description: 'Send food, documents or small parcels across local Rajshahi areas.',
+    price: 120,
+    image: 'https://images.unsplash.com/photo-1526367790999-0150786686a2?auto=format&fit=crop&w=1200&q=80',
+    tasks: ['Food pickup and drop off', 'Document delivery', 'Small parcel delivery', 'Shop-to-home delivery', 'Same-day local delivery']
+  },
+  {
+    id: 'cleaning',
+    title: 'Home Cleaning',
+    category: 'home support',
+    description: 'Book local cleaners for regular rooms, kitchens, bathrooms and move-out cleaning.',
+    price: 500,
+    image: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=1200&q=80',
+    tasks: ['One room cleaning', 'Kitchen cleaning', 'Bathroom cleaning', 'Deep home cleaning', 'Move-out cleaning']
+  },
+  {
+    id: 'tutoring',
+    title: 'Tutoring Support',
+    category: 'education',
+    description: 'Find local tutors for school support, exam practice and basic computer lessons.',
+    price: 350,
+    image: 'https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=1200&q=80',
+    tasks: ['School homework support', 'English lesson', 'Math practice', 'Exam preparation', 'Computer basics']
+  },
+  {
+    id: 'repair',
+    title: 'Appliance Repair',
+    category: 'technical repair',
+    description: 'Request help for fans, refrigerators, washing machines and small household devices.',
+    price: 450,
+    image: 'https://images.unsplash.com/photo-1581092921461-eab62e97a780?auto=format&fit=crop&w=1200&q=80',
+    tasks: ['Fan repair', 'Refrigerator check', 'Washing machine repair', 'Small device diagnosis', 'Emergency appliance help']
+  }
 ]

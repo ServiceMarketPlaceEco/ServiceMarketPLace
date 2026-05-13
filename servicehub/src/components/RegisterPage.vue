@@ -1,51 +1,45 @@
-<template>
-  <section class="auth-page">
-    <div class="auth-card">
-      <p class="eyebrow">Create account</p>
-      <h1>Register for Service Hub</h1>
-      <p>Create an account to track requests, review helpers and manage safety actions.</p>
-
-      <form @submit.prevent="register">
-        <input v-model="form.name" type="text" placeholder="Full name" required />
-        <input v-model="form.phone" type="tel" placeholder="Phone number" required />
-        <input v-model="form.email" type="email" placeholder="Email address" required />
-        <input v-model="form.password" type="password" placeholder="Password" required />
-
-        <select v-model="form.area" required>
-          <option value="">Select area</option>
-          <option>Shaheb Bazar</option>
-          <option>Laxmipur</option>
-          <option>Rajshahi University Area</option>
-          <option>Motihar</option>
-          <option>Uposhohor</option>
-          <option>Other Rajshahi Area</option>
-        </select>
-
-        <button type="submit">Create account</button>
-      </form>
-
-      <p class="auth-switch">
-        Already have an account?
-        <button @click="$emit('go-signin')">Sign in</button>
-      </p>
-    </div>
-  </section>
-</template>
-
 <script setup>
-import { reactive } from 'vue'
+// Register component: creates a customer account with required name, phone number and location.
+import { reactive, ref } from 'vue'
 
-const emit = defineEmits(['register', 'go-signin'])
+const props = defineProps({ locations: { type: Array, default: () => ['Rajshahi City'] } })
+const emit = defineEmits(['register', 'go-signin', 'google-auth'])
 
-const form = reactive({
-  name: '',
-  phone: '',
-  email: '',
-  password: '',
-  area: ''
-})
+const form = reactive({ name: '', phone: '', password: '', location: 'Rajshahi City' })
+const error = ref('')
 
-function register() {
+function submit() {
+  const digits = form.phone.replace(/\D/g, '')
+  if (!form.name.trim() || !form.phone.trim() || !form.location || !form.password) {
+    error.value = 'Please complete name, phone number, location and password.'
+    return
+  }
+  if (digits.length < 10) {
+    error.value = 'Please enter a valid phone number.'
+    return
+  }
+  error.value = ''
   emit('register', { ...form })
 }
 </script>
+
+<template>
+  <section class="auth-page">
+    <form class="auth-card clean-card" @submit.prevent="submit">
+      <p class="eyebrow">Create account</p>
+      <h2>Register for Service Hub</h2>
+
+      <label>Full name *<input v-model="form.name" placeholder="Your name" /></label>
+      <label>Phone number *<input v-model="form.phone" placeholder="Example: 017XXXXXXXX" /></label>
+      <label>Password *<input v-model="form.password" type="password" /></label>
+      <label>Location *<select v-model="form.location">
+          <option v-for="location in locations" :key="location">{{ location }}</option>
+        </select></label>
+
+      <p v-if="error" class="error-text">{{ error }}</p>
+      <button class="primary">Create account</button>
+      <button type="button" class="secondary" @click="$emit('google-auth')">Continue with Google</button>
+      <button type="button" class="link-btn" @click="$emit('go-signin')">Already have an account? Sign in</button>
+    </form>
+  </section>
+</template>
