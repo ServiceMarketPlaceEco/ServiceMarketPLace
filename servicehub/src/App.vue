@@ -217,6 +217,7 @@ function updateBlockRequest({ id, status }) {
   const item = blockRequests.value.find((request) => request.id === id)
   if (item) item.status = status
 }
+
 </script>
 
 <template>
