@@ -35,16 +35,16 @@ __decorate([
     __metadata("design:type", String)
 ], Booking.prototype, "customerId", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ name: 'provider_service_id', nullable: true }),
-    __metadata("design:type", String)
+    (0, typeorm_1.Column)({ name: 'provider_service_id', type: 'varchar', length: 36, nullable: true }),
+    __metadata("design:type", Object)
 ], Booking.prototype, "providerServiceId", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ name: 'job_id', nullable: true }),
-    __metadata("design:type", String)
+    (0, typeorm_1.Column)({ name: 'job_id', type: 'varchar', length: 36, nullable: true }),
+    __metadata("design:type", Object)
 ], Booking.prototype, "jobId", void 0);
 __decorate([
-    (0, typeorm_1.Column)({ name: 'payment_id', nullable: true }),
-    __metadata("design:type", String)
+    (0, typeorm_1.Column)({ name: 'payment_id', type: 'varchar', length: 36, nullable: true }),
+    __metadata("design:type", Object)
 ], Booking.prototype, "paymentId", void 0);
 __decorate([
     (0, typeorm_1.Column)({ type: 'date' }),
@@ -64,15 +64,15 @@ __decorate([
 ], Booking.prototype, "status", void 0);
 __decorate([
     (0, typeorm_1.Column)({ type: 'text', nullable: true }),
-    __metadata("design:type", String)
+    __metadata("design:type", Object)
 ], Booking.prototype, "notes", void 0);
 __decorate([
     (0, typeorm_1.Column)({ type: 'text', nullable: true }),
-    __metadata("design:type", String)
+    __metadata("design:type", Object)
 ], Booking.prototype, "address", void 0);
 __decorate([
     (0, typeorm_1.Column)({ name: 'total_amount', type: 'decimal', precision: 10, scale: 2, nullable: true }),
-    __metadata("design:type", Number)
+    __metadata("design:type", Object)
 ], Booking.prototype, "totalAmount", void 0);
 __decorate([
     (0, typeorm_1.CreateDateColumn)({ name: 'created_at' }),

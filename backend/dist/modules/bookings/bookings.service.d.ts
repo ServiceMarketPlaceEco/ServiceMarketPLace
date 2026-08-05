@@ -16,5 +16,6 @@ export declare class BookingsService {
     cancel(customerId: string, bookingId: string): Promise<Booking>;
     updateStatusByProvider(providerId: string, bookingId: string, status: 'confirmed' | 'in_progress' | 'completed' | 'cancelled'): Promise<Booking>;
     findAll(query?: BookingQueryDto): Promise<Booking[]>;
+    updateStatusAdmin(bookingId: string, status: string): Promise<Booking>;
     getStats(): Promise<any>;
 }

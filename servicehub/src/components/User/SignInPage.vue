@@ -13,7 +13,8 @@ function submit() {
   emit('sign-in', {
     role: form.role,
     email: form.identifier,
-    name: form.identifier || undefined
+    name: form.identifier || undefined,
+    password: form.password
   })
 }
 </script>

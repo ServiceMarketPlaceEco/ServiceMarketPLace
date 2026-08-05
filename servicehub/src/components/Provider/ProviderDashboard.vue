@@ -1,15 +1,19 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
+import { formatStatus } from '../../data/services'
 
 const props = defineProps({
   currentUser: { type: Object, default: null },
   requests: { type: Array, default: () => [] },
   chatApprovals: { type: Array, default: () => [] },
   messages: { type: Array, default: () => [] },
-  theme: { type: String, default: 'light' }
+  theme: { type: String, default: 'light' },
+  providerServices: { type: Array, default: () => [] },
+  availableServices: { type: Array, default: () => [] },
+  reviews: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['accept-request', 'decline-request', 'status-change', 'request-chat', 'send-message', 'block-request', 'sign-out', 'go-home', 'toggle-theme'])
+const emit = defineEmits(['accept-request', 'decline-request', 'status-change', 'request-chat', 'send-message', 'block-request', 'sign-out', 'go-home', 'toggle-theme', 'add-service', 'toggle-service'])
 
 const activeView = ref('dashboard')
 const searchTerm = ref('')
@@ -17,24 +21,22 @@ const declineTarget = ref(null)
 const declineReason = ref('')
 const replyTarget = ref(null)
 const replyText = ref('')
+const localReplies = ref({})
 const messageByRequest = ref({})
 const blockTargetName = ref('')
 const blockReason = ref('')
 const showServiceModal = ref(false)
 
-const providerServices = ref([
-  { id: 1, title: 'AC Repair & Troubleshooting', price: 800, duration: '1-2 hours', active: true },
-  { id: 2, title: 'AC Installation', price: 1500, duration: '2-4 hours', active: true },
-  { id: 3, title: 'AC Servicing & Maintenance', price: 700, duration: '1 hour', active: true },
-  { id: 4, title: 'Emergency AC Repair', price: 1200, duration: 'same day', active: false }
-])
-
-const newService = reactive({ title: '', price: '', duration: '', active: true })
-const reviews = ref([
-  { name: 'Rafiq Ahmed', service: 'AC Repair', rating: 5, text: 'Excellent service. The provider arrived on time and explained the repair clearly.', reply: 'Thank you for your kind feedback.' },
-  { name: 'Sabrina Khan', service: 'AC Servicing', rating: 5, text: 'Very thorough servicing and professional communication.', reply: '' },
-  { name: 'Mohammad Ali', service: 'AC Installation', rating: 4, text: 'Good installation work. It took slightly longer than expected, but the quality was excellent.', reply: 'Thank you. We always try to maintain quality installation.' }
-])
+const newService = reactive({ serviceId: '', price: '', description: '' })
+// Services not already offered by this provider, for the "Add new service" picker
+const addableServices = computed(() => {
+  const offeredIds = new Set(props.providerServices.map(s => s.serviceId))
+  return props.availableServices.filter(s => !offeredIds.has(s.serviceId))
+})
+const averageRating = computed(() => {
+  if (!props.reviews.length) return 0
+  return (props.reviews.reduce((sum, r) => sum + Number(r.rating || 0), 0) / props.reviews.length).toFixed(1)
+})
 
 const displayName = computed(() => props.currentUser?.name || 'Rajshahi Provider')
 const providerService = computed(() => props.currentUser?.serviceType || 'General service')
@@ -69,15 +71,20 @@ function submitMessage(requestId) {
 }
 function saveReply() {
   if (!replyText.value.trim()) return
-  replyTarget.value.reply = replyText.value
+  // Not persisted: the reviews table has no reply column, so this is
+  // session-only, same as the chat feature.
+  localReplies.value[replyTarget.value.id] = replyText.value
   replyTarget.value = null
   replyText.value = ''
 }
 function addService() {
-  if (!newService.title || !newService.price) return
-  providerServices.value.unshift({ id: Date.now(), ...newService, price: Number(newService.price) })
-  Object.assign(newService, { title: '', price: '', duration: '', active: true })
+  if (!newService.serviceId || !newService.price) return
+  emit('add-service', { serviceId: newService.serviceId, price: newService.price, description: newService.description })
+  Object.assign(newService, { serviceId: '', price: '', description: '' })
   showServiceModal.value = false
+}
+function toggleService(service) {
+  emit('toggle-service', { id: service.id, active: !service.active })
 }
 function requestCustomerBlock() {
   if (!blockTargetName.value.trim() || !blockReason.value.trim()) return
@@ -127,7 +134,7 @@ function requestCustomerBlock() {
           </article>
           <article class="stat-card"><span>Total assigned jobs</span><strong>{{ providerRequests.length }}</strong>
           </article>
-          <article class="stat-card"><span>Average rating</span><strong>4.8</strong><small>{{ reviews.length }}
+          <article class="stat-card"><span>Average rating</span><strong>{{ averageRating }}</strong><small>{{ reviews.length }}
               reviews</small></article>
         </div>
         <div class="ops-grid two">
@@ -150,7 +157,7 @@ function requestCustomerBlock() {
             <div class="panel-heading">
               <h2>Recent reviews</h2><button class="secondary small" @click="activeView = 'reviews'">View all</button>
             </div>
-            <article v-for="review in reviews.slice(0, 2)" :key="review.name" class="review-row"><strong>{{ review.name
+            <article v-for="review in reviews.slice(0, 2)" :key="review.id" class="review-row"><strong>{{ review.name
                 }}</strong><small>{{ review.service }} · {{ review.rating }}/5</small>
               <p>{{ review.text }}</p>
             </article>
@@ -173,9 +180,8 @@ function requestCustomerBlock() {
           </div>
           <article v-for="service in providerServices" :key="service.id" class="service-line">
             <div><strong>{{ service.title }}</strong>
-              <p>Professional local service with clear pricing and availability.</p><small>৳{{ service.price }}+ · {{
-                service.duration || 'flexible time' }}</small>
-            </div><label class="switch"><input v-model="service.active" type="checkbox" /><span></span></label>
+              <p>{{ service.description || 'Professional local service with clear pricing and availability.' }}</p><small>৳{{ service.price }}+</small>
+            </div><label class="switch"><input :checked="service.active" type="checkbox" @change="toggleService(service)" /><span></span></label>
           </article>
         </section>
       </template>
@@ -198,7 +204,7 @@ function requestCustomerBlock() {
                   request.bankName }} · {{ request.accountName }}</small>
             </div><strong>৳{{ request.budget }}</strong><span class="status-pill"
               :class="String(request.providerStatus || request.status).toLowerCase().replaceAll(' ', '-').replaceAll('_', '-')">{{
-                request.providerStatus || request.status }}</span>
+                formatStatus(request.providerStatus || request.status) }}</span>
             <div class="row-actions"><button v-if="request.providerStatus === 'waiting-provider-acceptance'"
                 class="secondary small" @click="openDeclineModal(request)">Decline</button><button
                 v-if="request.providerStatus === 'waiting-provider-acceptance'" class="primary small"
@@ -231,20 +237,21 @@ function requestCustomerBlock() {
 
       <template v-if="activeView === 'reviews'">
         <div class="stat-grid four">
-          <article class="stat-card"><span>Average rating</span><strong>4.6</strong></article>
+          <article class="stat-card"><span>Average rating</span><strong>{{ averageRating }}</strong></article>
           <article class="stat-card"><span>Total reviews</span><strong>{{ reviews.length }}</strong></article>
-          <article class="stat-card"><span>Response rate</span><strong>{{Math.round((reviews.filter(r =>
-            r.reply).length / reviews.length) * 100) }}%</strong></article>
-          <article class="stat-card"><span>Pending replies</span><strong>{{reviews.filter(r => !r.reply).length
+          <article class="stat-card"><span>Response rate</span><strong>{{reviews.length ? Math.round((reviews.filter(r =>
+            localReplies[r.id]).length / reviews.length) * 100) : 0}}%</strong></article>
+          <article class="stat-card"><span>Pending replies</span><strong>{{reviews.filter(r => !localReplies[r.id]).length
               }}</strong></article>
         </div>
         <section class="ops-panel">
           <h2>Customer reviews</h2>
-          <article v-for="review in reviews" :key="review.name" class="review-row expanded">
+          <div v-if="reviews.length === 0" class="empty-state">No customer reviews yet.</div>
+          <article v-for="review in reviews" :key="review.id" class="review-row expanded">
             <div><strong>{{ review.name }}</strong><small>{{ review.service }} · {{ review.rating }}/5</small>
               <p>{{ review.text }}</p>
-              <p v-if="review.reply" class="reply-box">{{ review.reply }}</p>
-            </div><button v-if="!review.reply" class="primary small" @click="replyTarget = review">Reply</button>
+              <p v-if="localReplies[review.id]" class="reply-box">{{ localReplies[review.id] }}</p>
+            </div><button v-if="!localReplies[review.id]" class="primary small" @click="replyTarget = review">Reply</button>
           </article>
         </section>
       </template>
@@ -284,10 +291,13 @@ function requestCustomerBlock() {
       <div class="modal-card"><button class="icon-close" aria-label="Close modal"
           @click="showServiceModal = false">×</button>
         <h2>Add new service</h2>
-        <div class="form-grid"><label class="full">Service title<input v-model="newService.title"
-              placeholder="Example: Deep AC Cleaning" /></label><label>Starting price<input v-model="newService.price"
-              type="number" placeholder="৳" /></label><label>Duration<input v-model="newService.duration"
-              placeholder="Example: 1-2 hours" /></label></div>
+        <div class="form-grid"><label class="full">Service
+            <select v-model="newService.serviceId">
+              <option value="">Choose a service</option>
+              <option v-for="service in addableServices" :key="service.serviceId" :value="service.serviceId">{{ service.title }}</option>
+            </select></label><label>Starting price<input v-model="newService.price"
+              type="number" placeholder="৳" /></label><label>Description<input v-model="newService.description"
+              placeholder="Example: Same-day AC cleaning" /></label></div>
         <div class="form-actions"><button class="secondary" @click="showServiceModal = false">Cancel</button><button
             class="primary" @click="addService">Save service</button></div>
       </div>

@@ -5,6 +5,12 @@ export const formatBDT = value =>
     maximumFractionDigits: 0
   }).format(Number(value || 0))
 
+// Turns slugs like "assigned-to-provider" or "in_progress" into "Assigned to provider"
+export const formatStatus = value => {
+  const text = String(value || '').replace(/[-_]+/g, ' ').trim()
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : ''
+}
+
 export const services = [
   {
     id: 'cleaning',

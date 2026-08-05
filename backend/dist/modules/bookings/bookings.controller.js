@@ -23,8 +23,20 @@ let BookingsController = class BookingsController {
     constructor(bookingsService) {
         this.bookingsService = bookingsService;
     }
+    async findAll(query) {
+        return this.bookingsService.findAll(query);
+    }
+    async findAllPublic(query) {
+        return this.bookingsService.findAll(query);
+    }
+    async updateStatus(id, body) {
+        return this.bookingsService.updateStatusAdmin(id, body.status);
+    }
     async create(user, dto) {
         return this.bookingsService.create(user.userId, dto);
+    }
+    async getMyBookings(user, query) {
+        return this.bookingsService.findByCustomer(user.userId, query);
     }
     async findOne(user, id) {
         const booking = await this.bookingsService.findById(id);
@@ -45,6 +57,36 @@ let BookingsController = class BookingsController {
 };
 exports.BookingsController = BookingsController;
 __decorate([
+    (0, common_1.Get)(),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.AdminGuard),
+    (0, swagger_1.ApiBearerAuth)('JWT-auth'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all bookings (Admin only)' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'List of all bookings' }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [dto_1.BookingQueryDto]),
+    __metadata("design:returntype", Promise)
+], BookingsController.prototype, "findAll", null);
+__decorate([
+    (0, common_1.Get)('all'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all bookings (Public - for demo admin dashboard)' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'List of all bookings' }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [dto_1.BookingQueryDto]),
+    __metadata("design:returntype", Promise)
+], BookingsController.prototype, "findAllPublic", null);
+__decorate([
+    (0, common_1.Patch)(':id/status'),
+    (0, swagger_1.ApiOperation)({ summary: 'Update booking status (Public - for demo admin)' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Booking status updated' }),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], BookingsController.prototype, "updateStatus", null);
+__decorate([
     (0, common_1.Post)(),
     (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.CustomerGuard),
     (0, swagger_1.ApiBearerAuth)('JWT-auth'),
@@ -57,6 +99,18 @@ __decorate([
     __metadata("design:paramtypes", [Object, dto_1.CreateBookingDto]),
     __metadata("design:returntype", Promise)
 ], BookingsController.prototype, "create", null);
+__decorate([
+    (0, common_1.Get)('my-bookings'),
+    (0, common_1.UseGuards)(guards_1.JwtAuthGuard, guards_1.CustomerGuard),
+    (0, swagger_1.ApiBearerAuth)('JWT-auth'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all bookings for the current customer' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'List of customer bookings' }),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, dto_1.BookingQueryDto]),
+    __metadata("design:returntype", Promise)
+], BookingsController.prototype, "getMyBookings", null);
 __decorate([
     (0, common_1.Get)(':id'),
     (0, common_1.UseGuards)(guards_1.JwtAuthGuard),

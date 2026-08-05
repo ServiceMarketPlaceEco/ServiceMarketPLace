@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BookingsService = void 0;
 const common_1 = require("@nestjs/common");
@@ -26,28 +27,40 @@ let BookingsService = class BookingsService {
         this.mailService = mailService;
     }
     async create(customerId, dto) {
-        const providerService = await this.providerServiceRepository.findOne({
-            where: { id: dto.providerServiceId, isAvailable: true },
-            relations: ['provider', 'service'],
-        });
-        if (!providerService) {
-            throw new common_1.NotFoundException('Service not available');
+        let providerService = null;
+        let totalAmount = null;
+        if (dto.providerServiceId) {
+            providerService = await this.providerServiceRepository.findOne({
+                where: { id: dto.providerServiceId, isAvailable: true },
+                relations: ['provider', 'service'],
+            });
+            if (!providerService) {
+                throw new common_1.NotFoundException('Service not available');
+            }
+            if (providerService.provider.isBlocked || !providerService.provider.isActive) {
+                throw new common_1.BadRequestException('Provider is not available');
+            }
+            totalAmount = providerService.price;
         }
-        if (providerService.provider.isBlocked || !providerService.provider.isActive) {
-            throw new common_1.BadRequestException('Provider is not available');
-        }
-        const booking = this.bookingRepository.create({
-            customerId,
-            providerServiceId: dto.providerServiceId,
-            date: new Date(dto.date),
-            time: dto.time,
-            notes: dto.notes,
-            address: dto.address,
-            totalAmount: providerService.price,
-            status: booking_entity_1.BookingStatus.PENDING,
-        });
+        const booking = new booking_entity_1.Booking();
+        booking.customerId = customerId;
+        booking.providerServiceId = dto.providerServiceId || null;
+        booking.date = new Date(dto.date);
+        booking.time = dto.time;
+        booking.notes = dto.notes || dto.serviceName || null;
+        booking.address = dto.address ?? null;
+        booking.totalAmount = totalAmount;
+        booking.status = booking_entity_1.BookingStatus.PENDING;
+        booking.jobId = dto.serviceId || null;
         const savedBooking = await this.bookingRepository.save(booking);
-        await this.mailService.sendBookingConfirmation(savedBooking, providerService.provider, providerService.service);
+        if (providerService) {
+            try {
+                await this.mailService.sendBookingConfirmation(savedBooking, providerService.provider, providerService.service);
+            }
+            catch (error) {
+                console.error('Failed to send booking confirmation email:', error);
+            }
+        }
         return savedBooking;
     }
     async findById(bookingId) {
@@ -124,7 +137,7 @@ let BookingsService = class BookingsService {
             booking.notes = dto.notes;
         }
         if (dto.address !== undefined) {
-            booking.address = dto.address;
+            booking.address = dto.address || null;
         }
         return this.bookingRepository.save(booking);
     }
@@ -176,6 +189,34 @@ let BookingsService = class BookingsService {
             order: { createdAt: 'DESC' },
         });
     }
+    async updateStatusAdmin(bookingId, status) {
+        const booking = await this.bookingRepository.findOne({
+            where: { bookingId },
+        });
+        if (!booking) {
+            throw new common_1.NotFoundException('Booking not found');
+        }
+        const statusMap = {
+            'pending': booking_entity_1.BookingStatus.PENDING,
+            'Pending': booking_entity_1.BookingStatus.PENDING,
+            'accepted': booking_entity_1.BookingStatus.CONFIRMED,
+            'Accepted': booking_entity_1.BookingStatus.CONFIRMED,
+            'confirmed': booking_entity_1.BookingStatus.CONFIRMED,
+            'Confirmed': booking_entity_1.BookingStatus.CONFIRMED,
+            'in_progress': booking_entity_1.BookingStatus.IN_PROGRESS,
+            'In Progress': booking_entity_1.BookingStatus.IN_PROGRESS,
+            'completed': booking_entity_1.BookingStatus.COMPLETED,
+            'Completed': booking_entity_1.BookingStatus.COMPLETED,
+            'cancelled': booking_entity_1.BookingStatus.CANCELLED,
+            'Cancelled': booking_entity_1.BookingStatus.CANCELLED,
+        };
+        const newStatus = statusMap[status];
+        if (!newStatus) {
+            throw new common_1.BadRequestException(`Invalid status: ${status}`);
+        }
+        booking.status = newStatus;
+        return this.bookingRepository.save(booking);
+    }
     async getStats() {
         const total = await this.bookingRepository.count();
         const pending = await this.bookingRepository.count({ where: { status: booking_entity_1.BookingStatus.PENDING } });
@@ -191,8 +232,6 @@ exports.BookingsService = BookingsService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectRepository)(booking_entity_1.Booking)),
     __param(1, (0, typeorm_1.InjectRepository)(provider_service_entity_1.ProviderService)),
-    __metadata("design:paramtypes", [typeorm_2.Repository,
-        typeorm_2.Repository,
-        mail_service_1.MailService])
+    __metadata("design:paramtypes", [typeof (_a = typeof typeorm_2.Repository !== "undefined" && typeorm_2.Repository) === "function" ? _a : Object, typeof (_b = typeof typeorm_2.Repository !== "undefined" && typeorm_2.Repository) === "function" ? _b : Object, mail_service_1.MailService])
 ], BookingsService);
 //# sourceMappingURL=bookings.service.js.map

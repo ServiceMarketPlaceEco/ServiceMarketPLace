@@ -50,6 +50,7 @@ export class ServicesService {
     return service.providerServices
       .filter((ps) => ps.isAvailable && ps.provider.isActive && !ps.provider.isBlocked)
       .map((ps) => ({
+        providerServiceId: ps.id,
         providerId: ps.provider.providerId,
         providerName: ps.provider.providerName,
         description: ps.provider.description,

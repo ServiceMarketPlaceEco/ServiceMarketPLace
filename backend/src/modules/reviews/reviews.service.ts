@@ -74,7 +74,7 @@ export class ReviewsService {
   async findByProvider(providerId: string): Promise<Review[]> {
     return this.reviewRepository.find({
       where: { providerId },
-      relations: ['customer'],
+      relations: ['customer', 'booking', 'booking.providerService', 'booking.providerService.service'],
       order: { createdAt: 'DESC' },
       select: {
         reviewId: true,

@@ -17,10 +17,23 @@ class CreateBookingDto {
 }
 exports.CreateBookingDto = CreateBookingDto;
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 'uuid-of-provider-service' }),
-    (0, class_validator_1.IsUUID)(),
+    (0, swagger_1.ApiPropertyOptional)({ example: 'uuid-of-provider-service' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateBookingDto.prototype, "providerServiceId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: 'service-id-or-name' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateBookingDto.prototype, "serviceId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: 'provider-id' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateBookingDto.prototype, "providerId", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: '2024-12-25' }),
     (0, class_validator_1.IsDateString)(),
@@ -38,11 +51,23 @@ __decorate([
     __metadata("design:type", String)
 ], CreateBookingDto.prototype, "notes", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ example: '123 Customer Street, Sydney' }),
+    (0, swagger_1.ApiPropertyOptional)({ example: '123 Customer Street' }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateBookingDto.prototype, "address", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: 'Service Name' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateBookingDto.prototype, "serviceName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: 'Provider Name' }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateBookingDto.prototype, "providerName", void 0);
 class UpdateBookingDto {
 }
 exports.UpdateBookingDto = UpdateBookingDto;

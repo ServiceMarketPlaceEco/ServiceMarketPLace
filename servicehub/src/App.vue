@@ -1,6 +1,6 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
-import { services } from './data/services'
+import { computed, onMounted, ref, watch } from 'vue'
+import * as api from './services/api'
 
 import NavBar from './components/User/NavBar.vue'
 import HeroSection from './components/User/HeroSection.vue'
@@ -17,23 +17,143 @@ import TrackingDemo from './components/User/TrackingDemo.vue'
 import FooterSection from './components/User/FooterSection.vue'
 import AIChatbot from './components/User/AIChatbot.vue'
 
+// Fixed password used for the one-click "demo" sign-in shortcuts, so they
+// satisfy the backend's password policy without showing any new UI.
+const DEMO_PASSWORD = 'GoogleDemo@123'
+
+// Presentation-only details the backend doesn't store (images, upfront
+// payment terms). Matched by service name so the catalog still looks the
+// same as the old mock data once it's loaded from the real API.
+const SERVICE_PRESENTATION = {
+  'home cleaning': {
+    image: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952'
+  },
+  'moving help': {
+    image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c',
+    upfrontPayment: {
+      required: true,
+      amount: 300,
+      bankName: 'BRAC Bank',
+      accountName: 'ServiceHub Moving Provider',
+      accountNumber: '01700000001',
+      note: 'Moving jobs require a small provider deposit before vehicle scheduling.'
+    }
+  },
+  'local delivery': {
+    image: 'https://images.unsplash.com/photo-1604357209793-fca5dca89f97'
+  },
+  'tech support': {
+    image: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3'
+  },
+  'ac repair': {
+    image: 'https://images.unsplash.com/photo-1621905252507-b35492cc74b4',
+    upfrontPayment: {
+      required: true,
+      amount: 250,
+      bankName: 'Dutch-Bangla Bank',
+      accountName: 'Rajshahi AC Provider',
+      accountNumber: '01800000002',
+      note: 'AC repair requires an inspection booking deposit before provider dispatch.'
+    }
+  },
+  'electrician': {
+    image: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e',
+    upfrontPayment: {
+      required: true,
+      amount: 200,
+      bankName: 'City Bank',
+      accountName: 'Rajshahi Electrical Provider',
+      accountNumber: '01900000003',
+      note: 'Electrical work may require upfront inspection payment for safety scheduling.'
+    }
+  },
+  'plumbing help': {
+    image: 'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39'
+  },
+  'home tutoring': {
+    image: 'https://images.unsplash.com/photo-1509062522246-3755977927d7'
+  },
+  'elder care visit': {
+    image: 'https://images.unsplash.com/photo-1584515933487-779824d29309'
+  }
+}
+const DEFAULT_SERVICE_IMAGE = 'https://images.unsplash.com/photo-1581578731548-c64695cc6952'
+
+// The original catalog order from the finalized frontend, so the homepage
+// looks the same regardless of what order the backend returns rows in.
+// ProviderRegisterPage's "Service type" dropdown uses its own labels that
+// don't exactly match the service catalog's names (e.g. "Tutoring" vs.
+// "Home Tutoring"), so map them before looking up a catalog match.
+const PROVIDER_SERVICE_TYPE_MAP = {
+  'ac repair & home maintenance': 'ac repair',
+  'home cleaning': 'home cleaning',
+  'moving help': 'moving help',
+  'delivery service': 'local delivery',
+  'technology support': 'tech support',
+  'tutoring': 'home tutoring'
+}
+
+const SERVICE_DISPLAY_ORDER = [
+  'home cleaning',
+  'moving help',
+  'local delivery',
+  'tech support',
+  'ac repair',
+  'electrician',
+  'plumbing help',
+  'home tutoring',
+  'elder care visit'
+]
+
+// Backend `services.icon` -> the category label the mock data used to group by.
+const ICON_CATEGORY_MAP = {
+  home: 'Home',
+  truck: 'Transport',
+  package: 'Errands',
+  laptop: 'Technology',
+  thermometer: 'Home repair',
+  zap: 'Home repair',
+  wrench: 'Home repair',
+  book: 'Education',
+  heart: 'Care'
+}
+
+// Backend BookingStatus (pending/confirmed/in_progress/completed/cancelled) mapped
+// onto the two-field status vocabulary the dashboards were built around.
+const STATUS_MAP = {
+  pending: { status: 'waiting-admin-approval', providerStatus: 'waiting-provider-acceptance' },
+  confirmed: { status: 'assigned-to-provider', providerStatus: 'accepted' },
+  in_progress: { status: 'in-progress', providerStatus: 'in-progress' },
+  completed: { status: 'completed', providerStatus: 'completed' },
+  cancelled: { status: 'cancelled', providerStatus: 'declined' }
+}
+
+function clean(value) {
+  return String(value || '').trim()
+}
+
+function digitsOnly(value) {
+  const digits = String(value || '').replace(/\D/g, '')
+  return digits ? Number(digits) : undefined
+}
+
 // localStorage keeps the demo workflow usable after browser refresh.
-const savedRequests = JSON.parse(localStorage.getItem('servicehub-requests') || '[]')
-const savedAccounts = JSON.parse(localStorage.getItem('servicehub-accounts') || '[]')
+const savedUser = JSON.parse(localStorage.getItem('servicehub-user') || 'null')
 const savedChats = JSON.parse(localStorage.getItem('servicehub-chat-approvals') || '[]')
 const savedMessages = JSON.parse(localStorage.getItem('servicehub-messages') || '[]')
-const savedBlocks = JSON.parse(localStorage.getItem('servicehub-block-requests') || '[]')
-const savedUser = JSON.parse(localStorage.getItem('servicehub-user') || 'null')
 
 const currentPage = ref(savedUser ? 'dashboard' : 'home')
 const theme = ref(localStorage.getItem('servicehub-theme') || 'light')
 const signedInUser = ref(savedUser)
 const selectedService = ref(null)
-const requests = ref(savedRequests)
-const accounts = ref(savedAccounts)
+const services = ref([])
+const requests = ref([])
+const accounts = ref([])
 const chatApprovals = ref(savedChats)
 const messages = ref(savedMessages)
-const blockRequests = ref(savedBlocks)
+const blockRequests = ref([])
+const providerServices = ref([])
+const providerReviews = ref([])
 
 document.documentElement.dataset.theme = theme.value
 
@@ -41,11 +161,8 @@ watch(theme, value => {
   document.documentElement.dataset.theme = value
   localStorage.setItem('servicehub-theme', value)
 })
-watch(requests, value => localStorage.setItem('servicehub-requests', JSON.stringify(value)), { deep: true })
-watch(accounts, value => localStorage.setItem('servicehub-accounts', JSON.stringify(value)), { deep: true })
 watch(chatApprovals, value => localStorage.setItem('servicehub-chat-approvals', JSON.stringify(value)), { deep: true })
 watch(messages, value => localStorage.setItem('servicehub-messages', JSON.stringify(value)), { deep: true })
-watch(blockRequests, value => localStorage.setItem('servicehub-block-requests', JSON.stringify(value)), { deep: true })
 watch(signedInUser, value => {
   if (value) localStorage.setItem('servicehub-user', JSON.stringify(value))
   else localStorage.removeItem('servicehub-user')
@@ -58,116 +175,447 @@ function goTo(page) {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 function toggleTheme() { theme.value = theme.value === 'dark' ? 'light' : 'dark' }
-function signOut() { signedInUser.value = null; currentPage.value = 'home' }
-
-function upsertAccount(account) {
-  const index = accounts.value.findIndex(item => item.id === account.id)
-  if (index >= 0) accounts.value[index] = account
-  else accounts.value.unshift(account)
+function signOut() {
+  api.clearTokens()
+  signedInUser.value = null
+  currentPage.value = 'home'
 }
 
-function createAccount(user) {
-  const account = {
-    id: `CUS-${Date.now()}`,
-    role: 'customer',
-    status: 'active',
-    name: user.name || 'Google Customer',
-    email: user.email || `${user.phone || 'customer'}@servicehub.local`,
-    phone: user.phone || '01XXXXXXXXX',
-    location: user.location || 'Rajshahi',
-    authProvider: user.authProvider || 'email'
+// ---------- Data loading ----------
+
+async function loadServices() {
+  try {
+    const catalog = await api.getServices()
+    const withPricing = await Promise.all(catalog.map(async service => {
+      const presentation = SERVICE_PRESENTATION[service.serviceName.toLowerCase()] || {}
+      let providers = []
+      try {
+        providers = await api.getServiceProviders(service.serviceId)
+      } catch {
+        providers = []
+      }
+      const bestOffer = providers[0] || null
+
+      return {
+        id: bestOffer?.providerServiceId || service.serviceId,
+        serviceId: service.serviceId,
+        providerServiceId: bestOffer?.providerServiceId || null,
+        providerId: bestOffer?.providerId || null,
+        providerName: bestOffer?.providerName || '',
+        title: service.serviceName,
+        category: ICON_CATEGORY_MAP[service.icon] || 'General',
+        price: bestOffer?.price ?? 0,
+        currency: 'BDT',
+        image: presentation.image || DEFAULT_SERVICE_IMAGE,
+        description: service.description || '',
+        upfrontPayment: presentation.upfrontPayment || null
+      }
+    }))
+
+    // Only show the original 9 services, in the original order, so the
+    // homepage matches the finalized frontend regardless of any extra
+    // categories that might exist in the database.
+    services.value = SERVICE_DISPLAY_ORDER
+      .map(name => withPricing.find(s => s.title.toLowerCase() === name))
+      .filter(Boolean)
+  } catch (err) {
+    console.warn('Could not load services catalog:', err.message)
   }
-  upsertAccount(account)
-  signedInUser.value = account
-  currentPage.value = 'dashboard'
 }
 
-function createProvider(provider) {
-  const account = {
-    id: `PROV-${Date.now()}`,
-    role: 'provider',
-    status: 'pending-admin-approval',
-    name: provider.name,
-    email: provider.email,
-    phone: provider.phone,
-    area: provider.suburb || provider.area || 'Rajshahi City',
-    serviceType: provider.serviceType || 'General service',
-    experience: provider.experience,
-    authProvider: provider.authProvider || 'email'
+function normalizeUser(user, userType) {
+  if (userType === 'customer') {
+    return {
+      id: user.customerId,
+      role: 'customer',
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      location: user.address || 'Rajshahi City'
+    }
   }
-  upsertAccount(account)
-  signedInUser.value = account
-  currentPage.value = 'dashboard'
+  if (userType === 'provider') {
+    return {
+      id: user.providerId,
+      role: 'provider',
+      name: user.providerName,
+      email: user.email,
+      phone: user.phone,
+      area: user.address || 'Rajshahi City',
+      serviceType: 'General service',
+      status: user.isVerified ? 'active' : 'pending-admin-approval'
+    }
+  }
+  return {
+    id: user.id,
+    role: 'admin',
+    name: user.name,
+    email: user.email
+  }
 }
 
-function signIn(payload) {
+function normalizeBooking(booking) {
+  const mapped = STATUS_MAP[booking.status] || { status: booking.status, providerStatus: booking.status }
+  const providerService = booking.providerService
+
+  return {
+    id: booking.bookingId,
+    serviceTitle: booking.serviceName || providerService?.service?.serviceName || booking.notes || 'Service request',
+    details: booking.notes || '',
+    location: booking.address || 'Rajshahi',
+    customerLocation: booking.customer?.address || 'Rajshahi',
+    preferredDate: booking.date,
+    createdAt: booking.createdAt,
+    budget: Number(booking.totalAmount || 0),
+    customerId: booking.customerId,
+    customerName: booking.customer?.name || '',
+    providerId: providerService?.providerId || '',
+    providerServiceId: booking.providerServiceId,
+    status: mapped.status,
+    providerStatus: mapped.providerStatus,
+    needsUpfrontPayment: false,
+    bankName: '',
+    accountName: '',
+    paymentNote: ''
+  }
+}
+
+async function refreshBookings() {
+  if (!signedInUser.value) {
+    requests.value = []
+    return
+  }
+  try {
+    let raw = []
+    if (signedInUser.value.role === 'customer') raw = await api.getMyBookings()
+    else if (signedInUser.value.role === 'provider') raw = await api.getProviderBookings()
+    else raw = await api.getAllBookingsPublic()
+    requests.value = raw.map(normalizeBooking)
+  } catch (err) {
+    console.warn('Could not load bookings:', err.message)
+  }
+}
+
+async function refreshAdminAccounts() {
+  if (signedInUser.value?.role !== 'admin') return
+  try {
+    const [customersRes, providersRes] = await Promise.all([
+      api.getAllCustomersAdmin(),
+      api.getAllProvidersAdmin()
+    ])
+    const customerAccounts = customersRes.data.map(c => ({
+      id: c.customerId,
+      role: 'customer',
+      name: c.name,
+      email: c.email,
+      phone: c.phone,
+      status: c.isActive ? 'active' : 'blocked'
+    }))
+    const providerAccounts = providersRes.data.map(p => ({
+      id: p.providerId,
+      role: 'provider',
+      name: p.providerName,
+      email: p.email,
+      phone: p.phone,
+      area: 'Rajshahi City',
+      serviceType: 'General service',
+      status: !p.isActive ? 'blocked' : (p.isVerified ? 'active' : 'pending-admin-approval')
+    }))
+    accounts.value = [...customerAccounts, ...providerAccounts]
+  } catch (err) {
+    console.warn('Could not load accounts:', err.message)
+  }
+}
+
+async function refreshAdminReports() {
+  if (signedInUser.value?.role !== 'admin') return
+  try {
+    const raw = await api.getAllReportsAdmin()
+    const statusLabel = { pending: 'Pending', reviewed: 'Reviewed', resolved: 'Approved', dismissed: 'Rejected' }
+    blockRequests.value = raw.map(r => {
+      const reporter = accounts.value.find(a => a.id === r.reporterId)
+      const target = accounts.value.find(a => a.id === r.reportedId)
+      return {
+        id: r.reportId,
+        requesterName: reporter?.name || r.reporterType,
+        requesterRole: r.reporterType,
+        targetName: target?.name || r.reportedType,
+        targetRole: r.reportedType,
+        reason: r.reason,
+        status: statusLabel[r.status] || r.status
+      }
+    })
+  } catch (err) {
+    console.warn('Could not load reports:', err.message)
+  }
+}
+
+async function refreshProviderServices() {
+  if (signedInUser.value?.role !== 'provider') return
+  try {
+    const raw = await api.getMyProviderServices()
+    providerServices.value = raw.map(ps => ({
+      id: ps.id,
+      serviceId: ps.serviceId,
+      title: ps.service?.serviceName || 'Service',
+      price: Number(ps.price || 0),
+      description: ps.description || '',
+      active: ps.isAvailable
+    }))
+  } catch (err) {
+    console.warn('Could not load provider services:', err.message)
+  }
+}
+
+async function refreshProviderReviews() {
+  if (signedInUser.value?.role !== 'provider') return
+  try {
+    const raw = await api.getProviderReviews(signedInUser.value.id)
+    providerReviews.value = raw.map(r => ({
+      id: r.reviewId,
+      name: r.customer?.name || 'Customer',
+      service: r.booking?.providerService?.service?.serviceName || 'Service',
+      rating: r.rating,
+      text: r.comment || ''
+    }))
+  } catch (err) {
+    console.warn('Could not load reviews:', err.message)
+  }
+}
+
+async function applySession(res, userType) {
+  api.setTokens(res.accessToken, res.refreshToken)
+  signedInUser.value = normalizeUser(res.user, userType)
+  currentPage.value = 'dashboard'
+  await refreshBookings()
+  if (userType === 'admin') {
+    await refreshAdminAccounts()
+    await refreshAdminReports()
+  }
+  if (userType === 'provider') {
+    await refreshProviderServices()
+    await refreshProviderReviews()
+  }
+}
+
+onMounted(async () => {
+  await loadServices()
+  if (signedInUser.value) {
+    await refreshBookings()
+    if (signedInUser.value.role === 'admin') {
+      await refreshAdminAccounts()
+      await refreshAdminReports()
+    }
+    if (signedInUser.value.role === 'provider') {
+      await refreshProviderServices()
+      await refreshProviderReviews()
+    }
+  }
+})
+
+// ---------- Accounts / auth ----------
+
+async function createAccount(user) {
+  try {
+    const email = clean(user.email) || `${clean(user.name).toLowerCase().replace(/\s+/g, '.')}@servicehub.local`
+    const res = await api.registerCustomer({
+      name: user.name,
+      email,
+      password: user.password === 'google-demo' ? DEMO_PASSWORD : user.password,
+      phone: user.phone,
+      address: user.location
+    })
+    await applySession(res, 'customer')
+  } catch (err) {
+    alert(err.message || 'Registration failed.')
+  }
+}
+
+async function createProvider(provider) {
+  try {
+    const email = clean(provider.email) || `${clean(provider.name).toLowerCase().replace(/\s+/g, '.')}@servicehub.local`
+    const res = await api.registerProvider({
+      providerName: provider.name || 'Google Provider',
+      email,
+      password: provider.password ? provider.password : DEMO_PASSWORD,
+      phone: digitsOnly(provider.phone),
+      address: provider.suburb || provider.area || 'Rajshahi City',
+      description: provider.experience || undefined
+    })
+    await applySession(res, 'provider')
+
+    const rawType = String(provider.serviceType || '').toLowerCase()
+    const normalizedType = PROVIDER_SERVICE_TYPE_MAP[rawType] || rawType
+    const match = services.value.find(s => s.title.toLowerCase() === normalizedType)
+    if (match) {
+      try {
+        await api.addProviderService({
+          serviceId: match.serviceId,
+          price: match.price || 500,
+          description: `${provider.serviceType} offered in ${provider.suburb || 'Rajshahi City'}`
+        })
+        await refreshProviderServices()
+      } catch (err) {
+        console.warn('Could not attach default service offering:', err.message)
+      }
+    }
+  } catch (err) {
+    alert(err.message || 'Provider registration failed.')
+  }
+}
+
+async function signIn(payload) {
   const role = payload.role || 'customer'
-  if (role === 'admin') {
-    signedInUser.value = { id: 'ADMIN-01', role: 'admin', status: 'active', name: 'Admin User', email: 'admin@servicehub.local' }
-  } else if (role === 'provider') {
-    signedInUser.value = { id: 'PROV-DEMO-01', role: 'provider', status: 'active', name: 'Rajshahi Provider', email: payload.email || 'provider@servicehub.local', serviceType: 'AC Repair & Home Maintenance', area: 'Rajshahi City' }
-    upsertAccount(signedInUser.value)
-  } else {
-    signedInUser.value = { id: 'GOOGLE-CUSTOMER', role: 'customer', status: 'active', name: payload.name || 'Google Customer', email: payload.email || 'google.customer@servicehub.local', phone: payload.phone || '01XXXXXXXXX', location: 'Rajshahi City' }
-    upsertAccount(signedInUser.value)
+  try {
+    if (payload.password) {
+      const res = await api.login({ email: payload.email, password: payload.password, userType: role })
+      await applySession(res, role)
+      return
+    }
+
+    // "Continue with Google demo" shortcut: no password typed, so try the
+    // fixed demo credential first and auto-provision the account if needed.
+    const email = payload.email || `${role}.demo@servicehub.local`
+    try {
+      const res = await api.login({ email, password: DEMO_PASSWORD, userType: role })
+      await applySession(res, role)
+    } catch {
+      const res = await api.registerCustomer({
+        name: payload.name || 'Google Customer',
+        email,
+        password: DEMO_PASSWORD,
+        phone: '01700000002',
+        address: 'Rajshahi City'
+      })
+      await applySession(res, 'customer')
+    }
+  } catch (err) {
+    alert(err.message || 'Sign in failed.')
   }
-  currentPage.value = 'dashboard'
 }
+
+// ---------- Bookings ----------
 
 function openRequest(service) {
   selectedService.value = service
   currentPage.value = signedInUser.value ? 'request' : 'signin'
 }
 
-function submitRequest(form) {
-  requests.value.unshift({
-    id: `REQ-${Date.now()}`,
-    ...form,
-    customerId: signedInUser.value.id,
-    customerName: signedInUser.value.name,
-    customerLocation: signedInUser.value.location,
-    status: 'waiting-admin-approval',
-    providerStatus: 'unassigned',
-    createdAt: new Date().toLocaleString()
-  })
-  currentPage.value = 'dashboard'
+async function submitRequest(form) {
+  try {
+    await api.createBooking({
+      providerServiceId: selectedService.value?.providerServiceId || undefined,
+      serviceId: selectedService.value?.serviceId,
+      date: form.preferredDate,
+      time: form.preferredTime || '09:00',
+      notes: form.details,
+      address: form.location,
+      serviceName: form.serviceTitle
+    })
+    await refreshBookings()
+    currentPage.value = 'dashboard'
+  } catch (err) {
+    alert(err.message || 'Could not submit request.')
+  }
 }
 
-function approveProvider(providerId) {
-  const provider = accounts.value.find(item => item.id === providerId)
-  if (provider) provider.status = 'active'
+// ---------- Admin actions ----------
+
+async function approveProvider(providerId) {
+  try {
+    await api.verifyProvider(providerId)
+    await refreshAdminAccounts()
+  } catch (err) {
+    alert(err.message || 'Could not approve provider.')
+  }
 }
-function rejectProvider(providerId) {
-  const provider = accounts.value.find(item => item.id === providerId)
-  if (provider) provider.status = 'rejected'
+async function rejectProvider(providerId) {
+  try {
+    await api.suspendUser('provider', providerId, 'Rejected by admin')
+    await refreshAdminAccounts()
+  } catch (err) {
+    alert(err.message || 'Could not reject provider.')
+  }
 }
-function assignRequest({ requestId, providerId }) {
-  const request = requests.value.find(item => item.id === requestId)
-  if (!request) return
-  request.providerId = providerId
-  request.status = 'assigned-to-provider'
-  request.providerStatus = 'waiting-provider-acceptance'
+async function assignRequest({ requestId }) {
+  try {
+    await api.updateBookingStatusPublic(requestId, 'confirmed')
+    await refreshBookings()
+  } catch (err) {
+    alert(err.message || 'Could not assign request.')
+  }
 }
-function acceptProviderRequest({ requestId, providerId }) {
-  const request = requests.value.find(item => item.id === requestId)
-  if (!request) return
-  request.providerId = providerId || request.providerId
-  request.status = 'provider-accepted'
-  request.providerStatus = 'accepted'
+async function activateProvider(providerId) {
+  try {
+    await api.activateUser('provider', providerId)
+    await refreshAdminAccounts()
+  } catch (err) {
+    alert(err.message || 'Could not unblock provider.')
+  }
 }
-function declineProviderRequest({ requestId, reason }) {
-  const request = requests.value.find(item => item.id === requestId)
-  if (!request) return
-  request.status = 'provider-declined'
-  request.providerStatus = 'declined'
-  request.declineReason = reason
+async function blockCustomer(customerId) {
+  try {
+    await api.suspendUser('customer', customerId, 'Blocked by admin')
+    await refreshAdminAccounts()
+  } catch (err) {
+    alert(err.message || 'Could not block customer.')
+  }
 }
-function changeRequestStatus({ requestId, status }) {
-  const request = requests.value.find(item => item.id === requestId)
-  if (!request) return
-  request.status = status === 'completed' ? 'completed' : request.status
-  request.providerStatus = status
+async function activateCustomer(customerId) {
+  try {
+    await api.activateUser('customer', customerId)
+    await refreshAdminAccounts()
+  } catch (err) {
+    alert(err.message || 'Could not unblock customer.')
+  }
 }
+
+// ---------- Provider actions ----------
+
+async function acceptProviderRequest({ requestId }) {
+  try {
+    await api.updateProviderBookingStatus(requestId, 'confirmed')
+    await refreshBookings()
+  } catch (err) {
+    alert(err.message || 'Could not accept request.')
+  }
+}
+async function declineProviderRequest({ requestId }) {
+  try {
+    await api.updateProviderBookingStatus(requestId, 'cancelled')
+    await refreshBookings()
+  } catch (err) {
+    alert(err.message || 'Could not decline request.')
+  }
+}
+async function changeRequestStatus({ requestId, status }) {
+  const backendStatus = status === 'in-progress' ? 'in_progress' : status
+  try {
+    await api.updateProviderBookingStatus(requestId, backendStatus)
+    await refreshBookings()
+  } catch (err) {
+    alert(err.message || 'Could not update request status.')
+  }
+}
+async function addProviderServiceOffering({ serviceId, price, description }) {
+  try {
+    await api.addProviderService({ serviceId, price: Number(price), description })
+    await refreshProviderServices()
+  } catch (err) {
+    alert(err.message || 'Could not add service.')
+  }
+}
+async function toggleProviderService({ id, active }) {
+  try {
+    await api.updateProviderService(id, { isAvailable: active })
+    await refreshProviderServices()
+  } catch (err) {
+    alert(err.message || 'Could not update service.')
+  }
+}
+
+// ---------- Chat (kept as a local-only demo; no backend module exists for it) ----------
+
 function requestChat(payload) {
   if (chatApprovals.value.some(item => item.requestId === payload.requestId)) return
   chatApprovals.value.unshift({ id: `CHAT-${Date.now()}`, status: 'pending', ...payload })
@@ -183,18 +631,44 @@ function rejectChat(id) {
 function sendMessage(payload) {
   messages.value.push({ id: `MSG-${Date.now()}`, createdAt: new Date().toLocaleString(), ...payload })
 }
-function createBlockRequest(payload) {
-  blockRequests.value.unshift({ id: `BLK-${Date.now()}`, requesterName: signedInUser.value?.name, requesterRole: signedInUser.value?.role, status: 'Pending', ...payload })
+
+// ---------- Reports / block requests (real backend data) ----------
+
+async function createBlockRequest(payload) {
+  const match = requests.value.find(r => r.customerName === payload.requesterName || r.customerName === payload.targetName)
+  const reportedId = signedInUser.value?.role === 'provider'
+    ? requests.value.find(r => r.customerName === payload.targetName)?.customerId
+    : match?.providerId
+
+  if (!reportedId) {
+    alert('Could not find a matching account from your bookings to report.')
+    return
+  }
+
+  try {
+    await api.createReport({
+      reportedId,
+      reportedType: payload.targetRole === 'provider' ? 'provider' : 'customer',
+      reason: payload.reason
+    })
+    alert('Report submitted to admin.')
+  } catch (err) {
+    alert(err.message || 'Could not submit report.')
+  }
 }
-function updateBlockRequest({ id, status }) {
-  const request = blockRequests.value.find(item => item.id === id)
-  if (request) request.status = status
+async function updateBlockRequest({ id, status }) {
+  const backendStatus = status === 'Approved' ? 'resolved' : 'dismissed'
+  try {
+    await api.updateReportStatus(id, backendStatus)
+    await refreshAdminReports()
+  } catch (err) {
+    alert(err.message || 'Could not update report.')
+  }
 }
+
 function resetLocalDemo() {
-  requests.value = []
   chatApprovals.value = []
   messages.value = []
-  blockRequests.value = []
 }
 </script>
 
@@ -231,6 +705,9 @@ function resetLocalDemo() {
         :chat-approvals="chatApprovals"
         :messages="messages"
         :theme="theme"
+        :provider-services="providerServices"
+        :available-services="services"
+        :reviews="providerReviews"
         @toggle-theme="toggleTheme"
         @sign-out="signOut"
         @go-home="goTo('home')"
@@ -240,6 +717,8 @@ function resetLocalDemo() {
         @request-chat="requestChat"
         @send-message="sendMessage"
         @block-request="createBlockRequest"
+        @add-service="addProviderServiceOffering"
+        @toggle-service="toggleProviderService"
       />
 
       <AdminDashboard
@@ -254,6 +733,9 @@ function resetLocalDemo() {
         @go-home="goTo('home')"
         @approve-provider="approveProvider"
         @reject-provider="rejectProvider"
+        @activate-provider="activateProvider"
+        @block-customer="blockCustomer"
+        @activate-customer="activateCustomer"
         @assign-request="assignRequest"
         @approve-chat="approveChat"
         @reject-chat="rejectChat"

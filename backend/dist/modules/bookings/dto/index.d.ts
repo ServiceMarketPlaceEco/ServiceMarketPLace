@@ -1,10 +1,14 @@
 import { BookingStatus } from '../entities/booking.entity';
 export declare class CreateBookingDto {
-    providerServiceId: string;
+    providerServiceId?: string;
+    serviceId?: string;
+    providerId?: string;
     date: string;
     time: string;
     notes?: string;
     address?: string;
+    serviceName?: string;
+    providerName?: string;
 }
 export declare class UpdateBookingDto {
     date?: string;

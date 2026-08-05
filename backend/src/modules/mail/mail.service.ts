@@ -23,6 +23,9 @@ export class MailService {
         user: this.configService.get<string>('MAIL_USER'),
         pass: this.configService.get<string>('MAIL_PASS'),
       },
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
+      socketTimeout: 5000,
     });
 
     this.fromEmail = this.configService.get<string>('MAIL_FROM', 'noreply@servicehub.com');

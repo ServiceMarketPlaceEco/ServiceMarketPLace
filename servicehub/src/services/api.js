@@ -1,346 +1,165 @@
-// servicehub local database api
-// this version matches the existing App.vue, AdminDashboard.vue and ProviderDashboard.vue props/status names.
+// Real HTTP client for the NestJS backend.
+// Replaces the old localStorage-mock database that used to live here.
 
-const DB_KEY = 'servicehub_database'
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
-const DEMO_PROVIDER = {
-  id: 'provider-demo-rajshahi',
-  providerId: 'PROV-DEMO-01',
-  role: 'provider',
-  name: 'Rajshahi Provider',
-  phone: '01700000001',
-  email: 'provider@servicehub.local',
-  password: 'provider123',
-  location: 'Rajshahi City',
-  serviceType: 'AC Repair & Home Maintenance',
-  status: 'active',
-  rating: 4.8,
-  completedJobs: 18,
-  createdAt: '2026-06-01T00:00:00.000Z',
-  updatedAt: '2026-06-01T00:00:00.000Z'
+const TOKEN_KEY = 'servicehub-access-token'
+const REFRESH_KEY = 'servicehub-refresh-token'
+
+export function getAccessToken() {
+  return localStorage.getItem(TOKEN_KEY)
 }
 
-const EMPTY_DB = {
-  accounts: [DEMO_PROVIDER],
-  requests: [],
-  chatApprovals: []
+export function getRefreshToken() {
+  return localStorage.getItem(REFRESH_KEY)
 }
 
-function ensureDemoData(db) {
-  const hasDemoProvider = db.accounts.some(account => account.providerId === DEMO_PROVIDER.providerId)
-  if (!hasDemoProvider) db.accounts.unshift(copy(DEMO_PROVIDER))
-  return db
+export function setTokens(accessToken, refreshToken) {
+  if (accessToken) localStorage.setItem(TOKEN_KEY, accessToken)
+  if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken)
 }
 
-function copy(value) {
-  return JSON.parse(JSON.stringify(value))
+export function clearTokens() {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(REFRESH_KEY)
 }
 
-function loadDb() {
-  try {
-    const saved = localStorage.getItem(DB_KEY)
-    const parsed = saved ? JSON.parse(saved) : copy(EMPTY_DB)
+async function request(path, { method = 'GET', body, auth = false } = {}) {
+  const headers = { 'Content-Type': 'application/json' }
 
-    return ensureDemoData({
-      accounts: Array.isArray(parsed.accounts) ? parsed.accounts : [],
-      requests: Array.isArray(parsed.requests) ? parsed.requests : [],
-      chatApprovals: Array.isArray(parsed.chatApprovals) ? parsed.chatApprovals : []
-    })
-  } catch (error) {
-    console.warn('servicehub database was reset because localStorage data was invalid.', error)
-    return copy(EMPTY_DB)
-  }
-}
-
-function saveDb(db) {
-  localStorage.setItem(DB_KEY, JSON.stringify(db))
-  return db
-}
-
-function makeId(prefix = 'id') {
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
-}
-
-function clean(value) {
-  return String(value || '').trim().toLowerCase()
-}
-
-function safeAccount(account) {
-  if (!account) return null
-  const { password, ...safe } = account
-  return safe
-}
-
-function normaliseProviderStatus(status) {
-  if (status === 'approved') return 'active'
-  return status
-}
-
-export async function getDatabaseSnapshot() {
-  return loadDb()
-}
-
-export async function createAccount(accountData) {
-  const db = loadDb()
-  const role = accountData.role || 'customer'
-
-  if (!accountData.name || !accountData.phone || !accountData.location || !accountData.password) {
-    throw new Error('Name, phone, location and password are required.')
+  if (auth) {
+    const token = getAccessToken()
+    if (token) headers.Authorization = `Bearer ${token}`
   }
 
-  const duplicate = db.accounts.some(account =>
-    account.role === role &&
-    (clean(account.name) === clean(accountData.name) || clean(account.phone) === clean(accountData.phone))
-  )
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined
+  })
 
-  if (duplicate) {
-    throw new Error('An account with this name or phone already exists.')
+  const text = await res.text()
+  const data = text ? JSON.parse(text) : null
+
+  if (!res.ok) {
+    const message = Array.isArray(data?.message) ? data.message.join(', ') : (data?.message || `Request failed (${res.status})`)
+    throw new Error(message)
   }
 
-  const account = {
-    id: makeId(role),
-    role,
-    name: accountData.name.trim(),
-    phone: accountData.phone.trim(),
-    location: accountData.location,
-    password: accountData.password,
-    email: accountData.email || `${clean(accountData.name).replace(/\s+/g, '.')}@servicehub.local`,
-    serviceType: accountData.serviceType || accountData.service || 'General service',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    status: role === 'provider' ? 'pending-admin-approval' : 'active'
-  }
-
-  if (role === 'provider') {
-    account.providerId = accountData.providerId || `PROV-${Math.floor(10000 + Math.random() * 90000)}`
-    account.rating = 0
-    account.completedJobs = 0
-  }
-
-  db.accounts.push(account)
-  saveDb(db)
-  return safeAccount(account)
+  return data
 }
 
-export async function googleCreateAccount(accountData) {
-  return createAccount({
-    ...accountData,
-    accountMethod: 'google'
+// ---------- Auth ----------
+
+export async function registerCustomer(payload) {
+  return request('/auth/register/customer', { method: 'POST', body: payload })
+}
+
+export async function registerProvider(payload) {
+  return request('/auth/register/provider', { method: 'POST', body: payload })
+}
+
+export async function login(payload) {
+  return request('/auth/login', { method: 'POST', body: payload })
+}
+
+// ---------- Services catalog ----------
+
+export async function getServices() {
+  return request('/services')
+}
+
+export async function getServiceProviders(serviceId) {
+  return request(`/services/${serviceId}/providers`)
+}
+
+// ---------- Provider self-service ----------
+
+export async function addProviderService(payload) {
+  return request('/providers/me/services', { method: 'POST', body: payload, auth: true })
+}
+
+export async function getMyProviderServices() {
+  return request('/providers/me/services', { auth: true })
+}
+
+export async function updateProviderService(providerServiceId, payload) {
+  return request(`/providers/me/services/${providerServiceId}`, { method: 'PUT', body: payload, auth: true })
+}
+
+export async function getProviderBookings() {
+  return request('/providers/me/bookings', { auth: true })
+}
+
+export async function updateProviderBookingStatus(bookingId, status) {
+  return request(`/providers/me/bookings/${bookingId}/status`, {
+    method: 'PUT',
+    body: { status },
+    auth: true
   })
 }
 
-export async function googleSignInAccount(accountData = {}) {
-  const db = loadDb()
-  const role = accountData.role || 'customer'
-  const email = accountData.email || 'google.customer@servicehub.local'
-  let account = db.accounts.find(item => item.role === role && clean(item.email) === clean(email))
+// ---------- Bookings ----------
 
-  if (!account) {
-    account = {
-      id: makeId(role),
-      role,
-      name: accountData.name || 'Google Customer',
-      phone: accountData.phone || '01700000002',
-      location: accountData.location || 'Rajshahi City',
-      password: 'google-oauth-demo',
-      email,
-      accountMethod: 'google',
-      serviceType: accountData.serviceType || 'General service',
-      status: role === 'provider' ? 'pending-admin-approval' : 'active',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }
-    if (role === 'provider') {
-      account.providerId = accountData.providerId || `PROV-${Math.floor(10000 + Math.random() * 90000)}`
-      account.rating = 0
-      account.completedJobs = 0
-    }
-    db.accounts.push(account)
-    saveDb(db)
-  }
-
-  if (role === 'provider' && !['active', 'approved'].includes(account.status)) {
-    throw new Error('Provider Google account is waiting for admin approval.')
-  }
-
-  return safeAccount(account)
+export async function createBooking(payload) {
+  return request('/bookings', { method: 'POST', body: payload, auth: true })
 }
 
-export async function signInAccount({ role = 'customer', identifier = '', password = '' }) {
-  const db = loadDb()
+export async function getMyBookings() {
+  return request('/bookings/my-bookings', { auth: true })
+}
 
-  if (role === 'admin') {
-    const id = clean(identifier)
-    if ((id === 'admin01' || id === 'admin') && password === 'admin123') {
-      return {
-        id: 'admin01',
-        role: 'admin',
-        name: 'Admin User',
-        email: 'admin@servicehub.local',
-        status: 'active'
-      }
-    }
-    throw new Error('Invalid admin credentials. Use admin01 / admin123 for the demo.')
-  }
+// Public demo endpoints used by the admin dashboard (no auth required by the backend)
+export async function getAllBookingsPublic() {
+  return request('/bookings/all')
+}
 
-  const account = db.accounts.find(item => {
-    if (item.role !== role) return false
+export async function updateBookingStatusPublic(bookingId, status) {
+  return request(`/bookings/${bookingId}/status`, { method: 'PATCH', body: { status } })
+}
 
-    if (role === 'customer') {
-      return (clean(item.name) === clean(identifier) || clean(item.phone) === clean(identifier)) && item.password === password
-    }
+// ---------- Reviews ----------
 
-    return (clean(item.providerId) === clean(identifier) || clean(item.name) === clean(identifier)) && item.password === password
+export async function getProviderReviews(providerId) {
+  return request(`/reviews/provider/${providerId}`)
+}
+
+// ---------- Admin ----------
+
+export async function getAllCustomersAdmin(page = 1, limit = 100) {
+  return request(`/admins/customers?page=${page}&limit=${limit}`, { auth: true })
+}
+
+export async function getAllProvidersAdmin(page = 1, limit = 100) {
+  return request(`/admins/providers?page=${page}&limit=${limit}`, { auth: true })
+}
+
+export async function verifyProvider(providerId) {
+  return request(`/admins/providers/${providerId}/verify`, { method: 'POST', auth: true })
+}
+
+export async function suspendUser(userType, id, reason) {
+  return request(`/admins/users/${userType}/${id}/suspend`, {
+    method: 'POST',
+    body: { reason },
+    auth: true
   })
-
-  if (!account) throw new Error('No matching account found.')
-
-  if (role === 'provider' && !['active', 'approved'].includes(account.status)) {
-    throw new Error('Provider account is waiting for admin approval.')
-  }
-
-  return safeAccount({ ...account, status: normaliseProviderStatus(account.status) })
 }
 
-export async function updateAccountStatus(accountId, status) {
-  const db = loadDb()
-  const account = db.accounts.find(item => item.id === accountId)
-
-  if (!account) throw new Error('Account not found.')
-
-  account.status = normaliseProviderStatus(status)
-  account.updatedAt = new Date().toISOString()
-  saveDb(db)
-  return safeAccount(account)
+export async function activateUser(userType, id) {
+  return request(`/admins/users/${userType}/${id}/activate`, { method: 'POST', auth: true })
 }
 
-export async function createServiceRequest(requestData) {
-  const db = loadDb()
+// ---------- Reports (used for the "block request" safety workflow) ----------
 
-  const request = {
-    id: makeId('request'),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-
-    // names expected by the existing dashboards
-    status: 'waiting-admin-approval',
-    providerStatus: 'waiting-admin-assignment',
-    chatStatus: 'not-approved',
-    providerId: '',
-    assignedProviderId: '',
-    assignedProviderName: '',
-    messages: [],
-
-    ...requestData
-  }
-
-  db.requests.unshift(request)
-  saveDb(db)
-  return request
+export async function createReport(payload) {
+  return request('/reports', { method: 'POST', body: payload, auth: true })
 }
 
-export async function adminAssignRequest(requestId, providerId) {
-  const db = loadDb()
-  const request = db.requests.find(item => item.id === requestId)
-  const provider = db.accounts.find(item => item.id === providerId && item.role === 'provider')
-
-  if (!request) throw new Error('Request not found.')
-  if (!provider) throw new Error('Provider not found.')
-  if (!['active', 'approved'].includes(provider.status)) throw new Error('Provider must be approved before assignment.')
-
-  request.providerId = provider.id
-  request.assignedProviderId = provider.id
-  request.assignedProviderName = provider.name
-  request.status = 'assigned'
-  request.providerStatus = 'waiting-provider-acceptance'
-  request.updatedAt = new Date().toISOString()
-
-  saveDb(db)
-  return request
+export async function getAllReportsAdmin() {
+  return request('/reports', { auth: true })
 }
 
-export async function providerRespondToRequest(requestId, status) {
-  const db = loadDb()
-  const request = db.requests.find(item => item.id === requestId)
-
-  if (!request) throw new Error('Request not found.')
-
-  request.providerStatus = status
-
-  if (status === 'accepted') request.status = 'active'
-  if (status === 'declined') request.status = 'declined'
-  if (status === 'in-progress') request.status = 'in-progress'
-  if (status === 'completed') request.status = 'completed'
-
-  request.updatedAt = new Date().toISOString()
-  saveDb(db)
-  return request
-}
-
-export async function requestChatApproval(requestId, requestedBy = 'provider') {
-  const db = loadDb()
-  const request = db.requests.find(item => item.id === requestId)
-
-  if (!request) throw new Error('Request not found.')
-
-  request.chatStatus = 'pending'
-  request.updatedAt = new Date().toISOString()
-
-  const existing = db.chatApprovals.find(item => item.requestId === requestId && item.status === 'pending')
-  if (!existing) {
-    db.chatApprovals.unshift({
-      id: makeId('chat'),
-      requestId,
-      requestedBy,
-      status: 'pending',
-      createdAt: new Date().toISOString()
-    })
-  }
-
-  saveDb(db)
-  return request
-}
-
-export async function adminSetChatApproval(requestId, status) {
-  const db = loadDb()
-  const request = db.requests.find(item => item.id === requestId)
-
-  if (!request) throw new Error('Request not found.')
-
-  request.chatStatus = status
-  request.updatedAt = new Date().toISOString()
-
-  const approval = db.chatApprovals.find(item => item.requestId === requestId && item.status === 'pending')
-  if (approval) {
-    approval.status = status
-    approval.updatedAt = new Date().toISOString()
-  }
-
-  saveDb(db)
-  return request
-}
-
-export async function sendMessage(requestId, senderRole, messageText) {
-  const db = loadDb()
-  const request = db.requests.find(item => item.id === requestId)
-
-  if (!request) throw new Error('Request not found.')
-  if (request.chatStatus !== 'approved') throw new Error('Chat is not approved by admin yet.')
-  if (!messageText?.trim()) throw new Error('Message cannot be empty.')
-
-  request.messages.push({
-    id: makeId('message'),
-    senderRole,
-    messageText: messageText.trim(),
-    createdAt: new Date().toISOString()
-  })
-  request.updatedAt = new Date().toISOString()
-
-  saveDb(db)
-  return request
-}
-
-export async function resetDatabase() {
-  localStorage.setItem(DB_KEY, JSON.stringify(copy(EMPTY_DB)))
-  return copy(EMPTY_DB)
+export async function updateReportStatus(id, status) {
+  return request(`/reports/${id}/status`, { method: 'PUT', body: { status }, auth: true })
 }

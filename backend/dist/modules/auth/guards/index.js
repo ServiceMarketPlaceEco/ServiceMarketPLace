@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var _a, _b, _c, _d, _e;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AdminGuard = exports.ProviderGuard = exports.CustomerGuard = exports.UserTypeGuard = exports.RolesGuard = exports.UserTypes = exports.USER_TYPES_KEY = exports.Roles = exports.ROLES_KEY = exports.JwtAuthGuard = void 0;
 const common_1 = require("@nestjs/common");
@@ -44,7 +45,7 @@ let RolesGuard = class RolesGuard {
 exports.RolesGuard = RolesGuard;
 exports.RolesGuard = RolesGuard = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [core_1.Reflector])
+    __metadata("design:paramtypes", [typeof (_a = typeof core_1.Reflector !== "undefined" && core_1.Reflector) === "function" ? _a : Object])
 ], RolesGuard);
 let UserTypeGuard = class UserTypeGuard {
     constructor(reflector) {
@@ -65,7 +66,7 @@ let UserTypeGuard = class UserTypeGuard {
 exports.UserTypeGuard = UserTypeGuard;
 exports.UserTypeGuard = UserTypeGuard = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [core_1.Reflector])
+    __metadata("design:paramtypes", [typeof (_b = typeof core_1.Reflector !== "undefined" && core_1.Reflector) === "function" ? _b : Object])
 ], UserTypeGuard);
 let CustomerGuard = class CustomerGuard {
     constructor(reflector) {
@@ -79,7 +80,7 @@ let CustomerGuard = class CustomerGuard {
 exports.CustomerGuard = CustomerGuard;
 exports.CustomerGuard = CustomerGuard = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [core_1.Reflector])
+    __metadata("design:paramtypes", [typeof (_c = typeof core_1.Reflector !== "undefined" && core_1.Reflector) === "function" ? _c : Object])
 ], CustomerGuard);
 let ProviderGuard = class ProviderGuard {
     constructor(reflector) {
@@ -93,7 +94,7 @@ let ProviderGuard = class ProviderGuard {
 exports.ProviderGuard = ProviderGuard;
 exports.ProviderGuard = ProviderGuard = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [core_1.Reflector])
+    __metadata("design:paramtypes", [typeof (_d = typeof core_1.Reflector !== "undefined" && core_1.Reflector) === "function" ? _d : Object])
 ], ProviderGuard);
 let AdminGuard = class AdminGuard {
     constructor(reflector) {
@@ -107,6 +108,6 @@ let AdminGuard = class AdminGuard {
 exports.AdminGuard = AdminGuard;
 exports.AdminGuard = AdminGuard = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [core_1.Reflector])
+    __metadata("design:paramtypes", [typeof (_e = typeof core_1.Reflector !== "undefined" && core_1.Reflector) === "function" ? _e : Object])
 ], AdminGuard);
 //# sourceMappingURL=index.js.map

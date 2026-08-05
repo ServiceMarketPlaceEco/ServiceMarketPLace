@@ -12,15 +12,15 @@ export declare enum BookingStatus {
 export declare class Booking {
     bookingId: string;
     customerId: string;
-    providerServiceId: string;
-    jobId: string;
-    paymentId: string;
+    providerServiceId: string | null;
+    jobId: string | null;
+    paymentId: string | null;
     date: Date;
     time: string;
     status: BookingStatus;
-    notes: string;
-    address: string;
-    totalAmount: number;
+    notes: string | null;
+    address: string | null;
+    totalAmount: number | null;
     createdAt: Date;
     updatedAt: Date;
     customer: Customer;

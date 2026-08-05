@@ -1,12 +1,12 @@
 import { ExecutionContext, CanActivate } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-declare const JwtAuthGuard_base: import("@nestjs/passport").Type<import("@nestjs/passport").IAuthGuard>;
+declare const JwtAuthGuard_base: any;
 export declare class JwtAuthGuard extends JwtAuthGuard_base {
 }
 export declare const ROLES_KEY = "roles";
-export declare const Roles: (...roles: string[]) => import("@nestjs/common").CustomDecorator<string>;
+export declare const Roles: (...roles: string[]) => any;
 export declare const USER_TYPES_KEY = "userTypes";
-export declare const UserTypes: (...userTypes: string[]) => import("@nestjs/common").CustomDecorator<string>;
+export declare const UserTypes: (...userTypes: string[]) => any;
 export declare class RolesGuard implements CanActivate {
     private reflector;
     constructor(reflector: Reflector);

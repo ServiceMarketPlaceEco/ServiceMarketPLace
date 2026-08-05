@@ -1,4 +1,3 @@
-import { Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { Customer } from '../../customers/entities/customer.entity';
@@ -11,7 +10,7 @@ export interface JwtPayload {
     iat?: number;
     exp?: number;
 }
-declare const JwtStrategy_base: new (...args: any[]) => Strategy;
+declare const JwtStrategy_base: any;
 export declare class JwtStrategy extends JwtStrategy_base {
     private configService;
     private customerRepository;
@@ -21,7 +20,7 @@ export declare class JwtStrategy extends JwtStrategy_base {
     validate(payload: JwtPayload): Promise<{
         userId: string;
         email: string;
-        userType: "customer" | "provider" | "admin";
+        userType: "admin" | "customer" | "provider";
         user: Customer | ServiceProvider | Admin;
     }>;
 }
