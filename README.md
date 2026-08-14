@@ -35,23 +35,38 @@ Run Vite URL into your web browser
 
 # ServiceHub Database
 
+## Prerequisites
+- [DBeaver](https://dbeaver.io/download/) installed (or any database management tool)
+
 ---
 
-## How to access database (For both MACs and Windows)
+## First-Time Setup
 
-### 1. Install DBeaver:
+1. Open DBeaver
+2. Click **New Database Connection** (plug icon in top left)
+3. Select **MySQL** → click **Next**
+4. Fill in the fields:
 
-https://dbeaver.io/download/
+| Field | Value |
+|---|---|
+| Host | provided by host |
+| Port | provided by host |
+| Database | `service_marketplace` |
+| Username | database username (sent by the host) |
+| Password | database password (sent by the host) |
 
-Go to the link above and follow each step to install DBeabver.
+5. Click **Test Connection** — if it says OK, click **Finish**
 
-### 2. Connect to the database:
+---
 
-1. Select 'Connect to a new database' (in the top left corner of DBeaver)
-2. Fill in these 5 fields:
-   - Host: Will be sent each time (because the host will change each time)
-   - Port: Same as Host
-   - Username: Member's database username
-   - Password: Member's database password
-   - Database: service_marketplace
+## Every Time the Host Restarts Ngrok
+
+The host and port change on every restart. To update your connection:
+
+1. Right click your existing connection in DBeaver
+2. Click **Edit Connection**
+3. Update **Host** and **Port** with the new values from the group chat
+4. Click **Finish**
+
+---
 
