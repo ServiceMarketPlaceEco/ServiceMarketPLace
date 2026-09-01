@@ -2,6 +2,11 @@
 // Vue utilities for reactive state, calculated data and automatic scrolling.
 import { computed, nextTick, ref } from 'vue'
 
+// TEMPORARY FRONTEND-ONLY TESTING SWITCH:
+// Keep this set to true while no backend is available.
+// Change it to false when the real POST /api/ai-chat endpoint is ready.
+const USE_MOCK_AI = true
+
 // Data passed into the chatbot by its parent component.
 const props = defineProps({
   signedInUser: { type: Object, default: null },
@@ -68,6 +73,64 @@ async function scrollToBottom() {
   }
 }
 
+// TEMPORARY MOCK AI:
+// Simulates a backend response so the complete chatbot interface can be tested.
+// This is keyword-based sample data, not a real artificial-intelligence service.
+async function getMockAIReply(message) {
+  // Simulate the time normally required for a backend request.
+  await new Promise((resolve) => setTimeout(resolve, 800))
+
+  const question = message.toLowerCase()
+
+  // Word boundaries prevent "hi" from accidentally matching words like "this".
+  if (/\b(hello|hi|hey)\b/.test(question)) {
+    return 'Hello! I can help with ServiceHub bookings, tracking, providers and services.'
+  }
+
+  if (
+    question.includes('book') ||
+    question.includes('request service')
+  ) {
+    return 'To book a service, choose a service card, press Request Service, complete the request form and submit it.'
+  }
+
+  if (
+    question.includes('track') ||
+    question.includes('status')
+  ) {
+    return userRequests.value.length > 0
+      ? `You currently have ${userRequests.value.length} visible service request(s). Open your dashboard to view their progress.`
+      : 'You do not currently have any visible requests. Submitted requests will appear in your dashboard.'
+  }
+
+  if (
+    question.includes('provider') ||
+    question.includes('approval')
+  ) {
+    return 'Providers register first and wait for administrator approval. Once approved, they can sign in and manage assigned requests.'
+  }
+
+  if (question.includes('admin')) {
+    return 'Administrators can approve providers, assign service requests, manage users and approve customer-provider chat access.'
+  }
+
+  if (
+    question.includes('price') ||
+    question.includes('cost') ||
+    question.includes('bdt')
+  ) {
+    return 'Starting prices are displayed in BDT on each ServiceHub service card.'
+  }
+
+  if (question.includes('service')) {
+    return props.services.length > 0
+      ? `ServiceHub currently displays ${props.services.length} service option(s). Select a service card to view its details.`
+      : 'ServiceHub provides service categories that customers can browse and request.'
+  }
+
+  return `This is a temporary frontend response to: "${message}". A real AI response will be supplied when the backend is connected.`
+}
+
 // Send a message to the backend AI endpoint and display its reply.
 async function sendMessage() {
   const text = input.value.trim()
@@ -85,29 +148,39 @@ async function sendMessage() {
   await scrollToBottom()
 
   try {
-    // Change this part when backend API is created or change, this is for testing only.
-    const response = await fetch('/api/ai-chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: text,
-        history: previousHistory,
-        context: chatbotContext.value,
-      }),
-    })
+    let assistantReply
 
-    const data = await response.json()
+    if (USE_MOCK_AI) {
+      // Frontend-only mode: generate a simulated reply without a backend.
+      assistantReply = await getMockAIReply(text)
+    } else {
+      // Real mode: Vite can proxy this URL to the NestJS backend.
+      const response = await fetch('/api/ai-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          history: previousHistory,
+          context: chatbotContext.value,
+        }),
+      })
 
-    if (!response.ok) {
-      throw new Error(data.message || 'The chatbot request failed.')
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || 'The chatbot request failed.')
+      }
+
+      // The real backend should return: { reply: 'AI response' }.
+      if (!data.reply) {
+        throw new Error('The backend did not return an AI reply.')
+      }
+
+      assistantReply = data.reply
     }
 
-    // The backend should return: { reply: 'AI response' }.
-    if (!data.reply) {
-      throw new Error('The backend did not return an AI reply.')
-    }
-
-    messages.value.push({ role: 'assistant', text: data.reply })
+    // Both mock mode and real mode display replies in the same interface.
+    messages.value.push({ role: 'assistant', text: assistantReply })
   } catch (error) {
     // Keep technical details in the console and show users a friendly message.
     console.error('ServiceHub chatbot error:', error)
