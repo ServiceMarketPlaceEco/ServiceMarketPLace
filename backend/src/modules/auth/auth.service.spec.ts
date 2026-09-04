@@ -209,6 +209,116 @@ describe('AuthService', () => {
       ).rejects.toThrow('Your account is not active');
     });
 
+    // ---- Admin login ----
+    // This is the case the client asked about in their email, TC1 in the test
+    // case report. Everything below is the service layer version of it.
+
+    it('logs an admin in with the right password and returns userType admin', async () => {
+      const passwordHash = await bcrypt.hash('Password@123', 10);
+      adminRepo.findOne.mockResolvedValue({
+        id: 'admin-1',
+        email: 'admin@servicehub.local',
+        passwordHash,
+        isActive: true,
+      });
+
+      const result = await service.login({
+        email: 'admin@servicehub.local',
+        password: 'Password@123',
+        userType: UserTypeDto.ADMIN,
+      } as any);
+
+      expect(result.accessToken).toBe('fake-jwt-token');
+      // The frontend reads userType to decide which dashboard to show, so getting
+      // this wrong would land an admin on the customer view.
+      expect(result.userType).toBe('admin');
+      expect((result.user as any).passwordHash).toBeUndefined();
+    });
+
+    it('signs the admin token with the admin id, not a customer id', async () => {
+      const passwordHash = await bcrypt.hash('Password@123', 10);
+      adminRepo.findOne.mockResolvedValue({
+        id: 'admin-1',
+        email: 'admin@servicehub.local',
+        passwordHash,
+        isActive: true,
+      });
+
+      await service.login({
+        email: 'admin@servicehub.local',
+        password: 'Password@123',
+        userType: UserTypeDto.ADMIN,
+      } as any);
+
+      // Whatever gets signed has to carry the admin id and the admin userType,
+      // otherwise the guards on the admin endpoints won't let the request in.
+      const [payload] = jwtService.sign.mock.calls[0];
+      expect(payload.sub).toBe('admin-1');
+      expect(payload.userType).toBe('admin');
+    });
+
+    it('rejects an admin login with the wrong password', async () => {
+      const passwordHash = await bcrypt.hash('CorrectPassword@1', 10);
+      adminRepo.findOne.mockResolvedValue({
+        id: 'admin-1',
+        email: 'admin@servicehub.local',
+        passwordHash,
+        isActive: true,
+      });
+
+      await expect(
+        service.login({
+          email: 'admin@servicehub.local',
+          password: 'WrongPassword@1',
+          userType: UserTypeDto.ADMIN,
+        } as any),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('rejects an admin email that isnt registered', async () => {
+      adminRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.login({
+          email: 'nobody@servicehub.local',
+          password: 'Password@123',
+          userType: UserTypeDto.ADMIN,
+        } as any),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('blocks a deactivated admin from logging in', async () => {
+      adminRepo.findOne.mockResolvedValue({
+        id: 'admin-1',
+        email: 'admin@servicehub.local',
+        passwordHash: 'whatever',
+        isActive: false,
+      });
+
+      await expect(
+        service.login({
+          email: 'admin@servicehub.local',
+          password: 'Password@123',
+          userType: UserTypeDto.ADMIN,
+        } as any),
+      ).rejects.toThrow('Your account is not active');
+    });
+
+    it('a customer email cant get in through the admin option', async () => {
+      // Picking Admin dashboard only looks in the admins table, so a real customer
+      // email should still be turned away here.
+      adminRepo.findOne.mockResolvedValue(null);
+      customerRepo.findOne.mockResolvedValue({ customerId: 'cust-1' });
+
+      await expect(
+        service.login({
+          email: 'test@example.com',
+          password: 'Password@123',
+          userType: UserTypeDto.ADMIN,
+        } as any),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
     it('throws BadRequestException for an unknown user type', async () => {
       await expect(
         service.login({ email: 'a@b.com', password: 'x', userType: 'alien' } as any),

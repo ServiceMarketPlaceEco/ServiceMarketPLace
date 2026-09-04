@@ -22,6 +22,8 @@ export const testConfigService = {
 export const mockRepo = () => ({
   findOne: jest.fn(),
   find: jest.fn(),
+  // the admin lists are paginated so they use findAndCount
+  findAndCount: jest.fn(),
   create: jest.fn((x: any) => x),
   save: jest.fn(async (x: any) => x),
   remove: jest.fn(),

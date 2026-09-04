@@ -1,8 +1,4 @@
-// integration tests for the review moderation endpoints
-// boots a real nest app and hits the moderation routes over http.
-// the db is mocked (same approach as the other e2e specs) so we control
-// exactly which reviews the scan sees.
-// run with: npm run test:e2e
+
 
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';

@@ -20,12 +20,14 @@ describe('Auth endpoints (integration)', () => {
   let app: INestApplication;
   let customerRepo: any;
   let providerRepo: any;
+  let adminRepo: any;
   let refreshRepo: any;
   let mailService: any;
 
   beforeAll(async () => {
     customerRepo = mockRepo();
     providerRepo = mockRepo();
+    adminRepo = mockRepo();
     refreshRepo = mockRepo();
     mailService = {
       sendWelcomeEmail: jest.fn(),
@@ -41,7 +43,7 @@ describe('Auth endpoints (integration)', () => {
         testConfigService,
         { provide: getRepositoryToken(Customer), useValue: customerRepo },
         { provide: getRepositoryToken(ServiceProvider), useValue: providerRepo },
-        { provide: getRepositoryToken(Admin), useValue: mockRepo() },
+        { provide: getRepositoryToken(Admin), useValue: adminRepo },
         { provide: getRepositoryToken(RefreshToken), useValue: refreshRepo },
         { provide: MailService, useValue: mailService },
       ],
@@ -162,6 +164,105 @@ describe('Auth endpoints (integration)', () => {
       await request(app.getHttpServer())
         .post('/api/auth/login')
         .send({ email: 'ghost@example.com', password: 'Password@123', userType: 'customer' })
+        .expect(401);
+    });
+
+    // ---- Admin login over HTTP ----
+    // Same case as TC1 in the test case report, but going through the real
+    // controller and validation pipe this time rather than calling the service.
+
+    it('logs an admin in and returns userType admin so the app can route to /admin', async () => {
+      const passwordHash = await bcrypt.hash('Password@123', 10);
+      adminRepo.findOne.mockResolvedValue({
+        id: 'admin-1',
+        email: 'admin@servicehub.local',
+        passwordHash,
+        isActive: true,
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({
+          email: 'admin@servicehub.local',
+          password: 'Password@123',
+          userType: 'admin',
+        })
+        .expect(200);
+
+      expect(res.body.accessToken).toBeDefined();
+      expect(res.body.refreshToken).toBeDefined();
+      // The frontend reads userType to decide where to send them.
+      expect(res.body.userType).toBe('admin');
+    });
+
+    it('never sends the admin password hash back in the login response', async () => {
+      const passwordHash = await bcrypt.hash('Password@123', 10);
+      adminRepo.findOne.mockResolvedValue({
+        id: 'admin-1',
+        email: 'admin@servicehub.local',
+        passwordHash,
+        isActive: true,
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({
+          email: 'admin@servicehub.local',
+          password: 'Password@123',
+          userType: 'admin',
+        })
+        .expect(200);
+
+      expect(JSON.stringify(res.body)).not.toContain(passwordHash);
+    });
+
+    it('returns 401 for an admin login with the wrong password', async () => {
+      const passwordHash = await bcrypt.hash('RealPassword@1', 10);
+      adminRepo.findOne.mockResolvedValue({
+        id: 'admin-1',
+        email: 'admin@servicehub.local',
+        passwordHash,
+        isActive: true,
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({
+          email: 'admin@servicehub.local',
+          password: 'WrongPassword@1',
+          userType: 'admin',
+        })
+        .expect(401);
+    });
+
+    it('returns 401 for an admin email that isnt registered', async () => {
+      adminRepo.findOne.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({
+          email: 'nobody@servicehub.local',
+          password: 'Password@123',
+          userType: 'admin',
+        })
+        .expect(401);
+    });
+
+    it('returns 401 for a deactivated admin account', async () => {
+      adminRepo.findOne.mockResolvedValue({
+        id: 'admin-1',
+        email: 'admin@servicehub.local',
+        passwordHash: 'whatever',
+        isActive: false,
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({
+          email: 'admin@servicehub.local',
+          password: 'Password@123',
+          userType: 'admin',
+        })
         .expect(401);
     });
 

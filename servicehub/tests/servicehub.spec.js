@@ -33,6 +33,57 @@ const MOCK_CUSTOMER_LOGIN = {
   }
 }
 
+// What the backend sends back when an admin signs in. userType is the bit the app reads to decide which dashboard to show.
+const MOCK_ADMIN_LOGIN = {
+  accessToken: 'fake-admin-access',
+  refreshToken: 'fake-admin-refresh',
+  userType: 'admin',
+  user: {
+    id: 'admin-1',
+    name: 'Test Admin',
+    email: 'admin@servicehub.local'
+  }
+}
+
+const MOCK_PROVIDER_LOGIN = {
+  accessToken: 'fake-provider-access',
+  refreshToken: 'fake-provider-refresh',
+  userType: 'provider',
+  user: {
+    providerId: 'prov-1',
+    providerName: 'Rajshahi Cleaners',
+    email: 'provider@servicehub.local',
+    phone: '01800000000',
+    address: 'Boalia',
+    isVerified: true
+  }
+}
+
+async function mockAdminApi(page) {
+  await page.route('**/api/admins/customers**', route =>
+    route.fulfill({ json: { data: [], total: 0 } })
+  )
+  await page.route('**/api/admins/providers**', route =>
+    route.fulfill({ json: { data: [], total: 0 } })
+  )
+  await page.route('**/api/reports**', route => route.fulfill({ json: [] }))
+}
+
+// Same idea for the provider dashboard.
+async function mockProviderApi(page) {
+  await page.route('**/api/providers/me/services**', route => route.fulfill({ json: [] }))
+  await page.route('**/api/reviews/provider/**', route => route.fulfill({ json: [] }))
+}
+
+// Signs in through the real form rather than faking a session, so the account
+async function signInAs(page, role, email, password = 'Password@123') {
+  await page.locator('.nav-links').getByRole('button', { name: 'Sign in' }).click()
+  await page.locator('.auth-card select').selectOption(role)
+  await page.getByPlaceholder(/admin01/i).fill(email)
+  await page.getByPlaceholder('Enter password').fill(password)
+  await page.locator('.auth-card').getByRole('button', { name: 'Sign in' }).click()
+}
+
 // wires up the mocked api before the page loads
 async function mockApi(page) {
   await page.route('**/api/services', route =>
@@ -259,4 +310,118 @@ test('26. Become a provider opens the provider register page', async ({ page }) 
   await page.locator('.nav-links').getByRole('button', { name: 'Become a provider' }).click()
   await expect(page.getByText(/provider/i).first()).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Create your account' })).toHaveCount(0)
+})
+
+// ---------- Admin sign in and dashboard ----------
+
+test('27. admin can sign in and is taken to the admin dashboard', async ({ page }) => {
+  await mockAdminApi(page)
+  // This login returns userType admin instead of customer.
+  await page.route('**/api/auth/login', route => route.fulfill({ json: MOCK_ADMIN_LOGIN }))
+
+  await signInAs(page, 'admin', 'admin@servicehub.local')
+
+  // The admin dashboard has its own heading and a role pill in the sidebar, so
+  // I have to check both rather than just assuming the page changed.
+  await expect(page.getByRole('heading', { name: 'Admin dashboard' })).toBeVisible()
+  await expect(page.locator('.ops-role-pill')).toContainText('Admin')
+})
+
+test('28. admin dashboard shows the management panels, not the customer view', async ({ page }) => {
+  await mockAdminApi(page)
+  await page.route('**/api/auth/login', route => route.fulfill({ json: MOCK_ADMIN_LOGIN }))
+
+  await signInAs(page, 'admin', 'admin@servicehub.local')
+
+  await expect(page.getByRole('heading', { name: 'User management' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Service provider management' })).toBeVisible()
+})
+
+test('29. admin dashboard shows the stat cards', async ({ page }) => {
+  await mockAdminApi(page)
+  await page.route('**/api/auth/login', route => route.fulfill({ json: MOCK_ADMIN_LOGIN }))
+
+  await signInAs(page, 'admin', 'admin@servicehub.local')
+
+  await expect(page.locator('.stat-card').first()).toBeVisible()
+  await expect(page.getByText('Total users')).toBeVisible()
+})
+
+test('30. admin can move between the sidebar sections', async ({ page }) => {
+  await mockAdminApi(page)
+  await page.route('**/api/auth/login', route => route.fulfill({ json: MOCK_ADMIN_LOGIN }))
+
+  await signInAs(page, 'admin', 'admin@servicehub.local')
+  await page.getByRole('button', { name: 'Block requests' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Block requests' })).toBeVisible()
+})
+
+test('31. admin can log out and gets the guest navbar back', async ({ page }) => {
+  await mockAdminApi(page)
+  await page.route('**/api/auth/login', route => route.fulfill({ json: MOCK_ADMIN_LOGIN }))
+
+  await signInAs(page, 'admin', 'admin@servicehub.local')
+  await expect(page.locator('.ops-role-pill')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Log out' }).click()
+
+  await expect(page.locator('.nav-links').getByRole('button', { name: 'Sign in' })).toBeVisible()
+  await expect(page.locator('.ops-role-pill')).toHaveCount(0)
+})
+
+test('32. rejected admin login shows the error and never reaches the dashboard', async ({ page }) => {
+  await mockAdminApi(page)
+  await page.route('**/api/auth/login', route =>
+    route.fulfill({ status: 401, json: { message: 'Invalid credentials' } })
+  )
+  let alertMessage = ''
+  page.on('dialog', async dialog => {
+    alertMessage = dialog.message()
+    await dialog.accept()
+  })
+
+  await signInAs(page, 'admin', 'admin@servicehub.local', 'WrongPassword')
+
+  await expect.poll(() => alertMessage).toContain('Invalid credentials')
+  // The important half of this test. A rejected login must not leave any admin
+  // surface on screen.
+  await expect(page.getByRole('heading', { name: 'Admin dashboard' })).toHaveCount(0)
+  await expect(page.locator('.ops-role-pill')).toHaveCount(0)
+})
+
+// ---------- Provider sign in and dashboard ----------
+
+test('33. provider can sign in and is taken to the provider dashboard', async ({ page }) => {
+  await mockProviderApi(page)
+  await page.route('**/api/auth/login', route => route.fulfill({ json: MOCK_PROVIDER_LOGIN }))
+
+  await signInAs(page, 'provider', 'provider@servicehub.local')
+
+  await expect(page.locator('.ops-role-pill')).toContainText(/provider/i)
+})
+
+test('34. a provider does not get the admin management panels', async ({ page }) => {
+  await mockProviderApi(page)
+  await page.route('**/api/auth/login', route => route.fulfill({ json: MOCK_PROVIDER_LOGIN }))
+
+  await signInAs(page, 'provider', 'provider@servicehub.local')
+
+  // Signed in as a provider, the admin only sections should not render at all.
+  await expect(page.getByRole('heading', { name: 'User management' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Service provider management' })).toHaveCount(0)
+})
+
+test('35. the account type dropdown is actually sent to the login api', async ({ page }) => {
+  await mockAdminApi(page)
+  let sentBody = null
+  await page.route('**/api/auth/login', route => {
+    sentBody = JSON.parse(route.request().postData() || '{}')
+    return route.fulfill({ json: MOCK_ADMIN_LOGIN })
+  })
+
+  await signInAs(page, 'admin', 'admin@servicehub.local')
+
+  // Picking Admin dashboard has to reach the backend as userType admin. 
+  await expect.poll(() => sentBody?.userType).toBe('admin')
 })
