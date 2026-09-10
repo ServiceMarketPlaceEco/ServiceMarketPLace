@@ -4,16 +4,14 @@ import { reactive } from 'vue'
 const emit = defineEmits(['sign-in', 'go-register'])
 
 const form = reactive({
-  role: 'customer',
   identifier: '',
   password: ''
 })
 
 function submit() {
   emit('sign-in', {
-    role: form.role,
-    email: form.identifier,
-    name: form.identifier || undefined
+    identifier: form.identifier,
+    password: form.password
   })
 }
 </script>
@@ -24,33 +22,35 @@ function submit() {
       <p class="eyebrow">Sign in</p>
       <h2>Access your dashboard</h2>
       <p class="muted">
-        Customers, providers and admins use one secure portal, then each role opens a different workspace.
+        Enter your username or phone number. Your account type will be detected automatically.
       </p>
 
       <label>
-        Account type
-        <select v-model="form.role">
-          <option value="customer">Customer dashboard</option>
-          <option value="provider">Provider dashboard</option>
-          <option value="admin">Admin dashboard</option>
-        </select>
-      </label>
-
-      <label>
-        Phone or ID
-        <input v-model="form.identifier" required placeholder="Example: admin01 or PROV-DEMO-01" />
+        Username or phone number
+        <input
+          v-model.trim="form.identifier"
+          required
+          autocomplete="username"
+          placeholder="Enter your username or phone number"
+        />
       </label>
 
       <label>
         Password
-        <input v-model="form.password" type="password" required placeholder="Enter password" />
+        <input
+          v-model="form.password"
+          type="password"
+          required
+          autocomplete="current-password"
+          placeholder="Enter password"
+        />
       </label>
 
       <button class="primary" type="submit">Sign in</button>
       <button
         class="secondary"
         type="button"
-        @click="emit('sign-in', { role: 'customer', name: 'Google Customer', email: 'google.customer@servicehub.local' })"
+        @click="emit('sign-in', { identifier: 'google.customer@servicehub.local', name: 'Google Customer', authProvider: 'google' })"
       >
         Continue with Google demo
       </button>

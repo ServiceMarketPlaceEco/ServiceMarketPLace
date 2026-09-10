@@ -155,7 +155,7 @@ const priceLabel = computed(() => formatBDT(props.service?.price))
 
       <div class="form-actions sticky-form-actions">
         <button class="secondary" type="button" @click="$emit('back')">Cancel</button>
-        <button class="primary" type="submit">Submit to admin</button>
+        <button class="primary" type="submit">Submit</button>
       </div>
     </form>
   </section>

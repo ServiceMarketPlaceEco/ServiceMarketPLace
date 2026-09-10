@@ -80,7 +80,7 @@ function toggleSampleProviderStatus(provider) { provider.status = provider.statu
         <div>
           <h1>{{ activeView === 'dashboard' ? 'Admin dashboard' : activeView }}</h1>
           <p>Manage users, provider approvals, request assignment and chat approval.</p>
-        </div><input v-model="searchTerm" placeholder="Search admin workspace..." />
+        </div><input v-model="searchTerm" aria-label="Search admin workspace" placeholder="Search admin workspace..." />
       </header>
 
       <template v-if="activeView === 'dashboard'">

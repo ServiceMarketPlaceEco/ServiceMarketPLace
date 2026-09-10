@@ -145,6 +145,10 @@ textarea:focus-visible {
   flex: 1;
 }
 
+.app-main:focus {
+  outline: none;
+}
+
 .ops-app-shell {
   background: var(--bg);
 }
@@ -1674,6 +1678,113 @@ td small {
 
   .footer {
     padding: 38px 24px;
+  }
+}
+
+/* Accessibility and form-control consistency */
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--brand) 45%, transparent);
+  outline-offset: 3px;
+}
+
+button,
+[role='button'] {
+  min-height: 44px;
+  line-height: 1.25;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+input:not([type='radio']):not([type='checkbox']),
+select,
+textarea {
+  width: 100%;
+  min-height: 48px;
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+
+input[type='radio'],
+input[type='checkbox'] {
+  min-height: 0;
+}
+
+input[type='date'],
+input[type='time'] {
+  min-width: 0;
+  color-scheme: light;
+}
+
+[data-theme='dark'] input[type='date'],
+[data-theme='dark'] input[type='time'] {
+  color-scheme: dark;
+}
+
+textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+label {
+  line-height: 1.4;
+}
+
+.modal-backdrop {
+  align-items: start !important;
+  overflow-y: auto !important;
+  padding: max(24px, 5vh) 24px !important;
+}
+
+.modal-card {
+  max-height: none !important;
+  margin: auto !important;
+}
+
+@media (max-width: 640px) {
+  .page-section {
+    width: min(var(--max), calc(100% - 28px));
+  }
+
+  .primary,
+  .secondary,
+  .danger,
+  .success,
+  .back-pill,
+  .theme-toggle,
+  .web-btn,
+  .app-btn {
+    white-space: normal;
+  }
+
+  .modal-backdrop {
+    padding: 14px !important;
+  }
+
+  .modal-card {
+    padding: 24px 18px !important;
+    border-radius: 20px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

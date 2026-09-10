@@ -1,10 +1,12 @@
 <script setup>
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 
 const emit = defineEmits(['created', 'google-create', 'go'])
+const error = ref('')
 
 const form = reactive({
   name: '',
+  username: 'PR',
   email: '',
   password: '',
   phone: '',
@@ -12,13 +14,30 @@ const form = reactive({
   serviceType: 'AC Repair & Home Maintenance',
   experience: ''
 })
+
+function submitProvider(authProvider = 'email') {
+  error.value = ''
+  const username = form.username.trim().toUpperCase()
+  if (!username.startsWith('PR') || username.length < 3) {
+    error.value = 'Provider usernames must begin with PR.'
+    return
+  }
+
+  emit(authProvider === 'google' ? 'google-create' : 'created', {
+    ...form,
+    username,
+    role: 'provider',
+    authProvider,
+    name: form.name || (authProvider === 'google' ? 'Google Provider' : '')
+  })
+}
 </script>
 
 <template>
   <section class="auth-page provider-register-page split-auth-page">
     <form
       class="auth-card clean-card"
-      @submit.prevent="$emit('created', { ...form, role: 'provider', authProvider: 'email' })"
+      @submit.prevent="submitProvider('email')"
     >
       <p class="eyebrow">Provider registration</p>
       <h2>Apply to become a provider</h2>
@@ -27,6 +46,8 @@ const form = reactive({
       </p>
 
       <label>Name *<input v-model="form.name" required placeholder="Example: Rajshahi AC Team" /></label>
+      <label>Provider username *<input v-model.trim="form.username" required autocomplete="username" placeholder="Example: PRRAJSHAHI01" /></label>
+      <small class="muted">Provider usernames must begin with PR.</small>
       <label>Email *<input v-model="form.email" type="email" required placeholder="provider@email.com" /></label>
       <label>Password *<input v-model="form.password" type="password" required placeholder="Create a password" /></label>
       <label>Phone *<input v-model="form.phone" required placeholder="01XXXXXXXXX" /></label>
@@ -44,6 +65,8 @@ const form = reactive({
         </select>
       </label>
 
+      <p v-if="error" class="error-text" role="alert">{{ error }}</p>
+
       <label>
         Experience
         <textarea
@@ -56,7 +79,7 @@ const form = reactive({
       <button
         class="secondary"
         type="button"
-        @click="$emit('google-create', { ...form, name: form.name || 'Google Provider', role: 'provider', authProvider: 'google' })"
+        @click="submitProvider('google')"
       >
         Apply with Google demo
       </button>
