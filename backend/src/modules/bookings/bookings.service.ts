@@ -244,13 +244,32 @@ export class BookingsService {
     });
   }
 
-  async updateStatusAdmin(bookingId: string, status: string): Promise<Booking> {
+  async updateStatusAdmin(bookingId: string, status: string, providerId?: string): Promise<Booking> {
     const booking = await this.bookingRepository.findOne({
       where: { bookingId },
     });
 
     if (!booking) {
       throw new NotFoundException('Booking not found');
+    }
+
+    if (providerId) {
+      if (!booking.jobId) {
+        throw new BadRequestException('This booking has no service to match a provider against');
+      }
+
+      const providerService = await this.providerServiceRepository.findOne({
+        where: { providerId, serviceId: booking.jobId },
+      });
+
+      if (!providerService) {
+        throw new BadRequestException('Selected provider does not offer this service');
+      }
+
+      booking.providerServiceId = providerService.id;
+      if (booking.totalAmount === null) {
+        booking.totalAmount = providerService.price;
+      }
     }
 
     // Map status string to enum

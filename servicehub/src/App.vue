@@ -555,9 +555,9 @@ async function rejectProvider(providerId) {
     alert(err.message || 'Could not reject provider.')
   }
 }
-async function assignRequest({ requestId }) {
+async function assignRequest({ requestId, providerId }) {
   try {
-    await api.updateBookingStatusPublic(requestId, 'confirmed')
+    await api.updateBookingStatusPublic(requestId, 'confirmed', providerId)
     await refreshBookings()
   } catch (err) {
     alert(err.message || 'Could not assign request.')

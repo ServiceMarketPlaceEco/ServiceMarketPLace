@@ -134,8 +134,8 @@ export async function getAllBookingsPublic() {
   return request('/bookings/all')
 }
 
-export async function updateBookingStatusPublic(bookingId, status) {
-  return request(`/bookings/${bookingId}/status`, { method: 'PATCH', body: { status } })
+export async function updateBookingStatusPublic(bookingId, status, providerId) {
+  return request(`/bookings/${bookingId}/status`, { method: 'PATCH', body: { status, providerId } })
 }
 
 // ---------- Reviews ----------
