@@ -37,7 +37,7 @@ function submit() {
       </label>
 
       <label>
-        Name, phone or ID
+        Phone or ID
         <input v-model="form.identifier" required placeholder="Example: admin01 or PROV-DEMO-01" />
       </label>
 
