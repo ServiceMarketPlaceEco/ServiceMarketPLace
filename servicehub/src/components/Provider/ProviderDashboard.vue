@@ -56,6 +56,7 @@ function chatStatus(requestId) { return props.chatApprovals.find(item => item.re
 function acceptRequest(request) { emit('accept-request', { requestId: request.id, providerId: props.currentUser?.id }) }
 function startJob(request) { emit('status-change', { requestId: request.id, status: 'in-progress' }) }
 function completeJob(request) { emit('status-change', { requestId: request.id, status: 'completed' }) }
+function undoComplete(request) { emit('status-change', { requestId: request.id, status: 'in-progress' }) }
 function openDeclineModal(request) { declineTarget.value = request; declineReason.value = '' }
 function confirmDecline() {
   if (!declineReason.value.trim()) return
@@ -217,7 +218,7 @@ function savePassword() {
           <article v-for="request in filteredRequests" :key="request.id" class="large-request-row">
             <div>
               <h3>{{ request.serviceTitle }}</h3>
-              <p>{{ request.customerName }} · {{ request.location }} · {{ request.preferredDate }}</p><small>{{
+              <p>{{ request.customerName }}<span v-if="request.customerPhone"> · {{ request.customerPhone }}</span> · {{ request.location }} · {{ request.preferredDate }}</p><small>{{
                 request.details }}</small><small v-if="request.needsUpfrontPayment">Bank payment required: {{
                   request.bankName }} · {{ request.accountName }}</small>
             </div><strong>৳{{ request.budget }}</strong><span class="status-pill"
@@ -229,7 +230,9 @@ function savePassword() {
                 @click="acceptRequest(request)">Accept</button><button v-if="request.providerStatus === 'accepted'"
                 class="primary small" @click="startJob(request)">Start job</button><button
                 v-if="request.providerStatus === 'in-progress'" class="success small"
-                @click="completeJob(request)">Complete</button></div>
+                @click="completeJob(request)">Complete</button><button
+                v-if="request.providerStatus === 'completed'" class="secondary small"
+                @click="undoComplete(request)">Undo complete</button></div>
           </article>
         </section>
       </template>

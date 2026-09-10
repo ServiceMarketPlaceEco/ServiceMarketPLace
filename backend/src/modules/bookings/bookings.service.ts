@@ -207,7 +207,7 @@ export class BookingsService {
       [BookingStatus.PENDING]: [BookingStatus.CONFIRMED, BookingStatus.CANCELLED],
       [BookingStatus.CONFIRMED]: [BookingStatus.IN_PROGRESS, BookingStatus.CANCELLED],
       [BookingStatus.IN_PROGRESS]: [BookingStatus.COMPLETED, BookingStatus.CANCELLED],
-      [BookingStatus.COMPLETED]: [],
+      [BookingStatus.COMPLETED]: [BookingStatus.IN_PROGRESS],
       [BookingStatus.CANCELLED]: [],
     };
 
