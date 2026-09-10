@@ -494,6 +494,24 @@ async function signIn(payload) {
   }
 }
 
+async function requestPasswordReset({ email, userType }) {
+  try {
+    await api.forgotPassword(email, userType)
+    alert('If an account exists with this email, a password reset link has been sent.')
+  } catch (err) {
+    alert(err.message || 'Could not request password reset.')
+  }
+}
+
+async function confirmPasswordReset({ token, newPassword }) {
+  try {
+    await api.resetPassword(token, newPassword)
+    alert('Password reset successfully. You can now sign in with your new password.')
+  } catch (err) {
+    alert(err.message || 'Could not reset password. The token may be invalid or expired.')
+  }
+}
+
 // ---------- Bookings ----------
 
 function openRequest(service) {
@@ -613,6 +631,28 @@ async function toggleProviderService({ id, active }) {
     alert(err.message || 'Could not update service.')
   }
 }
+async function updateProviderProfile(payload) {
+  try {
+    const res = await api.updateProviderProfile({
+      providerName: payload.providerName,
+      address: payload.address,
+      phone: digitsOnly(payload.phone),
+      description: payload.description
+    })
+    signedInUser.value = normalizeUser(res, 'provider')
+    alert('Profile updated.')
+  } catch (err) {
+    alert(err.message || 'Could not update profile.')
+  }
+}
+async function changeProviderPassword(payload) {
+  try {
+    await api.changeProviderPassword(payload)
+    alert('Password updated.')
+  } catch (err) {
+    alert(err.message || 'Could not update password.')
+  }
+}
 
 // ---------- Chat (kept as a local-only demo; no backend module exists for it) ----------
 
@@ -691,7 +731,7 @@ function resetLocalDemo() {
       </template>
 
       <HowItWorksPage v-else-if="currentPage === 'how'" />
-      <SignInPage v-else-if="currentPage === 'signin'" @sign-in="signIn" @go-register="goTo('register')" />
+      <SignInPage v-else-if="currentPage === 'signin'" @sign-in="signIn" @go-register="goTo('register')" @forgot-password="requestPasswordReset" @reset-password="confirmPasswordReset" />
       <RegisterPage v-else-if="currentPage === 'register'" @create-account="createAccount" @google-create-account="createAccount" @go-signin="goTo('signin')" />
       <ProviderRegisterPage v-else-if="currentPage === 'provider-register'" @created="createProvider" @google-create="createProvider" @go="goTo" />
       <RequestForm v-else-if="currentPage === 'request'" :service="selectedService" :customer="signedInUser" @submit-request="submitRequest" @back="goTo('home')" />
@@ -719,6 +759,8 @@ function resetLocalDemo() {
         @block-request="createBlockRequest"
         @add-service="addProviderServiceOffering"
         @toggle-service="toggleProviderService"
+        @update-profile="updateProviderProfile"
+        @change-password="changeProviderPassword"
       />
 
       <AdminDashboard

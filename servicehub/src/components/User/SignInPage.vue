@@ -1,12 +1,19 @@
 <script setup>
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 
-const emit = defineEmits(['sign-in', 'go-register'])
+const emit = defineEmits(['sign-in', 'go-register', 'forgot-password', 'reset-password'])
 
 const form = reactive({
   role: 'customer',
   identifier: '',
   password: ''
+})
+
+const showReset = ref(false)
+const resetForm = reactive({
+  email: '',
+  token: '',
+  newPassword: ''
 })
 
 function submit() {
@@ -16,6 +23,16 @@ function submit() {
     name: form.identifier || undefined,
     password: form.password
   })
+}
+
+function requestReset() {
+  if (!resetForm.email.trim()) return
+  emit('forgot-password', { email: resetForm.email.trim(), userType: form.role })
+}
+
+function submitReset() {
+  if (!resetForm.token.trim() || !resetForm.newPassword.trim()) return
+  emit('reset-password', { token: resetForm.token.trim(), newPassword: resetForm.newPassword })
 }
 </script>
 
@@ -46,6 +63,27 @@ function submit() {
         Password
         <input v-model="form.password" type="password" required placeholder="Enter password" />
       </label>
+
+      <button class="link-btn" type="button" @click="showReset = !showReset">Forgot password?</button>
+
+      <div v-if="showReset" class="clean-card" style="padding: 16px; margin-bottom: 12px;">
+        <p class="muted">Enter your email to request a reset link, then paste the token you receive to set a new password.</p>
+        <label>
+          Email
+          <input v-model="resetForm.email" type="email" placeholder="you@example.com" />
+        </label>
+        <button class="secondary small" type="button" @click="requestReset">Send reset link</button>
+
+        <label style="margin-top: 12px; display: block;">
+          Reset token
+          <input v-model="resetForm.token" placeholder="Paste the token from your email" />
+        </label>
+        <label>
+          New password
+          <input v-model="resetForm.newPassword" type="password" placeholder="New password" />
+        </label>
+        <button class="primary small" type="button" @click="submitReset">Reset password</button>
+      </div>
 
       <button class="primary" type="submit">Sign in</button>
       <button
