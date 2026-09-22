@@ -1,6 +1,7 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { services } from './data/services'
+import * as api from './services/api'
 
 import NavBar from './components/User/NavBar.vue'
 import HeroSection from './components/User/HeroSection.vue'
@@ -48,6 +49,10 @@ const messages = ref(savedMessages)
 const blockRequests = ref(savedBlocks)
 const reviews = ref(savedReviews)
 const appMain = ref(null)
+
+// Data loaded from the backend API.
+const providerServices = ref([])
+const providerReviews = ref([])
 
 document.documentElement.dataset.theme = theme.value
 
