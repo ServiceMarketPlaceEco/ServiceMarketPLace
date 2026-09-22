@@ -1,6 +1,8 @@
 <script setup>
-// lightweight front-end assistant: keyword matching gives broader conversation without external api dependency.
+// Real AI assistant backed by POST /chatbot/message (OpenAI). Falls back to local
+// keyword matching if the backend assistant isn't configured or unreachable.
 import { computed, ref } from 'vue'
+import * as api from '../../services/api'
 
 const props = defineProps({
     signedInUser: { type: Object, default: null },
@@ -10,6 +12,7 @@ const props = defineProps({
 
 const open = ref(false)
 const input = ref('')
+const sending = ref(false)
 const messages = ref([
     { role: 'assistant', text: 'Hi, I am the ServiceHub assistant. Ask me about services, login, tracking, provider approval, admin workflow, or your request status.' }
 ])
@@ -40,12 +43,24 @@ function answerFor(text) {
     return 'I can help with ServiceHub services, pricing, booking, dashboard navigation, provider approval, admin assignment and request tracking. Try asking about one of those areas.'
 }
 
-function sendMessage() {
+async function sendMessage() {
     const text = input.value.trim()
-    if (!text) return
+    if (!text || sending.value) return
+
+    const history = messages.value.slice(-10).map(m => ({ role: m.role, content: m.text }))
     messages.value.push({ role: 'user', text })
-    messages.value.push({ role: 'assistant', text: answerFor(text) })
     input.value = ''
+    sending.value = true
+
+    try {
+        const { reply } = await api.sendChatbotMessage(text, history)
+        messages.value.push({ role: 'assistant', text: reply })
+    } catch (err) {
+        // AI backend not configured yet or unreachable: fall back to local keyword answers
+        messages.value.push({ role: 'assistant', text: answerFor(text) })
+    } finally {
+        sending.value = false
+    }
 }
 </script>
 
@@ -67,8 +82,8 @@ function sendMessage() {
                 <button @click="input = 'How do I track my request?'; sendMessage()">Tracking</button>
             </div>
             <form class="ai-compose" @submit.prevent="sendMessage">
-                <input v-model="input" placeholder="Ask anything about ServiceHub..." />
-                <button class="primary small" type="submit">Send</button>
+                <input v-model="input" placeholder="Ask anything about ServiceHub..." :disabled="sending" />
+                <button class="primary small" type="submit" :disabled="sending">{{ sending ? '...' : 'Send' }}</button>
             </form>
         </section>
     </aside>

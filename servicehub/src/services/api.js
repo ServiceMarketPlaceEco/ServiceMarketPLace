@@ -183,3 +183,9 @@ export async function getAllReportsAdmin() {
 export async function updateReportStatus(id, status) {
   return request(`/reports/${id}/status`, { method: 'PUT', body: { status }, auth: true })
 }
+
+// ---------- AI Chatbot ----------
+
+export async function sendChatbotMessage(message, history) {
+  return request('/chatbot/message', { method: 'POST', body: { message, history } })
+}
