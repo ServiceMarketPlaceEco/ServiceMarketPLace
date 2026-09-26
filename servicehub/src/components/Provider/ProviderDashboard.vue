@@ -13,7 +13,7 @@ const props = defineProps({
   reviews: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['accept-request', 'decline-request', 'status-change', 'request-chat', 'send-message', 'block-request', 'sign-out', 'go-home', 'toggle-theme', 'add-service', 'toggle-service'])
+const emit = defineEmits(['accept-request', 'decline-request', 'status-change', 'request-chat', 'send-message', 'block-request', 'sign-out', 'go-home', 'toggle-theme', 'add-service', 'toggle-service', 'update-profile', 'change-password'])
 
 const activeView = ref('dashboard')
 const searchTerm = ref('')
@@ -56,6 +56,7 @@ function chatStatus(requestId) { return props.chatApprovals.find(item => item.re
 function acceptRequest(request) { emit('accept-request', { requestId: request.id, providerId: props.currentUser?.id }) }
 function startJob(request) { emit('status-change', { requestId: request.id, status: 'in-progress' }) }
 function completeJob(request) { emit('status-change', { requestId: request.id, status: 'completed' }) }
+function undoComplete(request) { emit('status-change', { requestId: request.id, status: 'in-progress' }) }
 function openDeclineModal(request) { declineTarget.value = request; declineReason.value = '' }
 function confirmDecline() {
   if (!declineReason.value.trim()) return
@@ -90,6 +91,24 @@ function requestCustomerBlock() {
   if (!blockTargetName.value.trim() || !blockReason.value.trim()) return
   emit('block-request', { targetName: blockTargetName.value, targetRole: 'customer', reason: blockReason.value })
   blockTargetName.value = ''; blockReason.value = ''
+}
+
+const profileForm = reactive({
+  providerName: props.currentUser?.name || '',
+  address: props.currentUser?.area || '',
+  phone: props.currentUser?.phone || '',
+  description: props.currentUser?.description || ''
+})
+function saveProfile() {
+  emit('update-profile', { ...profileForm })
+}
+
+const passwordForm = reactive({ currentPassword: '', newPassword: '' })
+function savePassword() {
+  if (!passwordForm.currentPassword || !passwordForm.newPassword) return
+  emit('change-password', { ...passwordForm })
+  passwordForm.currentPassword = ''
+  passwordForm.newPassword = ''
 }
 </script>
 
@@ -199,7 +218,7 @@ function requestCustomerBlock() {
           <article v-for="request in filteredRequests" :key="request.id" class="large-request-row">
             <div>
               <h3>{{ request.serviceTitle }}</h3>
-              <p>{{ request.customerName }} · {{ request.location }} · {{ request.preferredDate }}</p><small>{{
+              <p>{{ request.customerName }}<span v-if="request.customerPhone"> · {{ request.customerPhone }}</span> · {{ request.location }} · {{ request.preferredDate }}</p><small>{{
                 request.details }}</small><small v-if="request.needsUpfrontPayment">Bank payment required: {{
                   request.bankName }} · {{ request.accountName }}</small>
             </div><strong>৳{{ request.budget }}</strong><span class="status-pill"
@@ -211,7 +230,9 @@ function requestCustomerBlock() {
                 @click="acceptRequest(request)">Accept</button><button v-if="request.providerStatus === 'accepted'"
                 class="primary small" @click="startJob(request)">Start job</button><button
                 v-if="request.providerStatus === 'in-progress'" class="success small"
-                @click="completeJob(request)">Complete</button></div>
+                @click="completeJob(request)">Complete</button><button
+                v-if="request.providerStatus === 'completed'" class="secondary small"
+                @click="undoComplete(request)">Undo complete</button></div>
           </article>
         </section>
       </template>
@@ -257,6 +278,28 @@ function requestCustomerBlock() {
       </template>
 
       <template v-if="activeView === 'settings'">
+        <section class="ops-panel">
+          <h2>Profile</h2>
+          <p class="muted">Update the details customers and admins see for your provider account.</p>
+          <div class="settings-grid"><label>Business name<input v-model="profileForm.providerName"
+                placeholder="Your business name" /></label><label>Service area<input v-model="profileForm.address"
+                placeholder="Example: Rajshahi City" /></label><label>Phone<input v-model="profileForm.phone"
+                placeholder="01XXXXXXXXX" /></label><label class="full">Description<textarea
+                v-model="profileForm.description"
+                placeholder="Describe your services and experience"></textarea></label></div><button
+            class="secondary small mt-action" @click="saveProfile">Save profile</button>
+        </section>
+
+        <section class="ops-panel">
+          <h2>Change password</h2>
+          <p class="muted">Update your account password.</p>
+          <div class="settings-grid"><label>Current password<input v-model="passwordForm.currentPassword"
+                type="password" placeholder="Current password" /></label><label>New password<input
+                v-model="passwordForm.newPassword" type="password"
+                placeholder="New password" /></label></div><button class="secondary small mt-action"
+            @click="savePassword">Update password</button>
+        </section>
+
         <section class="ops-panel">
           <h2>Safety request</h2>
           <p class="muted">Request to block a customer. Admin reviews it before action is applied.</p>

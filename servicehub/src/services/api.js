@@ -63,6 +63,14 @@ export async function login(payload) {
   return request('/auth/login', { method: 'POST', body: payload })
 }
 
+export async function forgotPassword(email, userType) {
+  return request('/auth/forgot-password', { method: 'POST', body: { email, userType } })
+}
+
+export async function resetPassword(token, newPassword) {
+  return request('/auth/reset-password', { method: 'POST', body: { token, newPassword } })
+}
+
 // ---------- Services catalog ----------
 
 export async function getServices() {
@@ -74,6 +82,18 @@ export async function getServiceProviders(serviceId) {
 }
 
 // ---------- Provider self-service ----------
+
+export async function getProviderProfile() {
+  return request('/providers/me/profile', { auth: true })
+}
+
+export async function updateProviderProfile(payload) {
+  return request('/providers/me/profile', { method: 'PUT', body: payload, auth: true })
+}
+
+export async function changeProviderPassword(payload) {
+  return request('/providers/me/change-password', { method: 'PUT', body: payload, auth: true })
+}
 
 export async function addProviderService(payload) {
   return request('/providers/me/services', { method: 'POST', body: payload, auth: true })
@@ -114,8 +134,8 @@ export async function getAllBookingsPublic() {
   return request('/bookings/all')
 }
 
-export async function updateBookingStatusPublic(bookingId, status) {
-  return request(`/bookings/${bookingId}/status`, { method: 'PATCH', body: { status } })
+export async function updateBookingStatusPublic(bookingId, status, providerId) {
+  return request(`/bookings/${bookingId}/status`, { method: 'PATCH', body: { status, providerId } })
 }
 
 // ---------- Reviews ----------
@@ -162,4 +182,10 @@ export async function getAllReportsAdmin() {
 
 export async function updateReportStatus(id, status) {
   return request(`/reports/${id}/status`, { method: 'PUT', body: { status }, auth: true })
+}
+
+// ---------- AI Chatbot ----------
+
+export async function sendChatbotMessage(message, history) {
+  return request('/chatbot/message', { method: 'POST', body: { message, history } })
 }

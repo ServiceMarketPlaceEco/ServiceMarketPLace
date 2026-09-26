@@ -39,13 +39,13 @@ export class BookingsController {
   }
 
   @Patch(':id/status')
-  @ApiOperation({ summary: 'Update booking status (Public - for demo admin)' })
+  @ApiOperation({ summary: 'Update booking status, optionally assigning a provider (Public - for demo admin)' })
   @ApiResponse({ status: 200, description: 'Booking status updated' })
   async updateStatus(
     @Param('id') id: string,
-    @Body() body: { status: string },
+    @Body() body: { status: string; providerId?: string },
   ) {
-    return this.bookingsService.updateStatusAdmin(id, body.status);
+    return this.bookingsService.updateStatusAdmin(id, body.status, body.providerId);
   }
 
   @Post()
