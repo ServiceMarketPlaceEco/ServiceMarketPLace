@@ -62,13 +62,14 @@ A NestJS backend for the ServiceHub marketplace platform, providing authenticati
    MAIL_FROM="ServiceHub" <noreply@servicehub.com>
    ```
 
-3. **Run database migrations**:
-   
-   Open DBeaver and execute the SQL scripts in order:
+3. **Create the database, tables and seed data**:
+   ```bash
+   npm run db:setup
    ```
-   database/migrations/001_schema_update.sql
-   database/seeds/001_seed_data.sql
-   ```
+   This creates the `DB_DATABASE` database if needed and runs
+   `database/migrations/000_initial_schema.sql`, then every file in
+   `database/seeds/`, in order. Use `npm run db:reset` to drop and rebuild it.
+   See the root `README.md` for manual (DBeaver / mysql CLI) instructions.
 
 4. **Start the server**:
    ```bash
@@ -83,8 +84,8 @@ A NestJS backend for the ServiceHub marketplace platform, providing authenticati
 ## API Documentation
 
 Once the server is running, visit:
-- Swagger UI: `http://localhost:3000/api/docs`
-- OpenAPI JSON: `http://localhost:3000/api/docs-json`
+- Swagger UI: `http://localhost:3001/api/docs`
+- OpenAPI JSON: `http://localhost:3001/api/docs-json`
 
 ## API Endpoints
 
