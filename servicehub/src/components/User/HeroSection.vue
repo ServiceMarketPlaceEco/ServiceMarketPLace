@@ -1,6 +1,6 @@
 <script setup>
-// HeroSection.vue: landing page hero section with two clear calls to action.
-defineEmits(['find-services', 'view-tracking'])
+// Guests start by creating a customer account before accessing services.
+defineEmits(['get-started', 'view-tracking'])
 </script>
 
 <template>
@@ -14,8 +14,8 @@ defineEmits(['find-services', 'view-tracking'])
           access.
         </p>
         <div class="hero-actions">
-          <button class="primary" @click="$emit('find-services')">Find services</button>
-          <button class="secondary" @click="$emit('view-tracking')">View tracking demo</button>
+          <button class="primary" type="button" @click="$emit('get-started')">Get started</button>
+          <button class="secondary" type="button" @click="$emit('view-tracking')">View tracking demo</button>
         </div>
       </div>
 

@@ -7,6 +7,7 @@ const error = ref('')
 
 const form = reactive({
   name: '',
+  username: '',
   phone: '',
   password: '',
   location: '',
@@ -17,12 +18,14 @@ function submitForm() {
   error.value = ''
 
   if (!form.name.trim()) return error.value = 'Name is required.'
+  if (!form.username.trim()) return error.value = 'Username is required.'
   if (!form.phone.trim()) return error.value = 'Phone number is required.'
   if (!form.password.trim()) return error.value = 'Password is required.'
   if (!form.location) return error.value = 'Please select your Rajshahi location.'
 
   emit('create-account', {
     name: form.name.trim(),
+    username: form.username.trim(),
     phone: form.phone.trim(),
     password: form.password,
     location: form.location,
@@ -32,13 +35,14 @@ function submitForm() {
 }
 
 function continueWithGoogle() {
-  if (!form.name.trim() || !form.phone.trim() || !form.location) {
-    error.value = 'Enter your name, phone and location before continuing with Google.'
+  if (!form.name.trim() || !form.username.trim() || !form.phone.trim() || !form.location) {
+    error.value = 'Enter your name, username, phone and location before continuing with Google.'
     return
   }
 
   emit('google-create-account', {
     name: form.name.trim(),
+    username: form.username.trim(),
     phone: form.phone.trim(),
     password: form.password || 'google-demo',
     location: form.location,
@@ -55,10 +59,11 @@ function continueWithGoogle() {
       <h2>Create your account</h2>
 
       <p class="muted">
-        Create a Rajshahi customer account. Name, phone number, password and location are required.
+        Create a Rajshahi customer account. Choose a username you can use to sign in later.
       </p>
 
       <label>Name * <input v-model="form.name" type="text" placeholder="Example: Sam" /></label>
+      <label>Username * <input v-model.trim="form.username" type="text" required autocomplete="username" placeholder="Example: sam24" /></label>
       <label>Phone number * <input v-model="form.phone" type="tel" placeholder="Example: 01XXXXXXXXX" /></label>
       <label>Password * <input v-model="form.password" type="password" placeholder="Create a password" /></label>
 

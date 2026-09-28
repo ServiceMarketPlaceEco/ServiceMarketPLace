@@ -1,12 +1,13 @@
 <script setup>
 import { computed, ref } from 'vue'
 import ServiceCard from './ServiceCard.vue'
+import VoiceSearch from '../AI/VoiceSearch.vue'
 
 const props = defineProps({
   services: { type: Array, default: () => [] }
 })
 
-defineEmits(['request-service'])
+const emit = defineEmits(['request-service'])
 
 const searchQuery = ref('')
 const selectedCategory = ref('All')
@@ -22,6 +23,14 @@ const filteredServices = computed(() => {
     return matchesCategory && (!query || searchable.includes(query))
   })
 })
+
+// VoiceSearch returns a user-checked transcript and selected service.
+// Show the transcript in the search box, then reuse the existing booking event.
+function handleVoiceConfirmation(result) {
+  searchQuery.value = result.transcript
+  selectedCategory.value = 'All'
+  emit('request-service', result.service)
+}
 </script>
 
 <template>
@@ -35,7 +44,7 @@ const filteredServices = computed(() => {
     <div class="search-card clean-card">
       <label for="service-search">Search services</label>
 
-      <div class="search-input-wrap">
+      <div class="search-input-wrap voice-enabled-search">
         <svg class="search-svg" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M10.8 18.1a7.3 7.3 0 1 1 5.2-2.2l3.8 3.8-1.7 1.7-3.8-3.8a7.2 7.2 0 0 1-3.5.5Zm0-2.4a4.9 4.9 0 1 0 0-9.8 4.9 4.9 0 0 0 0 9.8Z" />
         </svg>
@@ -45,6 +54,12 @@ const filteredServices = computed(() => {
           v-model="searchQuery"
           type="search"
           placeholder="Try cleaning, AC repair, delivery, tutoring..."
+        />
+
+        <!-- Recording and transcript confirmation are kept in VoiceSearch.vue. -->
+        <VoiceSearch
+          :services="services"
+          @confirmed="handleVoiceConfirmation"
         />
       </div>
 
@@ -75,3 +90,15 @@ const filteredServices = computed(() => {
     </div>
   </section>
 </template>
+
+<style scoped>
+/* Anchor the separate VoiceSearch microphone button inside the search box. */
+.voice-enabled-search {
+  position: relative;
+}
+
+/* Keep typed text clear of the microphone button. */
+.voice-enabled-search input {
+  padding-right: 4.75rem;
+}
+</style>

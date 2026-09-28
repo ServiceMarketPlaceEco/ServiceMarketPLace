@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import * as api from './services/api'
 
 import NavBar from './components/User/NavBar.vue'
@@ -15,7 +15,16 @@ import ProviderDashboard from './components/Provider/ProviderDashboard.vue'
 import AdminDashboard from './components/Admin/AdminDashboard.vue'
 import TrackingDemo from './components/User/TrackingDemo.vue'
 import FooterSection from './components/User/FooterSection.vue'
-import AIChatbot from './components/User/AIChatbot.vue'
+import AIChatbot from './components/AI/AIChatbot.vue'
+import LandingHighlights from './components/User/LandingHighlights.vue'
+import ReviewsPage from './components/User/ReviewsPage.vue'
+
+// Starter reviews keep the public landing page useful before users add reviews.
+const defaultReviews = [
+  { id: 'REV-01', name: 'Sabrina Rahman', role: 'customer', serviceId: 'cleaning', serviceTitle: 'Home Cleaning', rating: 5, comment: 'The provider arrived on time and completed everything carefully.' },
+  { id: 'REV-02', name: 'Rafiq Ahmed', role: 'customer', serviceId: 'ac-repair', serviceTitle: 'AC Repair', rating: 5, comment: 'Clear communication, professional work and helpful status updates.' },
+  { id: 'REV-03', name: 'Nusrat Jahan', role: 'customer', serviceId: 'delivery', serviceTitle: 'Local Delivery', rating: 4, comment: 'Easy to request and I could follow the service progress.' }
+]
 
 // Fixed password used for the one-click "demo" sign-in shortcuts, so they
 // satisfy the backend's password policy without showing any new UI.
@@ -141,6 +150,9 @@ function digitsOnly(value) {
 const savedUser = JSON.parse(localStorage.getItem('servicehub-user') || 'null')
 const savedChats = JSON.parse(localStorage.getItem('servicehub-chat-approvals') || '[]')
 const savedMessages = JSON.parse(localStorage.getItem('servicehub-messages') || '[]')
+const savedReviews = JSON.parse(
+  localStorage.getItem('servicehub-reviews') || JSON.stringify(defaultReviews)
+)
 
 const currentPage = ref(savedUser ? 'dashboard' : 'home')
 const theme = ref(localStorage.getItem('servicehub-theme') || 'light')
@@ -152,6 +164,8 @@ const accounts = ref([])
 const chatApprovals = ref(savedChats)
 const messages = ref(savedMessages)
 const blockRequests = ref([])
+const reviews = ref(savedReviews)
+const appMain = ref(null)
 const providerServices = ref([])
 const providerReviews = ref([])
 
@@ -163,16 +177,31 @@ watch(theme, value => {
 })
 watch(chatApprovals, value => localStorage.setItem('servicehub-chat-approvals', JSON.stringify(value)), { deep: true })
 watch(messages, value => localStorage.setItem('servicehub-messages', JSON.stringify(value)), { deep: true })
+watch(reviews, value => localStorage.setItem('servicehub-reviews', JSON.stringify(value)), { deep: true })
 watch(signedInUser, value => {
   if (value) localStorage.setItem('servicehub-user', JSON.stringify(value))
   else localStorage.removeItem('servicehub-user')
 }, { deep: true })
 
+// Move every newly rendered page to its beginning and place keyboard focus on
+// the main content. nextTick is important because Vue must render the new page
+// before its position and focus can be reset.
+watch(currentPage, async () => {
+  await nextTick()
+  window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  appMain.value?.focus({ preventScroll: true })
+})
+
 const isOpsDashboard = computed(() => currentPage.value === 'dashboard' && ['admin', 'provider'].includes(signedInUser.value?.role))
 
 function goTo(page) {
+  // Service discovery, voice search and booking are customer-only areas.
+  if (page === 'services' && signedInUser.value?.role !== 'customer') {
+    currentPage.value = 'signin'
+    return
+  }
+
   currentPage.value = page
-  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 function toggleTheme() { theme.value = theme.value === 'dark' ? 'light' : 'dark' }
 function signOut() {
@@ -468,20 +497,39 @@ async function createProvider(provider) {
 }
 
 async function signIn(payload) {
-  const role = payload.role || 'customer'
+  const identifier = clean(payload.identifier || payload.email)
+
+  if (!identifier) {
+    alert('Enter your username, phone number or email.')
+    return
+  }
+
+  // Temporary fallback until the backend returns the role directly from the
+  // identifier. Provider usernames begin with PR and admin IDs begin with ADM.
+  const normalizedIdentifier = identifier.toLowerCase()
+  const inferredRole = normalizedIdentifier.startsWith('pr')
+    ? 'provider'
+    : normalizedIdentifier.startsWith('adm') || normalizedIdentifier.startsWith('admin')
+      ? 'admin'
+      : 'customer'
+
   try {
     if (payload.password) {
-      const res = await api.login({ email: payload.email, password: payload.password, userType: role })
-      await applySession(res, role)
+      const res = await api.login({
+        email: identifier,
+        password: payload.password,
+        userType: inferredRole
+      })
+      await applySession(res, res.user?.role || res.userType || inferredRole)
       return
     }
 
     // "Continue with Google demo" shortcut: no password typed, so try the
     // fixed demo credential first and auto-provision the account if needed.
-    const email = payload.email || `${role}.demo@servicehub.local`
+    const email = payload.email || payload.identifier || 'google.customer@servicehub.local'
     try {
-      const res = await api.login({ email, password: DEMO_PASSWORD, userType: role })
-      await applySession(res, role)
+      const res = await api.login({ email, password: DEMO_PASSWORD, userType: 'customer' })
+      await applySession(res, 'customer')
     } catch {
       const res = await api.registerCustomer({
         name: payload.name || 'Google Customer',
@@ -497,9 +545,10 @@ async function signIn(payload) {
   }
 }
 
-async function requestPasswordReset({ email, userType }) {
+async function requestPasswordReset({ email }) {
   try {
-    await api.forgotPassword(email, userType)
+    // Temporary customer fallback while the API still expects userType.
+    await api.forgotPassword(email, 'customer')
     alert('If an account exists with this email, a password reset link has been sent.')
   } catch (err) {
     alert(err.message || 'Could not request password reset.')
@@ -518,8 +567,24 @@ async function confirmPasswordReset({ token, newPassword }) {
 // ---------- Bookings ----------
 
 function openRequest(service) {
+  // Only customers can progress from service discovery to a booking request.
+  if (signedInUser.value?.role !== 'customer') {
+    currentPage.value = 'signin'
+    return
+  }
+
   selectedService.value = service
-  currentPage.value = signedInUser.value ? 'request' : 'signin'
+  currentPage.value = 'request'
+}
+
+function submitReview(review) {
+  reviews.value.unshift({
+    id: `REV-${Date.now()}`,
+    name: signedInUser.value?.name || 'ServiceHub user',
+    role: signedInUser.value?.role || 'guest',
+    createdAt: new Date().toLocaleString(),
+    ...review
+  })
 }
 
 async function submitRequest(form) {
@@ -727,19 +792,39 @@ function resetLocalDemo() {
       @toggle-theme="toggleTheme"
     />
 
-    <main class="app-main">
+    <main ref="appMain" class="app-main" tabindex="-1">
       <template v-if="currentPage === 'home'">
-        <HeroSection @find-services="goTo('home')" @browse-services="goTo('home')" @view-tracking="goTo('tracking')" />
-        <ServiceGrid :services="services" @request-service="openRequest" />
+        <HeroSection
+          @get-started="goTo('register')"
+          @view-tracking="goTo('tracking')"
+        />
+        <LandingHighlights
+          :reviews="reviews"
+          @become-provider="goTo('provider-register')"
+        />
       </template>
 
+      <!-- ServiceGrid and VoiceSearch are available only to signed-in customers. -->
+      <ServiceGrid
+        v-else-if="currentPage === 'services' && signedInUser?.role === 'customer'"
+        :services="services"
+        @request-service="openRequest"
+      />
+
       <HowItWorksPage v-else-if="currentPage === 'how'" />
+      <ReviewsPage
+        v-else-if="currentPage === 'reviews'"
+        :reviews="reviews"
+        :services="services"
+        :signed-in-user="signedInUser"
+        @submit-review="submitReview"
+      />
       <SignInPage v-else-if="currentPage === 'signin'" @sign-in="signIn" @go-register="goTo('register')" @forgot-password="requestPasswordReset" @reset-password="confirmPasswordReset" />
       <RegisterPage v-else-if="currentPage === 'register'" @create-account="createAccount" @google-create-account="createAccount" @go-signin="goTo('signin')" />
       <ProviderRegisterPage v-else-if="currentPage === 'provider-register'" @created="createProvider" @google-create="createProvider" @go="goTo" />
-      <RequestForm v-else-if="currentPage === 'request'" :service="selectedService" :customer="signedInUser" @submit-request="submitRequest" @back="goTo('home')" />
+      <RequestForm v-else-if="currentPage === 'request'" :service="selectedService" :customer="signedInUser" @submit-request="submitRequest" @back="goTo('services')" />
 
-      <CustomerDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'customer'" :customer="signedInUser" :requests="requests" @request-another="goTo('home')" @view-tracking="goTo('tracking')" />
+      <CustomerDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'customer'" :customer="signedInUser" :requests="requests" @request-another="goTo('services')" @view-tracking="goTo('tracking')" />
 
       <ProviderDashboard
         v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'provider'"
@@ -791,8 +876,8 @@ function resetLocalDemo() {
       <TrackingDemo v-else-if="currentPage === 'tracking'" :requests="requests" :signed-in-user="signedInUser" @back="goTo(signedInUser ? 'dashboard' : 'home')" />
     </main>
 
+    <!-- The assistant stays available on public pages and every dashboard. -->
     <AIChatbot
-      v-if="!isOpsDashboard"
       :signed-in-user="signedInUser"
       :requests="requests"
       :services="services"

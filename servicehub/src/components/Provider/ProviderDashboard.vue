@@ -142,7 +142,7 @@ function savePassword() {
         <div>
           <h1>{{ activeView === 'dashboard' ? 'Provider dashboard' : activeView }}</h1>
           <p>Manage services, assigned requests, reviews and approved customer chats.</p>
-        </div><input v-model="searchTerm" placeholder="Search provider workspace..." />
+        </div><input v-model="searchTerm" aria-label="Search provider workspace" placeholder="Search provider workspace..." />
       </header>
 
       <template v-if="activeView === 'dashboard'">
