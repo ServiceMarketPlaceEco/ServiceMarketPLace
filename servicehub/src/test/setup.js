@@ -1,12 +1,13 @@
 import { vi } from 'vitest'
 
-// mock localStorage
+// This small store behaves like the browser localStorage.
+let store = {}
 Object.defineProperty(window, 'localStorage', {
   value: {
-    getItem: vi.fn(() => null),
-    setItem: vi.fn(),
-    removeItem: vi.fn(),
-    clear: vi.fn()
+    getItem: vi.fn(key => store[key] ?? null),
+    setItem: vi.fn((key, value) => { store[key] = String(value) }),
+    removeItem: vi.fn(key => { delete store[key] }),
+    clear: vi.fn(() => { store = {} })
   },
   writable: true
 })

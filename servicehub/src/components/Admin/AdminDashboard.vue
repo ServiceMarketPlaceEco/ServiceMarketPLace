@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { formatStatus } from '../../data/services'
 
 const props = defineProps({
   accounts: { type: Array, default: () => [] },
@@ -9,20 +10,11 @@ const props = defineProps({
   theme: { type: String, default: 'light' }
 })
 
-const emit = defineEmits(['approve-provider', 'reject-provider', 'assign-request', 'approve-chat', 'reject-chat', 'block-status-change', 'reset-db', 'sign-out', 'go-home', 'toggle-theme'])
+const emit = defineEmits(['approve-provider', 'reject-provider', 'activate-provider', 'block-customer', 'activate-customer', 'assign-request', 'approve-chat', 'reject-chat', 'block-status-change', 'reset-db', 'sign-out', 'go-home', 'toggle-theme'])
 
 const activeView = ref('dashboard')
 const searchTerm = ref('')
 const selectedProviders = ref({})
-
-const sampleUsers = ref([
-  { name: 'Rafiq Ahmed', email: 'rafiq.ahmed@email.com', phone: '+880 1712-345678', bookings: 24, spent: 45600, status: 'Active' },
-  { name: 'Fatima Begum', email: 'fatima.begum@email.com', phone: '+880 1812-456789', bookings: 12, spent: 23400, status: 'Active' }
-])
-const sampleProviders = ref([
-  { name: 'Abdul Karim', area: 'Rajshahi City', services: 'AC Repair, Installation', rating: 4.9, jobs: 456, earnings: 892000, status: 'Active' },
-  { name: 'Firoz Ahmed', area: 'Laxmipur', services: 'Painting, Wall Texture', rating: 4.6, jobs: 87, earnings: 261000, status: 'Pending' }
-])
 
 const customerAccounts = computed(() => props.accounts.filter(account => account.role === 'customer'))
 const providerAccounts = computed(() => props.accounts.filter(account => account.role === 'provider'))
@@ -43,9 +35,6 @@ function assignProvider(request) {
   if (!providerId) return alert('Please choose an active provider before assigning the request.')
   emit('assign-request', { requestId: request.id, providerId })
 }
-function toggleUserStatus(user) { user.status = user.status === 'Blocked' ? 'Active' : 'Blocked' }
-function approveSampleProvider(provider) { provider.status = 'Active' }
-function toggleSampleProviderStatus(provider) { provider.status = provider.status === 'Blocked' ? 'Active' : 'Blocked' }
 </script>
 
 <template>
@@ -85,10 +74,10 @@ function toggleSampleProviderStatus(provider) { provider.status = provider.statu
 
       <template v-if="activeView === 'dashboard'">
         <div class="stat-grid four">
-          <article class="stat-card"><span>Total users</span><strong>{{ customerAccounts.length + sampleUsers.length
+          <article class="stat-card"><span>Total users</span><strong>{{ customerAccounts.length
               }}</strong></article>
-          <article class="stat-card"><span>Service providers</span><strong>{{ providerAccounts.length +
-              sampleProviders.length }}</strong><small>{{ pendingProviders.length }} pending approval</small></article>
+          <article class="stat-card"><span>Service providers</span><strong>{{ providerAccounts.length
+              }}</strong><small>{{ pendingProviders.length }} pending approval</small></article>
           <article class="stat-card"><span>Total requests</span><strong>{{ requests.length }}</strong><small>{{
             waitingRequests.length }} waiting assignment</small></article>
           <article class="stat-card"><span>Total revenue</span><strong>BDT {{ totalRevenue.toLocaleString() }}</strong>
@@ -121,7 +110,7 @@ function toggleSampleProviderStatus(provider) { provider.status = provider.statu
       <template v-if="activeView === 'users'">
         <section class="ops-panel">
           <div class="panel-heading">
-            <h2>User management</h2><span>Showing {{ customerAccounts.length + sampleUsers.length }} users</span>
+            <h2>User management</h2><span>Showing {{ customerAccounts.length }} users</span>
           </div>
           <div class="responsive-table">
             <table>
@@ -137,20 +126,12 @@ function toggleSampleProviderStatus(provider) { provider.status = provider.statu
               </thead>
               <tbody>
                 <tr v-for="account in customerAccounts" :key="account.id">
-                  <td><strong>{{ account.name }}</strong><small>real customer account</small></td>
+                  <td><strong>{{ account.name }}</strong></td>
                   <td>{{ account.email }}<small>{{ account.phone }}</small></td>
                   <td>{{requests.filter(r => r.customerId === account.id).length}}</td>
-                  <td>backend</td>
-                  <td><span class="status-pill active">active</span></td>
-                  <td><button class="secondary small">View</button></td>
-                </tr>
-                <tr v-for="user in sampleUsers" :key="user.email">
-                  <td><strong>{{ user.name }}</strong><small>sample customer account</small></td>
-                  <td>{{ user.email }}<small>{{ user.phone }}</small></td>
-                  <td>{{ user.bookings }}</td>
-                  <td>{{ user.spent.toLocaleString() }}৳</td>
-                  <td><span class="status-pill" :class="user.status.toLowerCase()">{{ user.status }}</span></td>
-                  <td><button class="secondary small" @click="toggleUserStatus(user)">{{ user.status === 'Blocked' ?
+                  <td>{{requests.filter(r => r.customerId === account.id).reduce((sum, r) => sum + Number(r.budget || 0), 0).toLocaleString()}}৳</td>
+                  <td><span class="status-pill" :class="account.status">{{ account.status }}</span></td>
+                  <td><button class="secondary small" @click="account.status === 'blocked' ? $emit('activate-customer', account.id) : $emit('block-customer', account.id)">{{ account.status === 'blocked' ?
                       'Unblock' : 'Block' }}</button></td>
                 </tr>
               </tbody>
@@ -162,7 +143,7 @@ function toggleSampleProviderStatus(provider) { provider.status = provider.statu
       <template v-if="activeView === 'providers'">
         <section class="ops-panel">
           <div class="panel-heading">
-            <h2>Service provider management</h2><span>Real providers + sample providers</span>
+            <h2>Service provider management</h2><span>Showing {{ providerAccounts.length }} providers</span>
           </div>
           <div class="responsive-table">
             <table>
@@ -184,25 +165,15 @@ function toggleSampleProviderStatus(provider) { provider.status = provider.statu
                   <td>{{ provider.serviceType || 'General service' }}</td>
                   <td>N/A</td>
                   <td>{{requests.filter(r => r.providerId === provider.id).length}}</td>
-                  <td>backend</td>
+                  <td>{{requests.filter(r => r.providerId === provider.id).reduce((sum, r) => sum + Number(r.budget || 0), 0).toLocaleString()}}৳</td>
                   <td><span class="status-pill" :class="provider.status">{{ provider.status }}</span></td>
                   <td class="row-actions"><button v-if="provider.status === 'pending-admin-approval'"
                       class="primary small" @click="$emit('approve-provider', provider.id)">Approve</button><button
                       v-if="provider.status === 'pending-admin-approval'" class="secondary small"
-                      @click="$emit('reject-provider', provider.id)">Reject</button><button v-else
-                      class="secondary small">View</button></td>
-                </tr>
-                <tr v-for="provider in sampleProviders" :key="provider.name">
-                  <td><strong>{{ provider.name }}</strong><small>{{ provider.area }}</small></td>
-                  <td>{{ provider.services }}</td>
-                  <td>{{ provider.rating }}</td>
-                  <td>{{ provider.jobs }}</td>
-                  <td>{{ provider.earnings.toLocaleString() }}৳</td>
-                  <td><span class="status-pill" :class="provider.status.toLowerCase()">{{ provider.status }}</span></td>
-                  <td><button v-if="provider.status === 'Pending'" class="primary small"
-                      @click="approveSampleProvider(provider)">Approve</button><button v-else class="secondary small"
-                      @click="toggleSampleProviderStatus(provider)">{{ provider.status === 'Blocked' ? 'Unblock' :
-                      'Block' }}</button></td>
+                      @click="$emit('reject-provider', provider.id)">Reject</button><button
+                      v-else-if="provider.status === 'blocked'" class="primary small"
+                      @click="$emit('activate-provider', provider.id)">Unblock</button><button v-else
+                      class="secondary small" @click="$emit('reject-provider', provider.id)">Block</button></td>
                 </tr>
               </tbody>
             </table>
@@ -241,7 +212,7 @@ function toggleSampleProviderStatus(provider) { provider.status = provider.statu
                   <td><strong>{{ request.id }}</strong></td>
                   <td>{{ request.serviceTitle }}</td>
                   <td>{{ request.customerName }}</td>
-                  <td>{{ providerName(request.providerId) }}<small>{{ request.providerStatus }}</small></td>
+                  <td>{{ providerName(request.providerId) }}<small>{{ formatStatus(request.providerStatus) }}</small></td>
                   <td>{{ request.preferredDate }}<small>{{ request.location }}</small></td>
                   <td>{{ request.budget || 0 }}৳</td>
                   <td><span class="status-pill" :class="request.needsUpfrontPayment ? 'pending' : 'active'">{{
@@ -249,9 +220,11 @@ function toggleSampleProviderStatus(provider) { provider.status = provider.statu
                       v-if="request.needsUpfrontPayment">{{ request.bankName }} · {{ request.accountName }}</small></td>
                   <td><span class="status-pill"
                       :class="String(request.status).toLowerCase().replaceAll('_', '-').replaceAll(' ', '-')">{{
-                      request.status }}</span></td>
+                      formatStatus(request.status) }}</span></td>
                   <td>
-                    <div class="row-actions"><select v-model="selectedProviders[request.id]">
+                    <div class="row-actions"><select
+                        :value="selectedProviders[request.id] ?? request.providerId ?? ''"
+                        @change="selectedProviders[request.id] = $event.target.value">
                         <option value="">Choose provider</option>
                         <option v-for="provider in activeProviders" :key="provider.id" :value="provider.id">{{
                           provider.name }} - {{ provider.serviceType }}</option>

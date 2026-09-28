@@ -1,84 +1,58 @@
 <script setup>
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 
-const emit = defineEmits(['sign-in', 'go-register'])
+// Events handled by App.vue.
+const emit = defineEmits([
+  'sign-in',
+  'go-register',
+  'forgot-password',
+  'reset-password'
+])
 
+// Users enter only their username/phone number and password.
+// The backend will determine whether they are a customer,
+// provider or administrator.
 const form = reactive({
   identifier: '',
   password: ''
 })
 
+const showReset = ref(false)
+
+const resetForm = reactive({
+  email: '',
+  token: '',
+  newPassword: ''
+})
+
+// Send the entered credentials to App.vue.
 function submit() {
   emit('sign-in', {
-    identifier: form.identifier,
+    identifier: form.identifier.trim(),
     password: form.password
   })
 }
+
+// Request a password-reset email.
+// Account type is not sent because the backend detects the account.
+function requestReset() {
+  const email = resetForm.email.trim()
+
+  if (!email) return
+
+  emit('forgot-password', { email })
+}
+
+// Submit the reset token and new password.
+function submitReset() {
+  const token = resetForm.token.trim()
+  const newPassword = resetForm.newPassword.trim()
+
+  if (!token || !newPassword) return
+
+  emit('reset-password', {
+    token,
+    newPassword
+  })
+}
 </script>
-
-<template>
-  <section class="auth-page signin-page split-auth-page">
-    <form class="auth-card clean-card" @submit.prevent="submit">
-      <p class="eyebrow">Sign in</p>
-      <h2>Access your dashboard</h2>
-      <p class="muted">
-        Enter your username or phone number. Your account type will be detected automatically.
-      </p>
-
-      <label>
-        Username or phone number
-        <input
-          v-model.trim="form.identifier"
-          required
-          autocomplete="username"
-          placeholder="Enter your username or phone number"
-        />
-      </label>
-
-      <label>
-        Password
-        <input
-          v-model="form.password"
-          type="password"
-          required
-          autocomplete="current-password"
-          placeholder="Enter password"
-        />
-      </label>
-
-      <button class="primary" type="submit">Sign in</button>
-      <button
-        class="secondary"
-        type="button"
-        @click="emit('sign-in', { identifier: 'google.customer@servicehub.local', name: 'Google Customer', authProvider: 'google' })"
-      >
-        Continue with Google demo
-      </button>
-      <button class="secondary" type="button" @click="emit('go-register')">
-        Create customer account
-      </button>
-    </form>
-
-    <aside class="signin-visual clean-card">
-      <div class="dashboard-preview-card">
-        <p class="eyebrow">Secure portal</p>
-        <h3>One login, three role-based dashboards</h3>
-
-        <div class="login-preview-row">
-          <span>👤</span>
-          <div><strong>Customer</strong><small>Request services and track progress</small></div>
-        </div>
-
-        <div class="login-preview-row">
-          <span>🛠</span>
-          <div><strong>Provider</strong><small>Accept jobs and manage reviews</small></div>
-        </div>
-
-        <div class="login-preview-row">
-          <span>🛡</span>
-          <div><strong>Admin</strong><small>Approve providers, assign jobs and control chat</small></div>
-        </div>
-      </div>
-    </aside>
-  </section>
-</template>

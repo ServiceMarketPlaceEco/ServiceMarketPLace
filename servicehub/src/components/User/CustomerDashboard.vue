@@ -1,4 +1,6 @@
 <script setup>
+import { formatStatus } from '../../data/services'
+
 defineProps({
   customer: Object,
   requests: {
@@ -41,6 +43,7 @@ defineEmits(['request-another', 'view-tracking'])
               <th>Service</th>
               <th>Location</th>
               <th>Date</th>
+              <th>Provider</th>
               <th>Status</th>
               <th>Tracking</th>
             </tr>
@@ -55,7 +58,12 @@ defineEmits(['request-another', 'view-tracking'])
               <td>{{ request.location || request.customerLocation || 'Rajshahi' }}</td>
               <td>{{ request.preferredDate || request.createdAt }}</td>
               <td>
-                <span class="status-pill" :class="request.status">{{ request.status }}</span>
+                <strong v-if="request.providerName">{{ request.providerName }}</strong>
+                <small v-if="request.providerPhone">{{ request.providerPhone }}</small>
+                <span v-if="!request.providerName" class="muted">Not assigned yet</span>
+              </td>
+              <td>
+                <span class="status-pill" :class="request.status">{{ formatStatus(request.status) }}</span>
               </td>
               <td>
                 <button class="secondary small" @click="$emit('view-tracking')">Track</button>

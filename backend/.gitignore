@@ -1,0 +1,23 @@
+# Compiled output
+dist
+tsconfig.tsbuildinfo
+
+# Dependencies
+node_modules
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Env
+.env
+
+# Coverage
+coverage
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
