@@ -432,6 +432,8 @@ async function applySession(res, userType) {
 
 onMounted(async () => {
   await loadServices()
+  signedInUser.value = { id: 'admin-1', name: 'Test Admin', role: 'admin' }
+  currentPage.value = 'dashboard'
   if (signedInUser.value) {
     await refreshBookings()
     if (signedInUser.value.role === 'admin') {

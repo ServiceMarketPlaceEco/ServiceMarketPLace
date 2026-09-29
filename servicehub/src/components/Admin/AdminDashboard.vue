@@ -16,6 +16,189 @@ const activeView = ref('dashboard')
 const searchTerm = ref('')
 const selectedProviders = ref({})
 
+// Review moderation state
+const flaggedReviews = ref([])
+const moderationLoading = ref(false)
+const moderationError = ref('')
+const aiScreeningResults = ref({})
+const aiScreeningLoading = ref({})
+const riskFilter = ref('high')
+const moderationTab = ref('reviews')
+
+// Account moderation state
+const flaggedAccounts = ref([])
+const accountScanLoading = ref(false)
+const accountScanError = ref('')
+const accountAiResults = ref({})
+const accountAiLoading = ref({})
+const accountRiskFilter = ref('high')
+
+function riskLevel(score) {
+  if (score >= 7) return { label: 'High risk', cls: 'risk-high' }
+  if (score >= 5) return { label: 'Medium risk', cls: 'risk-medium' }
+  return { label: 'Low risk', cls: 'risk-low' }
+}
+
+const filteredFlagged = computed(() => {
+  if (riskFilter.value === 'all') return flaggedReviews.value
+  if (riskFilter.value === 'high') return flaggedReviews.value.filter(r => r.score >= 7)
+  if (riskFilter.value === 'medium') return flaggedReviews.value.filter(r => r.score >= 5)
+  return flaggedReviews.value
+})
+
+async function runModerationScan() {
+  moderationLoading.value = true
+  moderationError.value = ''
+  try {
+    const result = await import('../../services/api.js').then(api => api.scanReviews())
+    flaggedReviews.value = result.queue || []
+  } catch (err) {
+    moderationError.value = err.message || 'Could not reach the moderation endpoint'
+  } finally {
+    moderationLoading.value = false
+  }
+}
+
+function loadSampleReviews() {
+  flaggedReviews.value = [
+    {
+      reviewId: '8a3f2b1c-1111-4aaa-bbbb-cccccccccccc',
+      rating: 5,
+      comment: 'good good good very good service recommend',
+      customerId: '2d4e9f01-2222-4aaa-bbbb-cccccccccccc',
+      providerId: '7b3a1c5d-3333-4aaa-bbbb-cccccccccccc',
+      score: 7,
+      reasons: [
+        { signal: 'GENERIC', detail: 'Filler text with no specific detail about the service', weight: 1 },
+        { signal: 'NEW_ACCOUNT', detail: 'Account created 1 day ago leaving a 5-star rating', weight: 2 },
+        { signal: 'NO_BOOKING', detail: 'No completed booking with this provider', weight: 2 },
+        { signal: 'BURST', detail: '4 reviews for this provider in 2 hours', weight: 2 },
+      ]
+    },
+    {
+      reviewId: '1f7c4d2e-4444-4aaa-bbbb-cccccccccccc',
+      rating: 1,
+      comment: 'bad',
+      customerId: '9a2b3c4d-5555-4aaa-bbbb-cccccccccccc',
+      providerId: '5e6f7a8b-6666-4aaa-bbbb-cccccccccccc',
+      score: 6,
+      reasons: [
+        { signal: 'SHORT', detail: 'Very short comment on an extreme rating', weight: 1 },
+        { signal: 'NEW_ACCOUNT', detail: 'Account created 2 days ago leaving a 1-star rating', weight: 2 },
+        { signal: 'DUPLICATE', detail: 'Near-duplicate of another recent review', weight: 3 },
+      ]
+    },
+    {
+      reviewId: '3e5a9c7f-7777-4aaa-bbbb-cccccccccccc',
+      rating: 5,
+      comment: 'They came on time and did a thorough job cleaning the kitchen and bathrooms. Would book again for sure.',
+      customerId: '4c8d2e1f-8888-4aaa-bbbb-cccccccccccc',
+      providerId: '7b3a1c5d-3333-4aaa-bbbb-cccccccccccc',
+      score: 4,
+      reasons: [
+        { signal: 'BURST', detail: '4 reviews for this provider in 2 hours', weight: 2 },
+        { signal: 'NEW_ACCOUNT', detail: 'Account created 3 days ago leaving a 5-star rating', weight: 2 },
+      ]
+    },
+    {
+      reviewId: 'aabb1122-9999-4aaa-bbbb-cccccccccccc',
+      rating: 5,
+      comment: 'excellent service very good recommend to everyone best provider',
+      customerId: '2d4e9f01-2222-4aaa-bbbb-cccccccccccc',
+      providerId: '7b3a1c5d-3333-4aaa-bbbb-cccccccccccc',
+      score: 5,
+      reasons: [
+        { signal: 'GENERIC', detail: 'Filler text with no specific detail about the service', weight: 1 },
+        { signal: 'BURST', detail: '4 reviews for this provider in 2 hours', weight: 2 },
+        { signal: 'SOCK_PUPPET', detail: 'Same customer reviewed only this one provider', weight: 2 },
+      ]
+    }
+  ]
+  moderationError.value = ''
+}
+
+async function keepReview(reviewId) {
+  try {
+    await import('../../services/api.js').then(api => api.keepFlaggedReview(reviewId))
+    flaggedReviews.value = flaggedReviews.value.filter(r => r.reviewId !== reviewId)
+  } catch (err) {
+    alert('Could not keep review: ' + err.message)
+  }
+}
+
+async function removeReview(reviewId) {
+  if (!confirm('Remove this review? This will delete it and recalculate the provider rating.')) return
+  try {
+    await import('../../services/api.js').then(api => api.removeFlaggedReview(reviewId))
+    flaggedReviews.value = flaggedReviews.value.filter(r => r.reviewId !== reviewId)
+  } catch (err) {
+    alert('Could not remove review: ' + err.message)
+  }
+}
+
+async function screenWithAI(review) {
+  aiScreeningLoading.value[review.reviewId] = true
+  try {
+    const result = await import('../../services/api.js').then(api => api.aiScreenReview(review))
+    aiScreeningResults.value[review.reviewId] = result
+  } catch (err) {
+    aiScreeningResults.value[review.reviewId] = { verdict: 'error', explanation: err.message }
+  } finally {
+    aiScreeningLoading.value[review.reviewId] = false
+  }
+}
+
+async function runAccountScan() {
+  accountScanLoading.value = true
+  accountScanError.value = ''
+  try {
+    const result = await import('../../services/api.js').then(api => api.scanAccounts())
+    flaggedAccounts.value = result.queue || []
+  } catch (err) {
+    accountScanError.value = err.message || 'Could not reach the account moderation endpoint'
+  } finally {
+    accountScanLoading.value = false
+  }
+}
+
+async function keepAccount(accountId) {
+  try {
+    await import('../../services/api.js').then(api => api.keepFlaggedAccount(accountId))
+    flaggedAccounts.value = flaggedAccounts.value.filter(a => a.accountId !== accountId)
+  } catch (err) {
+    alert('Could not keep account: ' + err.message)
+  }
+}
+
+async function blockAccount(accountId, kind) {
+  if (!confirm('Block this account? They will not be able to sign in.')) return
+  try {
+    await import('../../services/api.js').then(api => api.blockFlaggedAccount(accountId, kind))
+    flaggedAccounts.value = flaggedAccounts.value.filter(a => a.accountId !== accountId)
+  } catch (err) {
+    alert('Could not block account: ' + err.message)
+  }
+}
+
+async function screenAccountWithAI(account) {
+  accountAiLoading.value[account.accountId] = true
+  try {
+    const result = await import('../../services/api.js').then(api => api.aiScreenAccount(account))
+    accountAiResults.value[account.accountId] = result
+  } catch (err) {
+    accountAiResults.value[account.accountId] = { verdict: 'error', explanation: err.message }
+  } finally {
+    accountAiLoading.value[account.accountId] = false
+  }
+}
+
+const filteredAccounts = computed(() => {
+  if (accountRiskFilter.value === 'all') return flaggedAccounts.value
+  if (accountRiskFilter.value === 'high') return flaggedAccounts.value.filter(a => a.score >= 7)
+  if (accountRiskFilter.value === 'medium') return flaggedAccounts.value.filter(a => a.score >= 5)
+  return flaggedAccounts.value
+})
+
 const customerAccounts = computed(() => props.accounts.filter(account => account.role === 'customer'))
 const providerAccounts = computed(() => props.accounts.filter(account => account.role === 'provider'))
 const activeProviders = computed(() => providerAccounts.value.filter(account => account.status === 'active'))
@@ -53,6 +236,7 @@ function assignProvider(request) {
         <button :class="{ active: activeView === 'chat' }" @click="activeView = 'chat'">Chat approvals</button>
         <button :class="{ active: activeView === 'analytics' }" @click="activeView = 'analytics'">Analytics</button>
         <button :class="{ active: activeView === 'blocks' }" @click="activeView = 'blocks'">Block requests</button>
+        <button :class="{ active: activeView === 'moderation' }" @click="activeView = 'moderation'">Review moderation</button>
         <button :class="{ active: activeView === 'settings' }" @click="activeView = 'settings'">Settings</button>
       </nav>
 
@@ -305,6 +489,169 @@ function assignProvider(request) {
               </tbody>
             </table>
           </div>
+        </section>
+      </template>
+
+      <template v-if="activeView === 'moderation'">
+        <div class="moderation-tabs">
+          <button :class="{ active: moderationTab === 'reviews' }" @click="moderationTab = 'reviews'">Reviews</button>
+          <button :class="{ active: moderationTab === 'accounts' }" @click="moderationTab = 'accounts'">Accounts</button>
+        </div>
+
+        <!-- REVIEWS TAB -->
+        <section v-if="moderationTab === 'reviews'" class="ops-panel">
+          <div class="panel-heading">
+            <h2>Review moderation</h2>
+            <div style="display: flex; gap: 8px;">
+              <button class="secondary" @click="loadSampleReviews">Load sample data</button>
+              <button class="primary" @click="runModerationScan" :disabled="moderationLoading">
+                {{ moderationLoading ? 'Scanning...' : 'Scan reviews' }}
+              </button>
+            </div>
+          </div>
+          <p class="muted">
+            The rule-based detector scores each review on six signals: burst velocity, near-duplicate text,
+            new accounts with extreme ratings, generic filler, very short comments on extreme ratings, and
+            reviews from customers with no completed booking. Reviews scoring 3 or above are flagged for
+            your review. Nothing is removed automatically.
+          </p>
+
+          <div v-if="flaggedReviews.length > 0" class="moderation-filters">
+            <button :class="{ active: riskFilter === 'high' }" @click="riskFilter = 'high'">High risk only</button>
+            <button :class="{ active: riskFilter === 'medium' }" @click="riskFilter = 'medium'">Medium and above</button>
+            <button :class="{ active: riskFilter === 'all' }" @click="riskFilter = 'all'">Show all</button>
+          </div>
+
+          <div v-if="moderationError" class="empty-state" style="color: var(--danger, #c0392b)">
+            {{ moderationError }}
+          </div>
+
+          <div v-if="flaggedReviews.length === 0 && !moderationLoading && !moderationError" class="empty-state">
+            {{ moderationLoading ? '' : 'No flagged reviews. Click Scan reviews to run the detector.' }}
+          </div>
+
+          <div v-if="flaggedReviews.length > 0" class="moderation-summary">
+            <strong>{{ flaggedReviews.length }}</strong> review{{ flaggedReviews.length === 1 ? '' : 's' }} flagged total — showing <strong>{{ filteredFlagged.length }}</strong> ({{ riskFilter === 'all' ? 'all risks' : riskFilter === 'high' ? 'high risk only' : 'medium and above' }})
+          </div>
+
+          <article v-for="review in filteredFlagged" :key="review.reviewId" class="moderation-card">
+            <div class="moderation-header">
+              <div>
+                <strong>Review {{ review.reviewId.slice(0, 8) }}</strong>
+                <span class="risk-badge" :class="riskLevel(review.score).cls">{{ riskLevel(review.score).label }}</span>
+                <span class="moderation-score">Score: {{ review.score }}</span>
+              </div>
+              <div class="moderation-meta">
+                <span>Rating: {{ '★'.repeat(review.rating || 0) }}{{ '☆'.repeat(5 - (review.rating || 0)) }}</span>
+                <span>Customer: {{ review.customerId?.slice(0, 8) || 'unknown' }}</span>
+                <span>Provider: {{ review.providerId?.slice(0, 8) || 'unknown' }}</span>
+              </div>
+            </div>
+
+            <div v-if="review.comment" class="moderation-comment">
+              "{{ review.comment }}"
+            </div>
+            <div v-else class="moderation-comment muted">No comment provided</div>
+
+            <div class="moderation-reasons">
+              <h4>Why it was flagged</h4>
+              <div v-for="(reason, idx) in review.reasons" :key="idx" class="reason-tag">
+                <span class="reason-signal">{{ reason.signal }}</span>
+                <span class="reason-detail">{{ reason.detail }}</span>
+                <span class="reason-weight">+{{ reason.weight }}</span>
+              </div>
+            </div>
+
+            <div v-if="aiScreeningResults[review.reviewId]" class="ai-screening-result">
+              <h4>AI screening result</h4>
+              <div class="ai-verdict" :class="aiScreeningResults[review.reviewId].verdict">
+                <strong>{{ aiScreeningResults[review.reviewId].verdict === 'genuine' ? 'Likely genuine' : aiScreeningResults[review.reviewId].verdict === 'suspicious' ? 'Likely fake' : 'Could not determine' }}</strong>
+                <p>{{ aiScreeningResults[review.reviewId].explanation }}</p>
+              </div>
+            </div>
+
+            <div class="moderation-actions">
+              <button class="secondary small" @click="screenWithAI(review)" :disabled="aiScreeningLoading[review.reviewId]">
+                {{ aiScreeningLoading[review.reviewId] ? 'Screening...' : 'Screen with AI' }}
+              </button>
+              <button class="success small" @click="keepReview(review.reviewId)">Keep review</button>
+              <button class="danger-soft small" @click="removeReview(review.reviewId)">Remove review</button>
+            </div>
+          </article>
+        </section>
+
+        <!-- ACCOUNTS TAB -->
+        <section v-if="moderationTab === 'accounts'" class="ops-panel">
+          <div class="panel-heading">
+            <h2>Account moderation</h2>
+            <button class="primary" @click="runAccountScan" :disabled="accountScanLoading">
+              {{ accountScanLoading ? 'Scanning...' : 'Scan accounts' }}
+            </button>
+          </div>
+          <p class="muted">
+            The detector checks for duplicate identity documents, sock puppet patterns (only reviewing one
+            provider), accounts with reviews but no completed bookings, and invalid NID or trade licence numbers.
+            Accounts scoring 3 or above are flagged. Nothing is auto-blocked.
+          </p>
+
+          <div v-if="flaggedAccounts.length > 0" class="moderation-filters">
+            <button :class="{ active: accountRiskFilter === 'high' }" @click="accountRiskFilter = 'high'">High risk only</button>
+            <button :class="{ active: accountRiskFilter === 'medium' }" @click="accountRiskFilter = 'medium'">Medium and above</button>
+            <button :class="{ active: accountRiskFilter === 'all' }" @click="accountRiskFilter = 'all'">Show all</button>
+          </div>
+
+          <div v-if="accountScanError" class="empty-state" style="color: var(--danger, #c0392b)">
+            {{ accountScanError }}
+          </div>
+
+          <div v-if="flaggedAccounts.length === 0 && !accountScanLoading && !accountScanError" class="empty-state">
+            No flagged accounts. Click Scan accounts to run the detector.
+          </div>
+
+          <div v-if="flaggedAccounts.length > 0" class="moderation-summary">
+            <strong>{{ flaggedAccounts.length }}</strong> account{{ flaggedAccounts.length === 1 ? '' : 's' }} flagged total — showing <strong>{{ filteredAccounts.length }}</strong> ({{ accountRiskFilter === 'all' ? 'all risks' : accountRiskFilter === 'high' ? 'high risk only' : 'medium and above' }})
+          </div>
+
+          <article v-for="account in filteredAccounts" :key="account.accountId" class="moderation-card">
+            <div class="moderation-header">
+              <div>
+                <strong>{{ account.kind === 'provider' ? 'Provider' : 'Customer' }} {{ account.accountId.slice(0, 8) }}</strong>
+                <span class="risk-badge" :class="riskLevel(account.score).cls">{{ riskLevel(account.score).label }}</span>
+                <span class="moderation-score">Score: {{ account.score }}</span>
+              </div>
+              <div class="moderation-meta">
+                <span>Type: {{ account.kind }}</span>
+                <span v-if="account.completedBookings !== undefined">Bookings: {{ account.completedBookings }}</span>
+                <span v-if="account.reviewsWritten !== undefined">Reviews: {{ account.reviewsWritten }}</span>
+                <span v-if="account.distinctProvidersReviewed !== undefined">Providers reviewed: {{ account.distinctProvidersReviewed }}</span>
+              </div>
+            </div>
+
+            <div class="moderation-reasons">
+              <h4>Why it was flagged</h4>
+              <div v-for="(reason, idx) in account.reasons" :key="idx" class="reason-tag">
+                <span class="reason-signal">{{ reason.signal }}</span>
+                <span class="reason-detail">{{ reason.detail }}</span>
+                <span class="reason-weight">+{{ reason.weight }}</span>
+              </div>
+            </div>
+
+            <div v-if="accountAiResults[account.accountId]" class="ai-screening-result">
+              <h4>AI screening result</h4>
+              <div class="ai-verdict" :class="accountAiResults[account.accountId].verdict">
+                <strong>{{ accountAiResults[account.accountId].verdict === 'genuine' ? 'Likely genuine' : accountAiResults[account.accountId].verdict === 'suspicious' ? 'Likely fake' : 'Could not determine' }}</strong>
+                <p>{{ accountAiResults[account.accountId].explanation }}</p>
+              </div>
+            </div>
+
+            <div class="moderation-actions">
+              <button class="secondary small" @click="screenAccountWithAI(account)" :disabled="accountAiLoading[account.accountId]">
+                {{ accountAiLoading[account.accountId] ? 'Screening...' : 'Screen with AI' }}
+              </button>
+              <button class="success small" @click="keepAccount(account.accountId)">Keep account</button>
+              <button class="danger-soft small" @click="blockAccount(account.accountId, account.kind)">Block account</button>
+            </div>
+          </article>
         </section>
       </template>
 

@@ -170,6 +170,105 @@ export async function activateUser(userType, id) {
   return request(`/admins/users/${userType}/${id}/activate`, { method: 'POST', auth: true })
 }
 
+// ---------- Review moderation (admin) ----------
+
+export async function scanReviews() {
+  return request('/reviews/moderation/scan')
+}
+
+export async function keepFlaggedReview(reviewId) {
+  return request(`/reviews/moderation/${reviewId}/keep`, { method: 'POST' })
+}
+
+export async function removeFlaggedReview(reviewId) {
+  return request(`/reviews/moderation/${reviewId}/remove`, { method: 'POST' })
+}
+
+// Screen a single review through the Anthropic API for a second opinion.
+// This calls Claude to analyze whether the review text looks genuine or fake
+// based on the comment content, rating, and the flags already raised.
+export async function aiScreenReview(review) {
+  const prompt = `You are a review moderation assistant for a service marketplace called ServiceHub in Rajshahi, Bangladesh. Analyze this review and determine if it is likely genuine or likely fake.
+
+Review details:
+- Rating: ${review.rating}/5 stars
+- Comment: "${review.comment || '(no comment)'}"
+- Flags already raised by the rule-based detector: ${review.reasons?.map(r => r.detail).join('; ') || 'none'}
+- Review score from detector: ${review.score}
+
+Respond with ONLY a JSON object (no markdown, no backticks):
+{"verdict": "genuine" or "suspicious", "explanation": "one sentence explaining why"}`
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 200,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    })
+
+    const data = await response.json()
+    const text = data.content?.[0]?.text || ''
+    const clean = text.replace(/```json|```/g, '').trim()
+    return JSON.parse(clean)
+  } catch (err) {
+    return { verdict: 'error', explanation: 'AI screening is not available: ' + err.message }
+  }
+}
+
+// ---------- Account moderation (admin) ----------
+
+export async function scanAccounts() {
+  return request('/providers/moderation/scan')
+}
+
+export async function keepFlaggedAccount(accountId) {
+  return request(`/providers/moderation/${accountId}/keep`, { method: 'POST' })
+}
+
+export async function blockFlaggedAccount(accountId, kind) {
+  return request(`/providers/moderation/${accountId}/block`, { method: 'POST', body: { kind } })
+}
+
+// Screen a flagged account through Claude for a second opinion.
+export async function aiScreenAccount(account) {
+  const prompt = `You are an account moderation assistant for a service marketplace called ServiceHub in Rajshahi, Bangladesh. Analyze this account and determine if it is likely genuine or likely fake.
+
+Account details:
+- Type: ${account.kind}
+- Account ID: ${account.accountId}
+- Completed bookings: ${account.completedBookings ?? 'unknown'}
+- Reviews written: ${account.reviewsWritten ?? 'n/a'}
+- Distinct providers reviewed: ${account.distinctProvidersReviewed ?? 'n/a'}
+- Flags raised by the rule-based detector: ${account.reasons?.map(r => r.detail).join('; ') || 'none'}
+- Detection score: ${account.score}
+
+Respond with ONLY a JSON object (no markdown, no backticks):
+{"verdict": "genuine" or "suspicious", "explanation": "one sentence explaining why"}`
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 200,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    })
+
+    const data = await response.json()
+    const text = data.content?.[0]?.text || ''
+    const clean = text.replace(/```json|```/g, '').trim()
+    return JSON.parse(clean)
+  } catch (err) {
+    return { verdict: 'error', explanation: 'AI screening is not available: ' + err.message }
+  }
+}
+
 // ---------- Reports (used for the "block request" safety workflow) ----------
 
 export async function createReport(payload) {
