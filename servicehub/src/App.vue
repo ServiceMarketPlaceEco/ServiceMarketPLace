@@ -195,13 +195,57 @@ watch(currentPage, async () => {
 const isOpsDashboard = computed(() => currentPage.value === 'dashboard' && ['admin', 'provider'].includes(signedInUser.value?.role))
 
 function goTo(page) {
-  // Service discovery, voice search and booking are customer-only areas.
-  if (page === 'services' && signedInUser.value?.role !== 'customer') {
+  // Prevent a click event or undefined value from becoming the page name.
+  if (typeof page !== 'string') {
+    console.warn('Invalid navigation value:', page)
+    currentPage.value = 'home'
+    return
+  }
+
+  // Normalise different spellings into one page key.
+  const normalisedPage = page
+    .trim()
+    .toLowerCase()
+    .replaceAll('_', '-')
+
+  const pageAliases = {
+    'sign-in': 'signin',
+    signinpage: 'signin',
+    login: 'signin',
+    signup: 'register',
+    'sign-up': 'register'
+  }
+
+  const targetPage = pageAliases[normalisedPage] || normalisedPage
+
+  const validPages = [
+    'home',
+    'how',
+    'reviews',
+    'signin',
+    'register',
+    'provider-register',
+    'services',
+    'request',
+    'dashboard',
+    'tracking'
+  ]
+
+  if (!validPages.includes(targetPage)) {
+    console.warn('Unknown ServiceHub page:', targetPage)
+    currentPage.value = 'home'
+    return
+  }
+
+  if (
+    targetPage === 'services' &&
+    signedInUser.value?.role !== 'customer'
+  ) {
     currentPage.value = 'signin'
     return
   }
 
-  currentPage.value = page
+  currentPage.value = targetPage
 }
 function toggleTheme() { theme.value = theme.value === 'dark' ? 'light' : 'dark' }
 function signOut() {
@@ -784,108 +828,58 @@ function resetLocalDemo() {
 
 <template>
   <div class="app-shell">
-    <NavBar
-      v-if="!isOpsDashboard"
-      :active-page="currentPage"
-      :signed-in-user="signedInUser"
-      :theme="theme"
-      @navigate="goTo"
-      @sign-out="signOut"
-      @toggle-theme="toggleTheme"
-    />
+    <NavBar v-if="!isOpsDashboard" :active-page="currentPage" :signed-in-user="signedInUser" :theme="theme"
+      @navigate="goTo" @sign-out="signOut" @toggle-theme="toggleTheme" />
 
     <main ref="appMain" class="app-main" tabindex="-1">
       <template v-if="currentPage === 'home'">
-        <HeroSection
-          @get-started="goTo('register')"
-          @view-tracking="goTo('tracking')"
-        />
-        <LandingHighlights
-          :reviews="reviews"
-          @become-provider="goTo('provider-register')"
-        />
+        <HeroSection @get-started="goTo('register')" @view-tracking="goTo('tracking')" />
+        <LandingHighlights :reviews="reviews" @become-provider="goTo('provider-register')" />
       </template>
 
       <!-- ServiceGrid and VoiceSearch are available only to signed-in customers. -->
-      <ServiceGrid
-        v-else-if="currentPage === 'services' && signedInUser?.role === 'customer'"
-        :services="services"
-        @request-service="openRequest"
-      />
+      <ServiceGrid v-else-if="currentPage === 'services' && signedInUser?.role === 'customer'" :services="services"
+        @request-service="openRequest" />
 
       <HowItWorksPage v-else-if="currentPage === 'how'" />
-      <ReviewsPage
-        v-else-if="currentPage === 'reviews'"
-        :reviews="reviews"
-        :services="services"
-        :signed-in-user="signedInUser"
-        @submit-review="submitReview"
-      />
-      <SignInPage v-else-if="currentPage === 'signin'" @sign-in="signIn" @go-register="goTo('register')" @forgot-password="requestPasswordReset" @reset-password="confirmPasswordReset" />
-      <RegisterPage v-else-if="currentPage === 'register'" @create-account="createAccount" @google-create-account="createAccount" @go-signin="goTo('signin')" />
-      <ProviderRegisterPage v-else-if="currentPage === 'provider-register'" @created="createProvider" @google-create="createProvider" @go="goTo" />
-      <RequestForm v-else-if="currentPage === 'request'" :service="selectedService" :customer="signedInUser" @submit-request="submitRequest" @back="goTo('services')" />
+      <ReviewsPage v-else-if="currentPage === 'reviews'" :reviews="reviews" :services="services"
+        :signed-in-user="signedInUser" @submit-review="submitReview" />
+      <SignInPage v-else-if="currentPage === 'signin'" @sign-in="signIn" @go-register="goTo('register')"
+        @forgot-password="requestPasswordReset" @reset-password="confirmPasswordReset" />
+      <RegisterPage v-else-if="currentPage === 'register'" @create-account="createAccount"
+        @google-create-account="createAccount" @go-signin="goTo('signin')" />
+      <ProviderRegisterPage v-else-if="currentPage === 'provider-register'" @created="createProvider"
+        @google-create="createProvider" @go="goTo" />
+      <RequestForm v-else-if="currentPage === 'request'" :service="selectedService" :customer="signedInUser"
+        @submit-request="submitRequest" @back="goTo('services')" />
 
-      <CustomerDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'customer'" :customer="signedInUser" :requests="requests" @request-another="goTo('services')" @view-tracking="goTo('tracking')" />
+      <CustomerDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'customer'"
+        :customer="signedInUser" :requests="requests" @request-another="goTo('services')"
+        @view-tracking="goTo('tracking')" />
 
-      <ProviderDashboard
-        v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'provider'"
-        :current-user="signedInUser"
-        :requests="requests"
-        :chat-approvals="chatApprovals"
-        :messages="messages"
-        :theme="theme"
-        :provider-services="providerServices"
-        :available-services="services"
-        :reviews="providerReviews"
-        @toggle-theme="toggleTheme"
-        @sign-out="signOut"
-        @go-home="goTo('home')"
-        @accept-request="acceptProviderRequest"
-        @decline-request="declineProviderRequest"
-        @status-change="changeRequestStatus"
-        @request-chat="requestChat"
-        @send-message="sendMessage"
-        @block-request="createBlockRequest"
-        @add-service="addProviderServiceOffering"
-        @toggle-service="toggleProviderService"
-        @update-profile="updateProviderProfile"
-        @change-password="changeProviderPassword"
-      />
+      <ProviderDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'provider'"
+        :current-user="signedInUser" :requests="requests" :chat-approvals="chatApprovals" :messages="messages"
+        :theme="theme" :provider-services="providerServices" :available-services="services" :reviews="providerReviews"
+        @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @accept-request="acceptProviderRequest"
+        @decline-request="declineProviderRequest" @status-change="changeRequestStatus" @request-chat="requestChat"
+        @send-message="sendMessage" @block-request="createBlockRequest" @add-service="addProviderServiceOffering"
+        @toggle-service="toggleProviderService" @update-profile="updateProviderProfile"
+        @change-password="changeProviderPassword" />
 
-      <AdminDashboard
-        v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'admin'"
-        :accounts="accounts"
-        :requests="requests"
-        :chat-approvals="chatApprovals"
-        :block-requests="blockRequests"
-        :theme="theme"
-        @toggle-theme="toggleTheme"
-        @sign-out="signOut"
-        @go-home="goTo('home')"
-        @approve-provider="approveProvider"
-        @reject-provider="rejectProvider"
-        @activate-provider="activateProvider"
-        @block-customer="blockCustomer"
-        @activate-customer="activateCustomer"
-        @assign-request="assignRequest"
-        @approve-chat="approveChat"
-        @reject-chat="rejectChat"
-        @block-status-change="updateBlockRequest"
-        @reset-db="resetLocalDemo"
-      />
+      <AdminDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'admin'" :accounts="accounts"
+        :requests="requests" :chat-approvals="chatApprovals" :block-requests="blockRequests" :theme="theme"
+        @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @approve-provider="approveProvider"
+        @reject-provider="rejectProvider" @activate-provider="activateProvider" @block-customer="blockCustomer"
+        @activate-customer="activateCustomer" @assign-request="assignRequest" @approve-chat="approveChat"
+        @reject-chat="rejectChat" @block-status-change="updateBlockRequest" @reset-db="resetLocalDemo" />
 
-      <TrackingDemo v-else-if="currentPage === 'tracking'" :requests="requests" :signed-in-user="signedInUser" @back="goTo(signedInUser ? 'dashboard' : 'home')" />
+      <TrackingDemo v-else-if="currentPage === 'tracking'" :requests="requests" :signed-in-user="signedInUser"
+        @back="goTo(signedInUser ? 'dashboard' : 'home')" />
     </main>
 
     <!-- The assistant stays available on public pages and every dashboard. -->
-    <AIChatbot
-      :signed-in-user="signedInUser"
-      :requests="requests"
-      :services="services"
-      :current-page="currentPage"
-      @navigate="goTo"
-    />
+    <AIChatbot :signed-in-user="signedInUser" :requests="requests" :services="services" :current-page="currentPage"
+      @navigate="goTo" />
 
     <FooterSection v-if="!isOpsDashboard" />
   </div>
