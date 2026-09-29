@@ -39,6 +39,12 @@ function riskLevel(score) {
   return { label: 'Low risk', cls: 'risk-low' }
 }
 
+// Visual risk meter: maps the score (3-10) onto a 0-100% bar width
+function riskMeterPercent(score) {
+  const clamped = Math.max(3, Math.min(score, 10))
+  return Math.round(((clamped - 3) / 7) * 100)
+}
+
 const filteredFlagged = computed(() => {
   if (riskFilter.value === 'all') return flaggedReviews.value
   if (riskFilter.value === 'high') return flaggedReviews.value.filter(r => r.score >= 7)
@@ -57,64 +63,6 @@ async function runModerationScan() {
   } finally {
     moderationLoading.value = false
   }
-}
-
-function loadSampleReviews() {
-  flaggedReviews.value = [
-    {
-      reviewId: '8a3f2b1c-1111-4aaa-bbbb-cccccccccccc',
-      rating: 5,
-      comment: 'good good good very good service recommend',
-      customerId: '2d4e9f01-2222-4aaa-bbbb-cccccccccccc',
-      providerId: '7b3a1c5d-3333-4aaa-bbbb-cccccccccccc',
-      score: 7,
-      reasons: [
-        { signal: 'GENERIC', detail: 'Filler text with no specific detail about the service', weight: 1 },
-        { signal: 'NEW_ACCOUNT', detail: 'Account created 1 day ago leaving a 5-star rating', weight: 2 },
-        { signal: 'NO_BOOKING', detail: 'No completed booking with this provider', weight: 2 },
-        { signal: 'BURST', detail: '4 reviews for this provider in 2 hours', weight: 2 },
-      ]
-    },
-    {
-      reviewId: '1f7c4d2e-4444-4aaa-bbbb-cccccccccccc',
-      rating: 1,
-      comment: 'bad',
-      customerId: '9a2b3c4d-5555-4aaa-bbbb-cccccccccccc',
-      providerId: '5e6f7a8b-6666-4aaa-bbbb-cccccccccccc',
-      score: 6,
-      reasons: [
-        { signal: 'SHORT', detail: 'Very short comment on an extreme rating', weight: 1 },
-        { signal: 'NEW_ACCOUNT', detail: 'Account created 2 days ago leaving a 1-star rating', weight: 2 },
-        { signal: 'DUPLICATE', detail: 'Near-duplicate of another recent review', weight: 3 },
-      ]
-    },
-    {
-      reviewId: '3e5a9c7f-7777-4aaa-bbbb-cccccccccccc',
-      rating: 5,
-      comment: 'They came on time and did a thorough job cleaning the kitchen and bathrooms. Would book again for sure.',
-      customerId: '4c8d2e1f-8888-4aaa-bbbb-cccccccccccc',
-      providerId: '7b3a1c5d-3333-4aaa-bbbb-cccccccccccc',
-      score: 4,
-      reasons: [
-        { signal: 'BURST', detail: '4 reviews for this provider in 2 hours', weight: 2 },
-        { signal: 'NEW_ACCOUNT', detail: 'Account created 3 days ago leaving a 5-star rating', weight: 2 },
-      ]
-    },
-    {
-      reviewId: 'aabb1122-9999-4aaa-bbbb-cccccccccccc',
-      rating: 5,
-      comment: 'excellent service very good recommend to everyone best provider',
-      customerId: '2d4e9f01-2222-4aaa-bbbb-cccccccccccc',
-      providerId: '7b3a1c5d-3333-4aaa-bbbb-cccccccccccc',
-      score: 5,
-      reasons: [
-        { signal: 'GENERIC', detail: 'Filler text with no specific detail about the service', weight: 1 },
-        { signal: 'BURST', detail: '4 reviews for this provider in 2 hours', weight: 2 },
-        { signal: 'SOCK_PUPPET', detail: 'Same customer reviewed only this one provider', weight: 2 },
-      ]
-    }
-  ]
-  moderationError.value = ''
 }
 
 async function keepReview(reviewId) {
@@ -253,7 +201,7 @@ function assignProvider(request) {
         <div>
           <h1>{{ activeView === 'dashboard' ? 'Admin dashboard' : activeView }}</h1>
           <p>Manage users, provider approvals, request assignment and chat approval.</p>
-        </div><input v-model="searchTerm" aria-label="Search admin workspace" placeholder="Search admin workspace..." />
+        </div><input v-model="searchTerm" placeholder="Search admin workspace..." />
       </header>
 
       <template v-if="activeView === 'dashboard'">
@@ -502,12 +450,9 @@ function assignProvider(request) {
         <section v-if="moderationTab === 'reviews'" class="ops-panel">
           <div class="panel-heading">
             <h2>Review moderation</h2>
-            <div style="display: flex; gap: 8px;">
-              <button class="secondary" @click="loadSampleReviews">Load sample data</button>
-              <button class="primary" @click="runModerationScan" :disabled="moderationLoading">
-                {{ moderationLoading ? 'Scanning...' : 'Scan reviews' }}
-              </button>
-            </div>
+            <button class="primary" @click="runModerationScan" :disabled="moderationLoading">
+              {{ moderationLoading ? 'Scanning...' : 'Scan reviews' }}
+            </button>
           </div>
           <p class="muted">
             The rule-based detector scores each review on six signals: burst velocity, near-duplicate text,
@@ -539,7 +484,12 @@ function assignProvider(request) {
               <div>
                 <strong>Review {{ review.reviewId.slice(0, 8) }}</strong>
                 <span class="risk-badge" :class="riskLevel(review.score).cls">{{ riskLevel(review.score).label }}</span>
-                <span class="moderation-score">Score: {{ review.score }}</span>
+                <div class="risk-meter" :title="'Risk score: ' + review.score + '/10'">
+                  <div class="risk-meter-track">
+                    <div class="risk-meter-fill" :class="riskLevel(review.score).cls" :style="{ width: riskMeterPercent(review.score) + '%' }"></div>
+                  </div>
+                  <span class="risk-meter-label">{{ review.score }}/10</span>
+                </div>
               </div>
               <div class="moderation-meta">
                 <span>Rating: {{ '★'.repeat(review.rating || 0) }}{{ '☆'.repeat(5 - (review.rating || 0)) }}</span>
@@ -617,7 +567,12 @@ function assignProvider(request) {
               <div>
                 <strong>{{ account.kind === 'provider' ? 'Provider' : 'Customer' }} {{ account.accountId.slice(0, 8) }}</strong>
                 <span class="risk-badge" :class="riskLevel(account.score).cls">{{ riskLevel(account.score).label }}</span>
-                <span class="moderation-score">Score: {{ account.score }}</span>
+                <div class="risk-meter" :title="'Risk score: ' + account.score + '/10'">
+                  <div class="risk-meter-track">
+                    <div class="risk-meter-fill" :class="riskLevel(account.score).cls" :style="{ width: riskMeterPercent(account.score) + '%' }"></div>
+                  </div>
+                  <span class="risk-meter-label">{{ account.score }}/10</span>
+                </div>
               </div>
               <div class="moderation-meta">
                 <span>Type: {{ account.kind }}</span>
