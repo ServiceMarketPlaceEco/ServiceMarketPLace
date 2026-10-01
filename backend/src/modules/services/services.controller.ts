@@ -7,22 +7,38 @@ import {
   Body,
   Param,
   UseGuards,
+  HttpCode,
 } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { ServicesService } from './services.service';
-import { CreateServiceDto, UpdateServiceDto, ServiceResponseDto } from './dto';
+import { CreateServiceDto, UpdateServiceDto, ServiceResponseDto, MatchTranscriptDto } from './dto';
+import { ServiceMatchingService } from './matching/service-matching.service';
 import { JwtAuthGuard, AdminGuard } from '../auth/guards';
 
 @ApiTags('services')
 @Controller('services')
 export class ServicesController {
-  constructor(private readonly servicesService: ServicesService) {}
+  constructor(
+    private readonly servicesService: ServicesService,
+    private readonly serviceMatchingService: ServiceMatchingService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Get all active services' })
   @ApiResponse({ status: 200, description: 'List of services', type: [ServiceResponseDto] })
   async findAll() {
     return this.servicesService.findAll();
+  }
+
+  @Post('match-transcript')
+  @UseGuards(ThrottlerGuard)
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Find the services that best match a voice-search transcript' })
+  @ApiResponse({ status: 200, description: 'Ranked service matches with confidence and reason' })
+  @ApiResponse({ status: 429, description: 'Too many requests, try again shortly' })
+  async matchTranscript(@Body() dto: MatchTranscriptDto) {
+    return this.serviceMatchingService.matchTranscript(dto.transcript, dto.language);
   }
 
   @Get(':id')

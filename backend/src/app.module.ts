@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 // Modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -38,6 +39,19 @@ import { ChatbotModule } from './modules/chatbot/chatbot.module';
         logging: configService.get<string>('NODE_ENV') === 'development',
         timezone: 'Z',
       }),
+      inject: [ConfigService],
+    }),
+
+    // Rate limiting. Not applied globally: only routes that opt in with
+    // @UseGuards(ThrottlerGuard) are limited (the endpoints that call OpenAI).
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => [
+        {
+          ttl: Number(configService.get('AI_RATE_LIMIT_WINDOW_MS', 60_000)),
+          limit: Number(configService.get('AI_RATE_LIMIT', 20)),
+        },
+      ],
       inject: [ConfigService],
     }),
 

@@ -81,6 +81,12 @@ export async function getServiceProviders(serviceId) {
   return request(`/services/${serviceId}/providers`)
 }
 
+// Ranks catalog services against a voice-search transcript (English or Bengali).
+// Returns { transcript, interpretation, matches: [{ serviceId, serviceName, confidence, reason }], source }
+export async function matchTranscript(transcript, language) {
+  return request('/services/match-transcript', { method: 'POST', body: { transcript, language } })
+}
+
 // ---------- Provider self-service ----------
 
 export async function getProviderProfile() {

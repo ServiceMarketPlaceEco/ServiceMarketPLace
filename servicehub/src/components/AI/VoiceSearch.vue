@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { matchTranscript } from '../../services/api'
 
 const props = defineProps({
   // Service data is used to suggest the most relevant booking option.
@@ -17,17 +18,25 @@ const isListening = ref(false)
 const selectedService = ref(null)
 const transcriptInput = ref(null)
 
+// Ranked results from the backend matcher for the current transcript.
+const serverMatches = ref(null)
+const interpretation = ref('')
+const isMatching = ref(false)
+
 let recognition = null
 let restartTimer = null
+let matchTimer = null
+let matchRequestId = 0
 
 // Support both the standard API and the prefix currently used by some browsers.
 const SpeechRecognition =
   window.SpeechRecognition || window.webkitSpeechRecognition
 const speechSupported = Boolean(SpeechRecognition)
 
-// Frontend prototype vocabulary. Bengali terms are associated with the English
-// words currently used in ServiceHub's service titles and descriptions.
-// A future backend AI endpoint can replace this dictionary and scoring logic.
+// Instant local keyword matching, shown while the user is still speaking and
+// used whenever the backend matcher (POST /services/match-transcript) is
+// unavailable. Bengali terms are associated with the English words currently
+// used in ServiceHub's service titles and descriptions.
 const bengaliToEnglish = {
   পরিষ্কার: 'cleaning',
   পরিচ্ছন্নতা: 'cleaning',
@@ -97,8 +106,7 @@ function scoreService(service, spokenRequest) {
   }, 0)
 }
 
-// Show up to five likely services for the user to verify.
-const suggestedServices = computed(() =>
+const keywordSuggestions = computed(() =>
   props.services
     .map((service) => ({
       service,
@@ -109,6 +117,56 @@ const suggestedServices = computed(() =>
     .slice(0, 5)
     .map((result) => result.service),
 )
+
+// Backend matches are mapped back onto the catalog cards ServiceGrid already has.
+const serverSuggestions = computed(() => {
+  if (!serverMatches.value) return null
+  return serverMatches.value
+    .map((match) => props.services.find((service) => service.serviceId === match.serviceId))
+    .filter(Boolean)
+})
+
+// Show up to five likely services for the user to verify. The backend
+// understands meaning ("aircon blowing warm air" -> AC Repair), so its ranking
+// wins once available; keyword matching covers the gap until then.
+const suggestedServices = computed(() =>
+  serverSuggestions.value?.length ? serverSuggestions.value : keywordSuggestions.value,
+)
+
+// Ask the backend once the transcript settles. Interim speech results change
+// several times a second, so wait until recognition has stopped and the text
+// has been still for a moment. Stale responses are ignored.
+function scheduleServerMatch() {
+  clearTimeout(matchTimer)
+  serverMatches.value = null
+  interpretation.value = ''
+
+  const text = transcript.value.trim()
+  if (!text || isListening.value) {
+    isMatching.value = false
+    return
+  }
+
+  const requestId = ++matchRequestId
+  isMatching.value = true
+  matchTimer = setTimeout(async () => {
+    try {
+      const result = await matchTranscript(text, language.value)
+      if (requestId !== matchRequestId) return
+      serverMatches.value = result?.matches ?? []
+      interpretation.value = result?.interpretation || ''
+    } catch (error) {
+      if (requestId !== matchRequestId) return
+      // Keep the local keyword suggestions if the backend cannot be reached.
+      console.warn('Transcript matching unavailable:', error)
+      serverMatches.value = null
+    } finally {
+      if (requestId === matchRequestId) isMatching.value = false
+    }
+  }, 400)
+}
+
+watch([transcript, isListening], scheduleServerMatch)
 
 // Preselect the best match, while keeping the selection editable.
 watch(suggestedServices, (services) => {
@@ -211,6 +269,8 @@ function restartForLanguage() {
 
 function closeVoiceSearch() {
   clearTimeout(restartTimer)
+  clearTimeout(matchTimer)
+  matchRequestId += 1
   stopListening()
   modalOpen.value = false
   errorMessage.value = ''
@@ -246,6 +306,7 @@ function confirmVoiceSearch() {
 
 onBeforeUnmount(() => {
   clearTimeout(restartTimer)
+  clearTimeout(matchTimer)
   stopListening()
 })
 </script>
@@ -353,8 +414,16 @@ onBeforeUnmount(() => {
           </select>
         </label>
 
+        <p v-if="interpretation && suggestedServices.length" class="voice-help" aria-live="polite">
+          Understood as: {{ interpretation }}
+        </p>
+
+        <p v-if="isMatching && !suggestedServices.length" class="voice-help" aria-live="polite">
+          Finding the closest services…
+        </p>
+
         <p
-          v-else-if="transcript.trim()"
+          v-else-if="transcript.trim() && !suggestedServices.length"
           class="voice-warning"
           aria-live="polite"
         >
