@@ -9,6 +9,7 @@ import {
   UseGuards,
   HttpCode,
 } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { ServicesService } from './services.service';
 import { CreateServiceDto, UpdateServiceDto, ServiceResponseDto, MatchTranscriptDto } from './dto';
@@ -31,9 +32,11 @@ export class ServicesController {
   }
 
   @Post('match-transcript')
+  @UseGuards(ThrottlerGuard)
   @HttpCode(200)
   @ApiOperation({ summary: 'Find the services that best match a voice-search transcript' })
   @ApiResponse({ status: 200, description: 'Ranked service matches with confidence and reason' })
+  @ApiResponse({ status: 429, description: 'Too many requests, try again shortly' })
   async matchTranscript(@Body() dto: MatchTranscriptDto) {
     return this.serviceMatchingService.matchTranscript(dto.transcript, dto.language);
   }
