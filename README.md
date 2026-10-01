@@ -193,6 +193,22 @@ npm run dev
 Customers can be created through the app's sign-up page
 (or `POST /api/auth/register/customer` in Swagger).
 
+## 8. (Optional) Enable "Continue with Google"
+
+Google sign-in only signs in **existing** accounts: the Google account's email
+must match the email a customer, provider or admin registered with. Otherwise
+the sign-in page shows "This user has not been signed up".
+
+1. In [Google Cloud Console](https://console.cloud.google.com/apis/credentials),
+   create an **OAuth client ID** of type **Web application**.
+2. Under **Authorized JavaScript origins** add `http://localhost:5173` (and your
+   deployed frontend URL). No redirect URI is needed.
+3. Put the client ID in both env files and restart both servers:
+   - `backend/.env`: `GOOGLE_CLIENT_ID=<client id>`
+   - `servicehub/.env`: `VITE_GOOGLE_CLIENT_ID=<client id>`
+
+Without a client ID the button is shown disabled with a "not configured" note.
+
 ## Troubleshooting
 
 | Problem | Fix |

@@ -63,6 +63,12 @@ export async function login(payload) {
   return request('/auth/login', { method: 'POST', body: payload })
 }
 
+// Exchanges a Google ID token for a session. Fails with "This user has not
+// been signed up" when no account is registered with the Google email.
+export async function loginWithGoogle(credential) {
+  return request('/auth/google', { method: 'POST', body: { credential } })
+}
+
 export async function forgotPassword(email, userType) {
   return request('/auth/forgot-password', { method: 'POST', body: { email, userType } })
 }

@@ -1,8 +1,12 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
+import { getGoogleClientId, loadGoogleIdentity } from '../../services/googleIdentity'
 
 // App.vue receives these events and performs the API requests.
-const emit = defineEmits(['sign-in', 'go-register', 'forgot-password', 'reset-password'])
+const emit = defineEmits(['sign-in', 'google-sign-in', 'go-register', 'forgot-password', 'reset-password'])
+
+// Set by App.vue when Google sign-in fails, e.g. the email isn't registered.
+defineProps({ googleError: { type: String, default: '' } })
 
 const form = reactive({ identifier: '', password: '' })
 const showPassword = ref(false)
@@ -16,14 +20,38 @@ function submit() {
   })
 }
 
-function continueWithGoogleDemo() {
-  emit('sign-in', {
-    identifier: 'google.customer@servicehub.local',
-    email: 'google.customer@servicehub.local',
-    name: 'Google Customer',
-    authProvider: 'google'
-  })
-}
+const googleButton = ref(null)
+const googleUnavailable = ref('')
+
+// Renders Google's own button; it hands back an ID token for the backend to
+// verify and match against the email the account was registered with.
+onMounted(async () => {
+  const clientId = getGoogleClientId()
+  if (!clientId) {
+    googleUnavailable.value = 'Google sign-in is not configured yet.'
+    return
+  }
+
+  try {
+    const google = await loadGoogleIdentity()
+    if (!googleButton.value) return
+    google.accounts.id.initialize({
+      client_id: clientId,
+      callback: (response) => emit('google-sign-in', { credential: response.credential })
+    })
+    google.accounts.id.renderButton(googleButton.value, {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      text: 'continue_with',
+      shape: 'rectangular',
+      logo_alignment: 'center',
+      width: Math.min(googleButton.value.clientWidth || 400, 400)
+    })
+  } catch {
+    googleUnavailable.value = 'Could not load Google sign-in. Check your connection and try again.'
+  }
+})
 
 function requestReset() {
   const email = resetForm.email.trim()
@@ -101,7 +129,15 @@ function submitReset() {
 
         <button class="primary-button signin-submit" type="submit">Sign in securely</button>
         <div class="divider" aria-hidden="true"><span>or</span></div>
-        <button class="outline-button" type="button" @click="continueWithGoogleDemo">Continue with Google demo</button>
+        <div v-if="!googleUnavailable" ref="googleButton" class="google-button" />
+        <template v-else>
+          <button class="outline-button" type="button" disabled>Continue with Google</button>
+          <p class="google-note">{{ googleUnavailable }}</p>
+        </template>
+        <p v-if="googleError" class="google-error" role="alert">
+          {{ googleError }}
+          <button type="button" @click="emit('go-register')">Create an account</button>
+        </p>
 
         <p class="register-prompt">
           New to ServiceHub?
@@ -317,6 +353,46 @@ function submitReset() {
   content: '';
   height: 1px;
   background: var(--line, #ded2ff);
+}
+
+.google-button {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.outline-button:disabled {
+  cursor: not-allowed;
+  opacity: .6;
+}
+
+.google-note {
+  margin: -8px 0 0;
+  color: var(--muted, #6a6280);
+  font-size: .9rem;
+  text-align: center;
+}
+
+.google-error {
+  margin: 0;
+  border: 1px solid #f3b4b4;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fff1f1;
+  color: #a12020;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.google-error button {
+  border: 0;
+  padding: 0 0 0 4px;
+  background: transparent;
+  color: #642adf;
+  font: inherit;
+  font-weight: 900;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .register-prompt {
