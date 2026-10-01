@@ -11,6 +11,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
+import { OAuth2Client, TokenPayload } from 'google-auth-library';
 
 import { Customer } from '../customers/entities/customer.entity';
 import { ServiceProvider } from '../providers/entities/service-provider.entity';
@@ -27,6 +28,9 @@ import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class AuthService {
+  // Verifies Google ID tokens against Google's public signing keys.
+  googleClient = new OAuth2Client();
+
   constructor(
     @InjectRepository(Customer)
     private customerRepository: Repository<Customer>,
@@ -169,6 +173,54 @@ export class AuthService {
     return this.generateTokens(userId!, user.email, userType!, user);
   }
 
+  // Login with Google: the Google account's email must belong to an account
+  // that has already signed up. Google sign-in never creates new accounts.
+  async loginWithGoogle(credential: string): Promise<AuthResponseDto> {
+    const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
+    if (!clientId) {
+      throw new BadRequestException('Google sign-in is not configured');
+    }
+
+    let payload: TokenPayload | undefined;
+    try {
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken: credential,
+        audience: clientId,
+      });
+      payload = ticket.getPayload();
+    } catch {
+      throw new UnauthorizedException('Google sign-in failed. Please try again.');
+    }
+
+    if (!payload?.email || !payload.email_verified) {
+      throw new UnauthorizedException('Your Google email address is not verified');
+    }
+
+    const email = payload.email;
+
+    const customer = await this.customerRepository.findOne({ where: { email } });
+    if (customer) {
+      this.assertCanSignIn(customer);
+      return this.generateTokens(customer.customerId, customer.email, UserType.CUSTOMER, customer);
+    }
+
+    const provider = await this.providerRepository.findOne({ where: { email } });
+    if (provider) {
+      this.assertCanSignIn(provider);
+      return this.generateTokens(provider.providerId, provider.email, UserType.PROVIDER, provider);
+    }
+
+    const admin = await this.adminRepository.findOne({ where: { email } });
+    if (admin) {
+      this.assertCanSignIn(admin);
+      return this.generateTokens(admin.id, admin.email, UserType.ADMIN, admin);
+    }
+
+    throw new NotFoundException(
+      'This user has not been signed up. Please create an account first.',
+    );
+  }
+
   // Refresh Token
   async refreshToken(refreshToken: string): Promise<AuthResponseDto> {
     const storedToken = await this.refreshTokenRepository.findOne({
@@ -300,6 +352,16 @@ export class AuthService {
       }
     } catch (error) {
       throw new BadRequestException('Invalid or expired reset token');
+    }
+  }
+
+  // Helper: same blocked/inactive checks the password login applies
+  private assertCanSignIn(user: { isActive: boolean; isBlocked?: boolean }): void {
+    if (user.isBlocked) {
+      throw new UnauthorizedException('Your account has been blocked');
+    }
+    if (!user.isActive) {
+      throw new UnauthorizedException('Your account is not active');
     }
   }
 

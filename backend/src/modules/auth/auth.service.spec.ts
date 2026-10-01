@@ -2,7 +2,12 @@
 // we mock out the repos, jwt, config and mail so no real db or emails are needed
 // run with: npm test
 
-import { ConflictException, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import {
+  ConflictException,
+  UnauthorizedException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { UserTypeDto } from './dto';
@@ -323,6 +328,114 @@ describe('AuthService', () => {
       await expect(
         service.login({ email: 'a@b.com', password: 'x', userType: 'alien' } as any),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('loginWithGoogle', () => {
+    // stand in for google's token check, returns whatever payload the test wants
+    const googleReturns = (payload: any) => {
+      service.googleClient.verifyIdToken = jest.fn().mockResolvedValue({
+        getPayload: () => payload,
+      }) as any;
+    };
+
+    it('signs in a customer whose email matches the google account', async () => {
+      googleReturns({ email: 'amy@example.com', email_verified: true });
+      customerRepo.findOne.mockResolvedValue({
+        customerId: 'cust-1',
+        email: 'amy@example.com',
+        passwordHash: 'hash',
+        isActive: true,
+        isBlocked: false,
+      });
+
+      const result = await service.loginWithGoogle('google-id-token');
+
+      expect(service.googleClient.verifyIdToken).toHaveBeenCalledWith({
+        idToken: 'google-id-token',
+        audience: 'test-secret',
+      });
+      expect(result.userType).toBe('customer');
+      expect(result.user.passwordHash).toBeUndefined();
+    });
+
+    it('falls through to providers when no customer has the email', async () => {
+      googleReturns({ email: 'pro@example.com', email_verified: true });
+      customerRepo.findOne.mockResolvedValue(null);
+      providerRepo.findOne.mockResolvedValue({
+        providerId: 'prov-1',
+        email: 'pro@example.com',
+        passwordHash: 'hash',
+        isActive: true,
+        isBlocked: false,
+      });
+
+      const result = await service.loginWithGoogle('google-id-token');
+      expect(result.userType).toBe('provider');
+    });
+
+    it('signs in an admin whose email matches', async () => {
+      googleReturns({ email: 'admin@example.com', email_verified: true });
+      customerRepo.findOne.mockResolvedValue(null);
+      providerRepo.findOne.mockResolvedValue(null);
+      adminRepo.findOne.mockResolvedValue({
+        id: 'adm-1',
+        email: 'admin@example.com',
+        passwordHash: 'hash',
+        isActive: true,
+      });
+
+      const result = await service.loginWithGoogle('google-id-token');
+      expect(result.userType).toBe('admin');
+    });
+
+    it('tells the user they have not signed up when no account has the email', async () => {
+      googleReturns({ email: 'new@example.com', email_verified: true });
+      customerRepo.findOne.mockResolvedValue(null);
+      providerRepo.findOne.mockResolvedValue(null);
+      adminRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.loginWithGoogle('google-id-token')).rejects.toThrow(NotFoundException);
+      await expect(service.loginWithGoogle('google-id-token')).rejects.toThrow(
+        'This user has not been signed up',
+      );
+      expect(refreshRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects a token google could not verify', async () => {
+      service.googleClient.verifyIdToken = jest.fn().mockRejectedValue(new Error('bad token')) as any;
+
+      await expect(service.loginWithGoogle('forged')).rejects.toThrow(UnauthorizedException);
+      expect(customerRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('rejects a google account with an unverified email', async () => {
+      googleReturns({ email: 'amy@example.com', email_verified: false });
+
+      await expect(service.loginWithGoogle('google-id-token')).rejects.toThrow(UnauthorizedException);
+      expect(customerRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('blocks a blocked customer just like password login does', async () => {
+      googleReturns({ email: 'amy@example.com', email_verified: true });
+      customerRepo.findOne.mockResolvedValue({
+        customerId: 'cust-1',
+        email: 'amy@example.com',
+        isActive: true,
+        isBlocked: true,
+      });
+
+      await expect(service.loginWithGoogle('google-id-token')).rejects.toThrow(
+        'Your account has been blocked',
+      );
+    });
+
+    it('errors clearly when GOOGLE_CLIENT_ID is not set', async () => {
+      configService.get.mockImplementation((key: string, fallback?: string) =>
+        key === 'GOOGLE_CLIENT_ID' ? undefined : fallback || 'test-secret',
+      );
+
+      await expect(service.loginWithGoogle('google-id-token')).rejects.toThrow(BadRequestException);
     });
   });
 

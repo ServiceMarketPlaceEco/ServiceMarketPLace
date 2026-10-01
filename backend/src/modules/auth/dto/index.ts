@@ -100,6 +100,13 @@ export class LoginDto {
   userType: UserTypeDto;
 }
 
+export class GoogleLoginDto {
+  @ApiProperty({ description: 'ID token (credential) returned by Google Identity Services' })
+  @IsNotEmpty()
+  @IsString()
+  credential: string;
+}
+
 export class RefreshTokenDto {
   @ApiProperty()
   @IsNotEmpty()

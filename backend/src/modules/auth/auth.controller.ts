@@ -11,6 +11,7 @@ import {
   RegisterCustomerDto,
   RegisterProviderDto,
   LoginDto,
+  GoogleLoginDto,
   RefreshTokenDto,
   ForgotPasswordDto,
   ResetPasswordDto,
@@ -45,6 +46,16 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(@Body() dto: LoginDto): Promise<AuthResponseDto> {
     return this.authService.login(dto);
+  }
+
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Sign in with a Google account that matches a registered email' })
+  @ApiResponse({ status: 200, description: 'Login successful', type: AuthResponseDto })
+  @ApiResponse({ status: 401, description: 'Invalid Google credential or unverified email' })
+  @ApiResponse({ status: 404, description: 'No account is registered with this Google email' })
+  async loginWithGoogle(@Body() dto: GoogleLoginDto): Promise<AuthResponseDto> {
+    return this.authService.loginWithGoogle(dto.credential);
   }
 
   @Post('refresh')
