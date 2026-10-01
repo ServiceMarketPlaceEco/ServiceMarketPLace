@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, IsBoolean } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsBoolean, IsIn, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 
 export class CreateServiceDto {
@@ -43,4 +43,20 @@ export class ServiceResponseDto {
 
   @ApiProperty()
   createdAt: Date;
+}
+
+export class MatchTranscriptDto {
+  @ApiProperty({
+    example: 'my aircon stopped blowing cold air',
+    description: 'Text from the browser speech-to-text (English or Bengali)',
+  })
+  @IsNotEmpty()
+  @IsString()
+  @MaxLength(500)
+  transcript: string;
+
+  @ApiPropertyOptional({ example: 'en-AU', enum: ['en-AU', 'bn-BD'] })
+  @IsOptional()
+  @IsIn(['en-AU', 'bn-BD'])
+  language?: string;
 }
