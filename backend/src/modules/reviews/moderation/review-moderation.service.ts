@@ -38,10 +38,22 @@ export class ReviewModerationService {
 
   // run a full scan over every review and return the flagged queue.
   // this is what the admin "Scan reviews" button will eventually call.
-  async scanAllReviews(): Promise<ReviewScore[]> {
+    async scanAllReviews() {
     const reviews = await this.reviewRepository.find();
     const scorable = await this.attachContext(reviews);
-    return scanReviews(scorable, DETECTION_CONFIG);
+    // the detector only returns id, score and reasons, so put the
+    // review details back on so the admin card can show them
+    const byId = new Map(scorable.map((r) => [r.reviewId, r]));
+    return scanReviews(scorable, DETECTION_CONFIG).map((s) => {
+      const r = byId.get(s.reviewId);
+      return {
+        ...s,
+        rating: r?.rating,
+        comment: r?.comment,
+        customerId: r?.customerId,
+        providerId: r?.providerId,
+      };
+    });
   }
 
   // admin looked at a flagged review and decided its actually genuine.
