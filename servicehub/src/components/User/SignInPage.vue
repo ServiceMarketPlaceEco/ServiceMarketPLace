@@ -16,11 +16,8 @@ function submit() {
   })
 }
 
-function continueWithGoogleDemo() {
+function continueWithGoogle() {
   emit('sign-in', {
-    identifier: 'google.customer@servicehub.local',
-    email: 'google.customer@servicehub.local',
-    name: 'Google Customer',
     authProvider: 'google'
   })
 }
@@ -101,7 +98,22 @@ function submitReset() {
 
         <button class="primary-button signin-submit" type="submit">Sign in securely</button>
         <div class="divider" aria-hidden="true"><span>or</span></div>
-        <button class="outline-button" type="button" @click="continueWithGoogleDemo">Continue with Google demo</button>
+        <!-- Dedicated class keeps the Google option visually consistent and
+             prevents unrelated global button/link styles from overriding it -->
+        <button class="google-signin-button" type="button" aria-label="Continue with Google"
+          @click="continueWithGoogle">
+          <svg class="google-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#4285F4"
+              d="M21.6 12.23c0-.71-.06-1.4-.18-2.07H12v3.91h5.38a4.6 4.6 0 0 1-2 3.02v2.54h3.24c1.9-1.75 2.98-4.33 2.98-7.4Z" />
+            <path fill="#34A853"
+              d="M12 22c2.7 0 4.98-.9 6.63-2.43l-3.24-2.54c-.9.6-2.05.96-3.39.96-2.61 0-4.82-1.76-5.61-4.13H3.04v2.62A10 10 0 0 0 12 22Z" />
+            <path fill="#FBBC05"
+              d="M6.39 13.86A6 6 0 0 1 6.08 12c0-.65.11-1.28.31-1.86V7.52H3.04A10 10 0 0 0 2 12c0 1.61.39 3.14 1.04 4.48l3.35-2.62Z" />
+            <path fill="#EA4335"
+              d="M12 6.01c1.47 0 2.79.51 3.83 1.5l2.87-2.87A9.62 9.62 0 0 0 12 2a10 10 0 0 0-8.96 5.52l3.35 2.62C7.18 7.77 9.39 6.01 12 6.01Z" />
+          </svg>
+          <span>Continue with Google</span>
+        </button>
 
         <p class="register-prompt">
           New to ServiceHub?
@@ -273,6 +285,47 @@ function submitReset() {
   border: 1.5px solid var(--line, #d9c9ff);
   background: transparent;
   color: var(--text, #170b31);
+}
+
+/* Google sign-in uses the same dimensions, radius and type weight as the
+   standard sign-in button while retaining Google's recognisable white style */
+.google-signin-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  border: 1.5px solid var(--line, #d9c9ff);
+  border-radius: 15px;
+  padding: 0 20px;
+  background: var(--surface, #fff);
+  color: var(--text, #170b31);
+  font: inherit;
+  font-weight: 900;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.google-signin-button:hover {
+  transform: translateY(-1px);
+  border-color: #7937f3;
+  background: var(--background, #faf8ff);
+  box-shadow: 0 12px 28px rgba(100, 42, 224, .14);
+}
+
+.google-signin-button:focus-visible {
+  outline: 3px solid rgba(109, 46, 237, .28);
+  outline-offset: 3px;
+}
+
+.google-icon {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
 }
 
 .forgot-button {

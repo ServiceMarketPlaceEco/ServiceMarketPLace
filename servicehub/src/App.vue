@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as api from './services/api'
 
 import NavBar from './components/User/NavBar.vue'
@@ -19,102 +19,8 @@ import AIChatbot from './components/AI/AIChatbot.vue'
 import LandingHighlights from './components/User/LandingHighlights.vue'
 import ReviewsPage from './components/User/ReviewsPage.vue'
 
-// Starter reviews keep the public landing page useful before users add reviews.
-const defaultReviews = [
-  { id: 'REV-01', name: 'Sabrina Rahman', role: 'customer', serviceId: 'cleaning', serviceTitle: 'Home Cleaning', rating: 5, comment: 'The provider arrived on time and completed everything carefully.' },
-  { id: 'REV-02', name: 'Rafiq Ahmed', role: 'customer', serviceId: 'ac-repair', serviceTitle: 'AC Repair', rating: 5, comment: 'Clear communication, professional work and helpful status updates.' },
-  { id: 'REV-03', name: 'Nusrat Jahan', role: 'customer', serviceId: 'delivery', serviceTitle: 'Local Delivery', rating: 4, comment: 'Easy to request and I could follow the service progress.' }
-]
-
-// Fixed password used for the one-click "demo" sign-in shortcuts, so they
-// satisfy the backend's password policy without showing any new UI.
-const DEMO_PASSWORD = 'GoogleDemo@123'
-
-// Presentation-only details the backend doesn't store (images, upfront
-// payment terms). Matched by service name so the catalog still looks the
-// same as the old mock data once it's loaded from the real API.
-const SERVICE_PRESENTATION = {
-  'home cleaning': {
-    image: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952'
-  },
-  'moving help': {
-    image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c',
-    upfrontPayment: {
-      required: true,
-      amount: 300,
-      bankName: 'BRAC Bank',
-      accountName: 'ServiceHub Moving Provider',
-      accountNumber: '01700000001',
-      note: 'Moving jobs require a small provider deposit before vehicle scheduling.'
-    }
-  },
-  'local delivery': {
-    image: 'https://images.unsplash.com/photo-1604357209793-fca5dca89f97'
-  },
-  'tech support': {
-    image: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3'
-  },
-  'ac repair': {
-    image: 'https://images.unsplash.com/photo-1621905252507-b35492cc74b4',
-    upfrontPayment: {
-      required: true,
-      amount: 250,
-      bankName: 'Dutch-Bangla Bank',
-      accountName: 'Rajshahi AC Provider',
-      accountNumber: '01800000002',
-      note: 'AC repair requires an inspection booking deposit before provider dispatch.'
-    }
-  },
-  'electrician': {
-    image: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e',
-    upfrontPayment: {
-      required: true,
-      amount: 200,
-      bankName: 'City Bank',
-      accountName: 'Rajshahi Electrical Provider',
-      accountNumber: '01900000003',
-      note: 'Electrical work may require upfront inspection payment for safety scheduling.'
-    }
-  },
-  'plumbing help': {
-    image: 'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39'
-  },
-  'home tutoring': {
-    image: 'https://images.unsplash.com/photo-1509062522246-3755977927d7'
-  },
-  'elder care visit': {
-    image: 'https://images.unsplash.com/photo-1584515933487-779824d29309'
-  }
-}
-const DEFAULT_SERVICE_IMAGE = 'https://images.unsplash.com/photo-1581578731548-c64695cc6952'
-
-// The original catalog order from the finalized frontend, so the homepage
-// looks the same regardless of what order the backend returns rows in.
-// ProviderRegisterPage's "Service type" dropdown uses its own labels that
-// don't exactly match the service catalog's names (e.g. "Tutoring" vs.
-// "Home Tutoring"), so map them before looking up a catalog match.
-const PROVIDER_SERVICE_TYPE_MAP = {
-  'ac repair & home maintenance': 'ac repair',
-  'home cleaning': 'home cleaning',
-  'moving help': 'moving help',
-  'delivery service': 'local delivery',
-  'technology support': 'tech support',
-  'tutoring': 'home tutoring'
-}
-
-const SERVICE_DISPLAY_ORDER = [
-  'home cleaning',
-  'moving help',
-  'local delivery',
-  'tech support',
-  'ac repair',
-  'electrician',
-  'plumbing help',
-  'home tutoring',
-  'elder care visit'
-]
-
-// Backend `services.icon` -> the category label the mock data used to group by.
+// Backend service icons can be converted to readable category labels when a
+// separate category field is not returned.
 const ICON_CATEGORY_MAP = {
   home: 'Home',
   truck: 'Transport',
@@ -146,13 +52,8 @@ function digitsOnly(value) {
   return digits ? Number(digits) : undefined
 }
 
-// localStorage keeps the demo workflow usable after browser refresh.
+// The current user and theme are cached only for browser-session continuity.
 const savedUser = JSON.parse(localStorage.getItem('servicehub-user') || 'null')
-const savedChats = JSON.parse(localStorage.getItem('servicehub-chat-approvals') || '[]')
-const savedMessages = JSON.parse(localStorage.getItem('servicehub-messages') || '[]')
-const savedReviews = JSON.parse(
-  localStorage.getItem('servicehub-reviews') || JSON.stringify(defaultReviews)
-)
 
 const currentPage = ref(savedUser ? 'dashboard' : 'home')
 const theme = ref(localStorage.getItem('servicehub-theme') || 'light')
@@ -161,13 +62,137 @@ const selectedService = ref(null)
 const services = ref([])
 const requests = ref([])
 const accounts = ref([])
-const chatApprovals = ref(savedChats)
-const messages = ref(savedMessages)
+const chatApprovals = ref([])
+const messages = ref([])
 const blockRequests = ref([])
-const reviews = ref(savedReviews)
+const reviews = ref([])
 const appMain = ref(null)
 const providerServices = ref([])
 const providerReviews = ref([])
+
+// Customer phone verification state. The pending registration is kept only in
+// memory until the code is confirmed, so its password is never stored locally.
+const showCustomerVerification = ref(false)
+const pendingCustomerRegistration = ref(null)
+const customerVerificationRequestId = ref('')
+const customerVerificationInput = ref('')
+const customerVerificationError = ref('')
+const customerVerificationBusy = ref(false)
+const customerResendSeconds = ref(30)
+let customerResendInterval = null
+
+const maskedVerificationPhone = computed(() => {
+  const phone = String(pendingCustomerRegistration.value?.phone || '')
+  if (phone.length <= 4) return phone
+  return `${phone.slice(0, 3)}${'•'.repeat(Math.max(phone.length - 6, 3))}${phone.slice(-3)}`
+})
+
+function clearCustomerResendTimer() {
+  if (customerResendInterval) window.clearInterval(customerResendInterval)
+  customerResendInterval = null
+}
+
+function startCustomerResendTimer() {
+  clearCustomerResendTimer()
+  customerResendSeconds.value = 30
+  customerResendInterval = window.setInterval(() => {
+    if (customerResendSeconds.value <= 1) {
+      customerResendSeconds.value = 0
+      clearCustomerResendTimer()
+    } else {
+      customerResendSeconds.value -= 1
+    }
+  }, 1000)
+}
+
+async function sendCustomerVerificationCode(user) {
+  customerVerificationBusy.value = true
+  customerVerificationError.value = ''
+
+  try {
+    // The backend creates the code, sends the SMS and returns an opaque request ID.
+    const result = await api.requestCustomerPhoneVerification({ phone: user.phone })
+    customerVerificationRequestId.value = result.verificationId
+    pendingCustomerRegistration.value = { ...user }
+    customerVerificationInput.value = ''
+    showCustomerVerification.value = true
+    startCustomerResendTimer()
+  } catch (err) {
+    alert(err.message || 'We could not send a confirmation code. Please try again.')
+  } finally {
+    customerVerificationBusy.value = false
+  }
+}
+
+async function resendCustomerVerificationCode() {
+  if (customerResendSeconds.value > 0) return
+  const user = pendingCustomerRegistration.value
+  if (!user) return
+
+  customerVerificationBusy.value = true
+  customerVerificationError.value = ''
+  try {
+    const result = await api.requestCustomerPhoneVerification({ phone: user.phone })
+    customerVerificationRequestId.value = result.verificationId
+    customerVerificationInput.value = ''
+    startCustomerResendTimer()
+  } catch (err) {
+    customerVerificationError.value = err.message || 'We could not resend the code.'
+  } finally {
+    customerVerificationBusy.value = false
+  }
+}
+
+function updateCustomerVerificationInput(event) {
+  customerVerificationInput.value = event.target.value.replace(/\D/g, '').slice(0, 6)
+}
+
+function cancelCustomerVerification() {
+  clearCustomerResendTimer()
+  showCustomerVerification.value = false
+  pendingCustomerRegistration.value = null
+  customerVerificationRequestId.value = ''
+  customerVerificationInput.value = ''
+  customerVerificationError.value = ''
+  customerVerificationBusy.value = false
+}
+
+// Provider applications require admin approval, so a successful registration
+// shows a confirmation rather than signing the applicant into a dashboard.
+const showProviderRegistrationSuccess = ref(false)
+const providerRedirectSeconds = ref(20)
+let providerRedirectInterval = null
+let providerRedirectTimeout = null
+
+function clearProviderRedirectTimers() {
+  if (providerRedirectInterval) window.clearInterval(providerRedirectInterval)
+  if (providerRedirectTimeout) window.clearTimeout(providerRedirectTimeout)
+  providerRedirectInterval = null
+  providerRedirectTimeout = null
+}
+
+function returnToLandingPage() {
+  clearProviderRedirectTimers()
+  showProviderRegistrationSuccess.value = false
+  goTo('home')
+}
+
+function showProviderSuccessMessage() {
+  clearProviderRedirectTimers()
+  providerRedirectSeconds.value = 20
+  showProviderRegistrationSuccess.value = true
+
+  providerRedirectInterval = window.setInterval(() => {
+    if (providerRedirectSeconds.value > 0) providerRedirectSeconds.value -= 1
+  }, 1000)
+
+  providerRedirectTimeout = window.setTimeout(returnToLandingPage, 20000)
+}
+
+onBeforeUnmount(() => {
+  clearProviderRedirectTimers()
+  clearCustomerResendTimer()
+})
 
 document.documentElement.dataset.theme = theme.value
 
@@ -175,9 +200,6 @@ watch(theme, value => {
   document.documentElement.dataset.theme = value
   localStorage.setItem('servicehub-theme', value)
 })
-watch(chatApprovals, value => localStorage.setItem('servicehub-chat-approvals', JSON.stringify(value)), { deep: true })
-watch(messages, value => localStorage.setItem('servicehub-messages', JSON.stringify(value)), { deep: true })
-watch(reviews, value => localStorage.setItem('servicehub-reviews', JSON.stringify(value)), { deep: true })
 watch(signedInUser, value => {
   if (value) localStorage.setItem('servicehub-user', JSON.stringify(value))
   else localStorage.removeItem('servicehub-user')
@@ -259,8 +281,7 @@ function signOut() {
 async function loadServices() {
   try {
     const catalog = await api.getServices()
-    const withPricing = await Promise.all(catalog.map(async service => {
-      const presentation = SERVICE_PRESENTATION[service.serviceName.toLowerCase()] || {}
+    services.value = await Promise.all(catalog.map(async service => {
       let providers = []
       try {
         providers = await api.getServiceProviders(service.serviceId)
@@ -276,23 +297,35 @@ async function loadServices() {
         providerId: bestOffer?.providerId || null,
         providerName: bestOffer?.providerName || '',
         title: service.serviceName,
-        category: ICON_CATEGORY_MAP[service.icon] || 'General',
+        category: service.category || ICON_CATEGORY_MAP[service.icon] || 'General',
         price: bestOffer?.price ?? 0,
-        currency: 'BDT',
-        image: presentation.image || DEFAULT_SERVICE_IMAGE,
+        currency: service.currency || 'BDT',
+        image: service.imageUrl || service.image || '',
         description: service.description || '',
-        upfrontPayment: presentation.upfrontPayment || null
+        upfrontPayment: service.upfrontPayment || null
       }
     }))
-
-    // Only show the original 9 services, in the original order, so the
-    // homepage matches the finalized frontend regardless of any extra
-    // categories that might exist in the database.
-    services.value = SERVICE_DISPLAY_ORDER
-      .map(name => withPricing.find(s => s.title.toLowerCase() === name))
-      .filter(Boolean)
   } catch (err) {
     console.warn('Could not load services catalog:', err.message)
+  }
+}
+
+async function loadPublicReviews() {
+  try {
+    const raw = await api.getPublicReviews()
+    reviews.value = raw.map(review => ({
+      id: review.reviewId || review.id,
+      name: review.username || review.name || review.customer?.name || 'ServiceHub user',
+      role: review.userType || review.role || 'guest',
+      serviceId: review.serviceId,
+      serviceTitle: review.serviceTitle || review.service?.serviceName || 'Service',
+      rating: Number(review.rating || 0),
+      comment: review.comment || '',
+      createdAt: review.createdAt
+    }))
+  } catch (err) {
+    console.warn('Could not load reviews:', err.message)
+    reviews.value = []
   }
 }
 
@@ -459,11 +492,30 @@ async function refreshProviderReviews() {
   }
 }
 
+async function refreshChatData() {
+  if (!signedInUser.value) {
+    chatApprovals.value = []
+    messages.value = []
+    return
+  }
+
+  try {
+    const [approvals, chatMessages] = await Promise.all([
+      api.getChatApprovals(),
+      api.getChatMessages()
+    ])
+    chatApprovals.value = approvals
+    messages.value = chatMessages
+  } catch (err) {
+    console.warn('Could not load chat data:', err.message)
+  }
+}
+
 async function applySession(res, userType) {
   api.setTokens(res.accessToken, res.refreshToken)
   signedInUser.value = normalizeUser(res.user, userType)
   currentPage.value = 'dashboard'
-  await refreshBookings()
+  await Promise.all([refreshBookings(), refreshChatData()])
   if (userType === 'admin') {
     await refreshAdminAccounts()
     await refreshAdminReports()
@@ -475,9 +527,9 @@ async function applySession(res, userType) {
 }
 
 onMounted(async () => {
-  await loadServices()
+  await Promise.all([loadServices(), loadPublicReviews()])
   if (signedInUser.value) {
-    await refreshBookings()
+    await Promise.all([refreshBookings(), refreshChatData()])
     if (signedInUser.value.role === 'admin') {
       await refreshAdminAccounts()
       await refreshAdminReports()
@@ -492,55 +544,95 @@ onMounted(async () => {
 // ---------- Accounts / auth ----------
 
 async function createAccount(user) {
+  if (user.accountMethod === 'google') {
+    api.beginGoogleSignIn('register')
+    return
+  }
+
+  // The actual account is created only after the phone number is verified.
+  await sendCustomerVerificationCode(user)
+}
+
+async function verifyAndCreateCustomer() {
+  customerVerificationError.value = ''
+
+  if (customerVerificationInput.value.length !== 6) {
+    customerVerificationError.value = 'Enter the complete six-digit confirmation code.'
+    return
+  }
+
+  const user = pendingCustomerRegistration.value
+  if (!user || !customerVerificationRequestId.value) {
+    customerVerificationError.value = 'The registration session has expired. Please submit the form again.'
+    return
+  }
+
+  customerVerificationBusy.value = true
   try {
     const email = clean(user.email) || `${clean(user.name).toLowerCase().replace(/\s+/g, '.')}@servicehub.local`
+
+    // The backend validates the SMS code and returns a short-lived token.
+    const verification = await api.verifyCustomerPhoneCode({
+      verificationId: customerVerificationRequestId.value,
+      phone: user.phone,
+      code: customerVerificationInput.value
+    })
+
+    // Account creation is authorised only by the server-issued verification token.
     const res = await api.registerCustomer({
       name: user.name,
+      username: user.username,
       email,
-      password: user.password === 'google-demo' ? DEMO_PASSWORD : user.password,
+      password: user.password || undefined,
       phone: user.phone,
-      address: user.location
+      address: user.location,
+      phoneVerificationToken: verification.verificationToken,
+      authProvider: user.accountMethod || 'phone'
     })
     await applySession(res, 'customer')
+
+    cancelCustomerVerification()
   } catch (err) {
-    alert(err.message || 'Registration failed.')
+    customerVerificationError.value = err.message || 'Account registration failed.'
+  } finally {
+    customerVerificationBusy.value = false
   }
 }
 
 async function createProvider(provider) {
   try {
+    if (provider.authProvider === 'google') {
+      api.beginGoogleSignIn('provider-register')
+      return
+    }
+
     const email = clean(provider.email) || `${clean(provider.name).toLowerCase().replace(/\s+/g, '.')}@servicehub.local`
-    const res = await api.registerProvider({
+
+    await api.registerProvider({
       providerName: provider.name || 'Google Provider',
+      username: provider.username,
       email,
-      password: provider.password ? provider.password : DEMO_PASSWORD,
+      password: provider.password || undefined,
       phone: digitsOnly(provider.phone),
       address: provider.suburb || provider.area || 'Rajshahi City',
-      description: provider.experience || undefined
+      serviceType: provider.serviceType,
+      description: provider.experience || undefined,
+      authProvider: provider.authProvider || 'email'
     })
-    await applySession(res, 'provider')
 
-    const rawType = String(provider.serviceType || '').toLowerCase()
-    const normalizedType = PROVIDER_SERVICE_TYPE_MAP[rawType] || rawType
-    const match = services.value.find(s => s.title.toLowerCase() === normalizedType)
-    if (match) {
-      try {
-        await api.addProviderService({
-          serviceId: match.serviceId,
-          price: match.price || 500,
-          description: `${provider.serviceType} offered in ${provider.suburb || 'Rajshahi City'}`
-        })
-        await refreshProviderServices()
-      } catch (err) {
-        console.warn('Could not attach default service offering:', err.message)
-      }
-    }
+    // Do not create an authenticated provider session before admin approval.
+    showProviderSuccessMessage()
   } catch (err) {
     alert(err.message || 'Provider registration failed.')
   }
 }
 
 async function signIn(payload) {
+  if (payload.authProvider === 'google') {
+    api.beginGoogleSignIn('signin')
+    return
+  }
+
   const identifier = clean(payload.identifier || payload.email)
 
   if (!identifier) {
@@ -568,22 +660,8 @@ async function signIn(payload) {
       return
     }
 
-    // "Continue with Google demo" shortcut: no password typed, so try the
-    // fixed demo credential first and auto-provision the account if needed.
-    const email = payload.email || payload.identifier || 'google.customer@servicehub.local'
-    try {
-      const res = await api.login({ email, password: DEMO_PASSWORD, userType: 'customer' })
-      await applySession(res, 'customer')
-    } catch {
-      const res = await api.registerCustomer({
-        name: payload.name || 'Google Customer',
-        email,
-        password: DEMO_PASSWORD,
-        phone: '01700000002',
-        address: 'Rajshahi City'
-      })
-      await applySession(res, 'customer')
-    }
+    // No local Google user is created. The backend owns the OAuth exchange.
+    api.beginGoogleSignIn()
   } catch (err) {
     alert(err.message || 'Sign in failed.')
   }
@@ -621,14 +699,19 @@ function openRequest(service) {
   currentPage.value = 'request'
 }
 
-function submitReview(review) {
-  reviews.value.unshift({
-    id: `REV-${Date.now()}`,
-    name: signedInUser.value?.name || 'ServiceHub user',
-    role: signedInUser.value?.role || 'guest',
-    createdAt: new Date().toLocaleString(),
-    ...review
-  })
+async function submitReview(review) {
+  try {
+    await api.createReview({
+      username: review.name || signedInUser.value?.name,
+      userType: review.role || signedInUser.value?.role || 'guest',
+      serviceId: review.serviceId,
+      rating: Number(review.rating),
+      comment: review.comment
+    })
+    await loadPublicReviews()
+  } catch (err) {
+    alert(err.message || 'Could not submit review.')
+  }
 }
 
 async function submitRequest(form) {
@@ -766,22 +849,39 @@ async function changeProviderPassword(payload) {
   }
 }
 
-// ---------- Chat (kept as a local-only demo; no backend module exists for it) ----------
+// ---------- Chat ----------
 
-function requestChat(payload) {
-  if (chatApprovals.value.some(item => item.requestId === payload.requestId)) return
-  chatApprovals.value.unshift({ id: `CHAT-${Date.now()}`, status: 'pending', ...payload })
+async function requestChat(payload) {
+  try {
+    await api.requestChatApproval(payload)
+    await refreshChatData()
+  } catch (err) {
+    alert(err.message || 'Could not request chat approval.')
+  }
 }
-function approveChat(id) {
-  const approval = chatApprovals.value.find(item => item.id === id)
-  if (approval) approval.status = 'approved'
+async function approveChat(id) {
+  try {
+    await api.updateChatApproval(id, 'approved')
+    await refreshChatData()
+  } catch (err) {
+    alert(err.message || 'Could not approve chat access.')
+  }
 }
-function rejectChat(id) {
-  const approval = chatApprovals.value.find(item => item.id === id)
-  if (approval) approval.status = 'rejected'
+async function rejectChat(id) {
+  try {
+    await api.updateChatApproval(id, 'rejected')
+    await refreshChatData()
+  } catch (err) {
+    alert(err.message || 'Could not reject chat access.')
+  }
 }
-function sendMessage(payload) {
-  messages.value.push({ id: `MSG-${Date.now()}`, createdAt: new Date().toLocaleString(), ...payload })
+async function sendMessage(payload) {
+  try {
+    await api.sendChatMessage(payload)
+    await refreshChatData()
+  } catch (err) {
+    alert(err.message || 'Could not send message.')
+  }
 }
 
 // ---------- Reports / block requests (real backend data) ----------
@@ -818,9 +918,13 @@ async function updateBlockRequest({ id, status }) {
   }
 }
 
-function resetLocalDemo() {
-  chatApprovals.value = []
-  messages.value = []
+async function refreshAdminData() {
+  await Promise.all([
+    refreshAdminAccounts(),
+    refreshAdminReports(),
+    refreshBookings(),
+    refreshChatData()
+  ])
 }
 </script>
 
@@ -869,11 +973,102 @@ function resetLocalDemo() {
         @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @approve-provider="approveProvider"
         @reject-provider="rejectProvider" @activate-provider="activateProvider" @block-customer="blockCustomer"
         @activate-customer="activateCustomer" @assign-request="assignRequest" @approve-chat="approveChat"
-        @reject-chat="rejectChat" @block-status-change="updateBlockRequest" @reset-db="resetLocalDemo" />
+        @reject-chat="rejectChat" @block-status-change="updateBlockRequest" @reset-db="refreshAdminData" />
 
       <TrackingDemo v-else-if="currentPage === 'tracking'" :requests="requests" :signed-in-user="signedInUser"
         @back="goTo(signedInUser ? 'dashboard' : 'home')" />
+
+      <section v-else class="page-section">
+        <div class="clean-card">
+          <h1>Page unavailable</h1>
+          <p>An invalid navigation destination was received.</p>
+
+          <button class="primary" type="button" @click="goTo('home')">
+            Return home
+          </button>
+        </div>
+      </section>
     </main>
+
+    <!-- Customer phone identity verification -->
+    <Teleport to="body">
+      <div v-if="showCustomerVerification" class="account-modal-backdrop" role="presentation">
+        <section class="account-modal-dialog customer-verification-dialog" role="dialog" aria-modal="true"
+          aria-labelledby="customer-verification-title" aria-describedby="customer-verification-description">
+          <div class="account-modal-icon phone-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path
+                d="M7 2.75h10A2.25 2.25 0 0 1 19.25 5v14A2.25 2.25 0 0 1 17 21.25H7A2.25 2.25 0 0 1 4.75 19V5A2.25 2.25 0 0 1 7 2.75Zm0 1.5a.75.75 0 0 0-.75.75v14c0 .414.336.75.75.75h10a.75.75 0 0 0 .75-.75V5a.75.75 0 0 0-.75-.75H7ZM10 17.5h4a.75.75 0 0 1 0 1.5h-4a.75.75 0 0 1 0-1.5Z" />
+            </svg>
+          </div>
+
+          <p class="eyebrow">Verify your identity</p>
+          <h2 id="customer-verification-title">Check your phone</h2>
+          <p id="customer-verification-description" class="account-modal-message">
+            We sent a six-digit confirmation code to
+            <strong>{{ maskedVerificationPhone }}</strong>. Enter it below to finish creating your account.
+          </p>
+
+          <form class="verification-form" @submit.prevent="verifyAndCreateCustomer">
+            <label for="customer-verification-code">Confirmation code</label>
+            <input id="customer-verification-code" :value="customerVerificationInput" type="text" inputmode="numeric"
+              autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" autofocus
+              aria-describedby="verification-help" @input="updateCustomerVerificationInput" />
+            <small id="verification-help">Enter the six numbers from the SMS message.</small>
+
+            <p v-if="customerVerificationError" class="verification-error" role="alert">
+              {{ customerVerificationError }}
+            </p>
+
+            <button class="primary" type="submit"
+              :disabled="customerVerificationInput.length !== 6 || customerVerificationBusy">
+              {{ customerVerificationBusy ? 'Verifying…' : 'Verify and create account' }}
+            </button>
+          </form>
+
+          <div class="verification-actions">
+            <button class="verification-link" type="button"
+              :disabled="customerResendSeconds > 0 || customerVerificationBusy" @click="resendCustomerVerificationCode">
+              {{ customerResendSeconds > 0
+                ? `Resend code in ${customerResendSeconds}s`
+                : 'Resend confirmation code' }}
+            </button>
+            <button class="verification-link muted-link" type="button" :disabled="customerVerificationBusy"
+              @click="cancelCustomerVerification">
+              Cancel registration
+            </button>
+          </div>
+        </section>
+      </div>
+    </Teleport>
+
+    <!-- Accessible confirmation dialog shown after a provider application is sent -->
+    <Teleport to="body">
+      <div v-if="showProviderRegistrationSuccess" class="provider-success-backdrop" role="presentation">
+        <section class="provider-success-dialog" role="dialog" aria-modal="true"
+          aria-labelledby="provider-success-title"
+          aria-describedby="provider-success-description provider-success-countdown">
+          <div class="provider-success-icon" aria-hidden="true">✓</div>
+          <p class="eyebrow">Application submitted</p>
+          <h2 id="provider-success-title">Thanks for signing up!</h2>
+          <p id="provider-success-description" class="provider-success-message">
+            We’ll let the admins know, and we’ll let you know if you’re eligible to become a ServiceHub provider.
+          </p>
+
+          <div class="provider-success-status" role="status" aria-live="polite">
+            <span class="provider-success-spinner" aria-hidden="true"></span>
+            <p id="provider-success-countdown">
+              Returning to the landing page in
+              <strong>{{ providerRedirectSeconds }} seconds</strong>
+            </p>
+          </div>
+
+          <button class="primary" type="button" autofocus @click="returnToLandingPage">
+            Return to landing page now
+          </button>
+        </section>
+      </div>
+    </Teleport>
 
     <!-- The assistant stays available on public pages and every dashboard. -->
     <AIChatbot :signed-in-user="signedInUser" :requests="requests" :services="services" :current-page="currentPage"
@@ -882,3 +1077,340 @@ function resetLocalDemo() {
     <FooterSection v-if="!isOpsDashboard" />
   </div>
 </template>
+
+<!-- Kept inside App.vue so the confirmation remains a real modal even when
+     an older global stylesheet is still present in the local project -->
+<style scoped>
+.account-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  min-height: 100vh;
+  padding: 24px;
+  overflow-y: auto;
+  background: rgba(18, 8, 39, 0.76);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.account-modal-dialog {
+  width: min(540px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: 17px;
+  border: 1px solid var(--line, #ded0ff);
+  border-radius: var(--radius-xl, 30px);
+  padding: clamp(28px, 6vw, 46px);
+  background: var(--surface, #fff);
+  color: var(--text, #1f1537);
+  box-shadow: 0 32px 90px rgba(18, 8, 39, 0.36);
+  text-align: center;
+  animation: provider-dialog-enter 0.24s ease-out;
+}
+
+.account-modal-icon {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand, #7437f4), var(--brand-2, #5a25cf));
+  box-shadow: 0 16px 34px rgba(116, 55, 244, 0.28);
+}
+
+.account-modal-icon svg {
+  width: 36px;
+  height: 36px;
+  fill: currentColor;
+}
+
+.account-modal-dialog .eyebrow {
+  margin: 2px 0 -7px;
+  color: var(--brand-2, #5a25cf);
+  font-size: 0.78rem;
+  font-weight: 950;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.account-modal-dialog h2 {
+  margin: 0;
+  color: var(--heading, #160d2e);
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.05;
+}
+
+.account-modal-message {
+  max-width: 45ch;
+  margin: 0;
+  color: var(--muted, #655b7c);
+  font-size: 1.04rem;
+  line-height: 1.6;
+}
+
+.account-modal-message strong {
+  color: var(--heading, #160d2e);
+  white-space: nowrap;
+}
+
+.verification-form {
+  width: 100%;
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+
+.verification-form label {
+  color: var(--heading, #160d2e);
+  font-weight: 850;
+}
+
+.verification-form input {
+  width: 100%;
+  min-height: 58px;
+  border: 1.5px solid var(--line-strong, #c5afff);
+  border-radius: var(--radius-md, 16px);
+  padding: 10px 16px;
+  background: var(--surface, #fff);
+  color: var(--heading, #160d2e);
+  font: inherit;
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: 0.28em;
+  text-align: center;
+}
+
+.verification-form input::placeholder {
+  color: var(--muted-2, #8d84a1);
+  opacity: 0.65;
+}
+
+.verification-form input:focus {
+  border-color: var(--brand, #7437f4);
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(116, 55, 244, 0.16);
+}
+
+.verification-form small {
+  color: var(--muted, #655b7c);
+  text-align: center;
+}
+
+.verification-error {
+  margin: 4px 0;
+  color: var(--danger, #c92a2a);
+  font-weight: 800;
+  text-align: center;
+}
+
+.verification-form .primary {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.verification-form .primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.verification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 18px;
+}
+
+.verification-link {
+  border: 0;
+  padding: 5px;
+  background: transparent;
+  color: var(--brand-2, #5a25cf);
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.verification-link:disabled {
+  color: var(--muted-2, #8d84a1);
+  cursor: not-allowed;
+}
+
+.verification-link.muted-link {
+  color: var(--muted, #655b7c);
+}
+
+.provider-success-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  min-height: 100vh;
+  padding: 24px;
+  overflow-y: auto;
+  background: rgba(18, 8, 39, 0.76);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.provider-success-dialog {
+  width: min(560px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  border: 1px solid var(--line, #ded0ff);
+  border-radius: var(--radius-xl, 30px);
+  padding: clamp(28px, 6vw, 48px);
+  background: var(--surface, #fff);
+  color: var(--text, #1f1537);
+  box-shadow: 0 32px 90px rgba(18, 8, 39, 0.34);
+  text-align: center;
+  animation: provider-dialog-enter 0.24s ease-out;
+}
+
+.provider-success-icon {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(135deg, #087f5b, #16a878);
+  box-shadow: 0 16px 34px rgba(8, 127, 91, 0.24);
+  font-size: 2rem;
+  font-weight: 950;
+}
+
+.provider-success-dialog .eyebrow {
+  margin: 2px 0 -6px;
+  color: var(--brand-2, #5a25cf);
+  font-size: 0.78rem;
+  font-weight: 950;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.provider-success-dialog h2 {
+  margin: 0;
+  color: var(--heading, #160d2e);
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.05;
+}
+
+.provider-success-message {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--muted, #655b7c);
+  font-size: 1.06rem;
+  line-height: 1.6;
+}
+
+.provider-success-status {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid var(--line, #ded0ff);
+  border-radius: var(--radius-md, 16px);
+  padding: 14px 16px;
+  background: var(--surface-2, #faf7ff);
+  color: var(--muted, #655b7c);
+}
+
+.provider-success-status p {
+  margin: 0;
+}
+
+.provider-success-status strong {
+  color: var(--brand-2, #5a25cf);
+}
+
+.provider-success-spinner {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: 3px solid var(--line-strong, #c5afff);
+  border-top-color: var(--brand, #7437f4);
+  border-radius: 50%;
+  animation: provider-spinner 1s linear infinite;
+}
+
+.provider-success-dialog .primary {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 11px 20px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand, #7437f4), var(--brand-2, #5a25cf));
+  box-shadow: 0 14px 30px rgba(116, 55, 244, 0.24);
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.provider-success-dialog .primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 36px rgba(116, 55, 244, 0.32);
+}
+
+.provider-success-dialog .primary:focus-visible {
+  outline: 3px solid rgba(160, 124, 255, 0.45);
+  outline-offset: 4px;
+}
+
+@keyframes provider-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes provider-spinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 520px) {
+
+  .account-modal-backdrop,
+  .provider-success-backdrop {
+    padding: 16px;
+  }
+
+  .account-modal-dialog,
+  .provider-success-dialog {
+    gap: 15px;
+    border-radius: 22px;
+    padding: 26px 20px;
+  }
+
+  .provider-success-status {
+    align-items: flex-start;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .account-modal-dialog,
+  .provider-success-dialog,
+  .provider-success-spinner {
+    animation: none;
+  }
+}
+</style>
