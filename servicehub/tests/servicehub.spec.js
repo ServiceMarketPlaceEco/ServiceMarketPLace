@@ -327,14 +327,13 @@ test('27. admin can sign in and is taken to the admin dashboard', async ({ page 
   await expect(page.locator('.ops-role-pill')).toContainText('Admin')
 })
 
-test('28. admin dashboard shows the management panels, not the customer view', async ({ page }) => {
+test('28. admin dashboard shows the stat cards and lets the admin reach user management', async ({ page }) => {
   await mockAdminApi(page)
   await page.route('**/api/auth/login', route => route.fulfill({ json: MOCK_ADMIN_LOGIN }))
-
   await signInAs(page, 'admin', 'admin@servicehub.local')
-
+  await expect(page.getByText('Total users')).toBeVisible()
+  await page.getByRole('button', { name: 'Users', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'User management' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Service provider management' })).toBeVisible()
 })
 
 test('29. admin dashboard shows the stat cards', async ({ page }) => {

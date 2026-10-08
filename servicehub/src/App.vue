@@ -650,20 +650,29 @@ async function signIn(payload) {
       : 'customer'
 
   try {
-    if (payload.password) {
-      const res = await api.login({
-        email: identifier,
-        password: payload.password,
-        userType: inferredRole
-      })
-      await applySession(res, res.user?.role || res.userType || inferredRole)
-      return
-    }
-
-    // No local Google user is created. The backend owns the OAuth exchange.
-    api.beginGoogleSignIn()
+    const res = await api.login({
+      email: identifier,
+      password: payload.password,
+      userType: inferredRole
+    })
+    await applySession(res, res.user?.role || res.userType || inferredRole)
   } catch (err) {
     alert(err.message || 'Sign in failed.')
+  }
+}
+
+// Google only signs in existing accounts: the backend matches the Google
+// email to a registered customer, provider or admin and opens their dashboard.
+const googleSignInError = ref('')
+watch(currentPage, () => { googleSignInError.value = '' })
+
+async function signInWithGoogle({ credential }) {
+  googleSignInError.value = ''
+  try {
+    const res = await api.loginWithGoogle(credential)
+    await applySession(res, res.user?.role || res.userType)
+  } catch (err) {
+    googleSignInError.value = err.message || 'Google sign-in failed.'
   }
 }
 
@@ -946,7 +955,8 @@ async function refreshAdminData() {
       <HowItWorksPage v-else-if="currentPage === 'how'" />
       <ReviewsPage v-else-if="currentPage === 'reviews'" :reviews="reviews" :services="services"
         :signed-in-user="signedInUser" @submit-review="submitReview" />
-      <SignInPage v-else-if="currentPage === 'signin'" @sign-in="signIn" @go-register="goTo('register')"
+      <SignInPage v-else-if="currentPage === 'signin'" :google-error="googleSignInError" @sign-in="signIn"
+        @google-sign-in="signInWithGoogle" @go-register="goTo('register')"
         @forgot-password="requestPasswordReset" @reset-password="confirmPasswordReset" />
       <RegisterPage v-else-if="currentPage === 'register'" @create-account="createAccount"
         @google-create-account="createAccount" @go-signin="goTo('signin')" />

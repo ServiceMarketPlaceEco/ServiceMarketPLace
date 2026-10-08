@@ -1,11 +1,7 @@
 <script setup>
 // Vue utilities for reactive state, calculated data and automatic scrolling.
 import { computed, nextTick, ref } from 'vue'
-
-// TEMPORARY FRONTEND-ONLY TESTING SWITCH:
-// Keep this set to true while no backend is available.
-// Change it to false when the real POST /api/ai-chat endpoint is ready.
-const USE_MOCK_AI = true
+import * as api from '../../services/api'
 
 // Data passed into the chatbot by its parent component.
 const props = defineProps({
@@ -47,22 +43,6 @@ const userRequests = computed(() => {
   return props.signedInUser.role === 'admin' ? props.requests : []
 })
 
-// Provide the backend with a small, non-sensitive ServiceHub summary.
-// The backend must still authenticate users and enforce permissions.
-const chatbotContext = computed(() => ({
-  userRole: props.signedInUser?.role ?? 'guest',
-  requestCount: userRequests.value.length,
-  requestStatuses: userRequests.value
-    .map((request) => request.status)
-    .filter(Boolean)
-    .slice(0, 10),
-  services: props.services.slice(0, 20).map((service) => ({
-    title: service.title,
-    category: service.category,
-    price: Number(service.price),
-  })),
-}))
-
 // Scroll to the newest message after Vue updates the page.
 async function scrollToBottom() {
   await nextTick()
@@ -73,13 +53,10 @@ async function scrollToBottom() {
   }
 }
 
-// TEMPORARY MOCK AI:
-// Simulates a backend response so the complete chatbot interface can be tested.
-// This is keyword-based sample data, not a real artificial-intelligence service.
+// FALLBACK AI:
+// Local keyword-based answers, used only if the real backend call fails
+// (e.g. OPENAI_API_KEY not configured yet, or a network issue).
 async function getMockAIReply(message) {
-  // Simulate the time normally required for a backend request.
-  await new Promise((resolve) => setTimeout(resolve, 800))
-
   const question = message.toLowerCase()
 
   // Word boundaries prevent "hi" from accidentally matching words like "this".
@@ -128,7 +105,7 @@ async function getMockAIReply(message) {
       : 'ServiceHub provides service categories that customers can browse and request.'
   }
 
-  return `This is a temporary frontend response to: "${message}". A real AI response will be supplied when the backend is connected.`
+  return 'I can help with ServiceHub services, pricing, booking, dashboard navigation, provider approval and request tracking. Try asking about one of those areas.'
 }
 
 // Send a message to the backend AI endpoint and display its reply.
@@ -138,8 +115,11 @@ async function sendMessage() {
   // Prevent empty and duplicate submissions.
   if (!text || loading.value) return
 
-  // Limit history so requests do not grow indefinitely.
-  const previousHistory = messages.value.slice(-8)
+  // Limit history so requests do not grow indefinitely, and match the
+  // backend's expected shape ({ role, content }).
+  const previousHistory = messages.value
+    .slice(-8)
+    .map((entry) => ({ role: entry.role, content: entry.text }))
 
   // Display the user's message immediately.
   messages.value.push({ role: 'user', text })
@@ -147,52 +127,20 @@ async function sendMessage() {
   loading.value = true
   await scrollToBottom()
 
+  let assistantReply
   try {
-    let assistantReply
-
-    if (USE_MOCK_AI) {
-      // Frontend-only mode: generate a simulated reply without a backend.
-      assistantReply = await getMockAIReply(text)
-    } else {
-      // Real mode: Vite can proxy this URL to the NestJS backend.
-      const response = await fetch('/api/ai-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          history: previousHistory,
-          context: chatbotContext.value,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.message || 'The chatbot request failed.')
-      }
-
-      // The real backend should return: { reply: 'AI response' }.
-      if (!data.reply) {
-        throw new Error('The backend did not return an AI reply.')
-      }
-
-      assistantReply = data.reply
-    }
-
-    // Both mock mode and real mode display replies in the same interface.
-    messages.value.push({ role: 'assistant', text: assistantReply })
+    const { reply } = await api.sendChatbotMessage(text, previousHistory)
+    assistantReply = reply
   } catch (error) {
-    // Keep technical details in the console and show users a friendly message.
-    console.error('ServiceHub chatbot error:', error)
-    messages.value.push({
-      role: 'assistant',
-      text: 'Sorry, the AI assistant is unavailable right now. Please try again shortly.',
-    })
-  } finally {
-    // Always restore the form, whether the request succeeds or fails.
-    loading.value = false
-    await scrollToBottom()
+    // Backend AI not configured yet (no OPENAI_API_KEY) or unreachable:
+    // fall back to local keyword answers instead of a hard error.
+    console.warn('ServiceHub chatbot backend unavailable, using local fallback:', error)
+    assistantReply = await getMockAIReply(text)
   }
+
+  messages.value.push({ role: 'assistant', text: assistantReply })
+  loading.value = false
+  await scrollToBottom()
 }
 
 // Submit a suggested question when a quick-action button is selected.

@@ -1,8 +1,12 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
+import { getGoogleClientId, loadGoogleIdentity } from '../../services/googleIdentity'
 
 // App.vue receives these events and performs the API requests.
-const emit = defineEmits(['sign-in', 'go-register', 'forgot-password', 'reset-password'])
+const emit = defineEmits(['sign-in', 'google-sign-in', 'go-register', 'forgot-password', 'reset-password'])
+
+// Set by App.vue when Google sign-in fails, e.g. the email isn't registered.
+defineProps({ googleError: { type: String, default: '' } })
 
 const form = reactive({ identifier: '', password: '' })
 const showPassword = ref(false)
@@ -16,11 +20,38 @@ function submit() {
   })
 }
 
-function continueWithGoogle() {
-  emit('sign-in', {
-    authProvider: 'google'
-  })
-}
+const googleButton = ref(null)
+const googleUnavailable = ref('')
+
+// Renders Google's own button; it hands back an ID token for the backend to
+// verify and match against the email the account was registered with.
+onMounted(async () => {
+  const clientId = getGoogleClientId()
+  if (!clientId) {
+    googleUnavailable.value = 'Google sign-in is not configured yet.'
+    return
+  }
+
+  try {
+    const google = await loadGoogleIdentity()
+    if (!googleButton.value) return
+    google.accounts.id.initialize({
+      client_id: clientId,
+      callback: (response) => emit('google-sign-in', { credential: response.credential })
+    })
+    google.accounts.id.renderButton(googleButton.value, {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      text: 'continue_with',
+      shape: 'rectangular',
+      logo_alignment: 'center',
+      width: Math.min(googleButton.value.clientWidth || 400, 400)
+    })
+  } catch {
+    googleUnavailable.value = 'Could not load Google sign-in. Check your connection and try again.'
+  }
+})
 
 function requestReset() {
   const email = resetForm.email.trim()
@@ -98,22 +129,15 @@ function submitReset() {
 
         <button class="primary-button signin-submit" type="submit">Sign in securely</button>
         <div class="divider" aria-hidden="true"><span>or</span></div>
-        <!-- Dedicated class keeps the Google option visually consistent and
-             prevents unrelated global button/link styles from overriding it -->
-        <button class="google-signin-button" type="button" aria-label="Continue with Google"
-          @click="continueWithGoogle">
-          <svg class="google-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="#4285F4"
-              d="M21.6 12.23c0-.71-.06-1.4-.18-2.07H12v3.91h5.38a4.6 4.6 0 0 1-2 3.02v2.54h3.24c1.9-1.75 2.98-4.33 2.98-7.4Z" />
-            <path fill="#34A853"
-              d="M12 22c2.7 0 4.98-.9 6.63-2.43l-3.24-2.54c-.9.6-2.05.96-3.39.96-2.61 0-4.82-1.76-5.61-4.13H3.04v2.62A10 10 0 0 0 12 22Z" />
-            <path fill="#FBBC05"
-              d="M6.39 13.86A6 6 0 0 1 6.08 12c0-.65.11-1.28.31-1.86V7.52H3.04A10 10 0 0 0 2 12c0 1.61.39 3.14 1.04 4.48l3.35-2.62Z" />
-            <path fill="#EA4335"
-              d="M12 6.01c1.47 0 2.79.51 3.83 1.5l2.87-2.87A9.62 9.62 0 0 0 12 2a10 10 0 0 0-8.96 5.52l3.35 2.62C7.18 7.77 9.39 6.01 12 6.01Z" />
-          </svg>
-          <span>Continue with Google</span>
-        </button>
+        <div v-if="!googleUnavailable" ref="googleButton" class="google-button" />
+        <template v-else>
+          <button class="outline-button" type="button" disabled>Continue with Google</button>
+          <p class="google-note">{{ googleUnavailable }}</p>
+        </template>
+        <p v-if="googleError" class="google-error" role="alert">
+          {{ googleError }}
+          <button type="button" @click="emit('go-register')">Create an account</button>
+        </p>
 
         <p class="register-prompt">
           New to ServiceHub?
@@ -370,6 +394,46 @@ function submitReset() {
   content: '';
   height: 1px;
   background: var(--line, #ded2ff);
+}
+
+.google-button {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.outline-button:disabled {
+  cursor: not-allowed;
+  opacity: .6;
+}
+
+.google-note {
+  margin: -8px 0 0;
+  color: var(--muted, #6a6280);
+  font-size: .9rem;
+  text-align: center;
+}
+
+.google-error {
+  margin: 0;
+  border: 1px solid #f3b4b4;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fff1f1;
+  color: #a12020;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.google-error button {
+  border: 0;
+  padding: 0 0 0 4px;
+  background: transparent;
+  color: #642adf;
+  font: inherit;
+  font-weight: 900;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .register-prompt {
