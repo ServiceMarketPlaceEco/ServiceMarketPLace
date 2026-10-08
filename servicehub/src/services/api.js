@@ -645,7 +645,7 @@ Respond with ONLY a JSON object (no markdown, no backticks):
 // ---------- Reports (used for the "block request" safety workflow) ----------
 
   return resultArray(result)
-}
+
 
 export function requestChatApproval(payload) {
   return request('/chat/approvals', {
