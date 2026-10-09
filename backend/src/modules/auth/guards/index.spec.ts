@@ -34,4 +34,10 @@ describe('Authorization guards', () => {
     expect(guard.canActivate(context({ user: { role: 'admin' } }))).toBe(true);
     expect(guard.canActivate(context({ user: { role: 'support' } }))).toBe(false);
   });
+
+  it('lets a super_admin through an admin-only route', () => {
+    const reflector: any = { getAllAndOverride: jest.fn().mockReturnValue(['admin']) };
+    const guard = new RolesGuard(reflector);
+    expect(guard.canActivate(context({ user: { role: 'super_admin' } }))).toBe(true);
+  });
 });

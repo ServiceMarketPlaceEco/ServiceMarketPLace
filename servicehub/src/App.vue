@@ -563,7 +563,7 @@ async function signIn(payload) {
       password: payload.password,
       userType: inferredRole
     })
-    await applySession(res, res.user?.role || res.userType || inferredRole)
+    await applySession(res, res.userType || res.user?.role || inferredRole)
   } catch (err) {
     alert(err.message || 'Sign in failed.')
   }
@@ -578,7 +578,7 @@ async function signInWithGoogle({ credential }) {
   googleSignInError.value = ''
   try {
     const res = await api.loginWithGoogle(credential)
-    await applySession(res, res.user?.role || res.userType)
+    await applySession(res, res.userType || res.user?.role)
   } catch (err) {
     googleSignInError.value = err.message || 'Google sign-in failed.'
   }
