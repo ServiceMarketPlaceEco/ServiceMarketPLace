@@ -1,10 +1,13 @@
-// Real HTTP client for the NestJS backend.
-// Replaces the old localStorage-mock database that used to live here.
+// ServiceHub HTTP client for the NestJS backend
+// This file contains no mock data or browser-side mock database
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+const BASE_URL =
+  import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
 const TOKEN_KEY = 'servicehub-access-token'
 const REFRESH_KEY = 'servicehub-refresh-token'
+
+// ---------- Token management ----------
 
 export function getAccessToken() {
   return localStorage.getItem(TOKEN_KEY)
@@ -15,8 +18,17 @@ export function getRefreshToken() {
 }
 
 export function setTokens(accessToken, refreshToken) {
-  if (accessToken) localStorage.setItem(TOKEN_KEY, accessToken)
-  if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken)
+  if (accessToken) {
+    localStorage.setItem(TOKEN_KEY, accessToken)
+  } else {
+    localStorage.removeItem(TOKEN_KEY)
+  }
+
+  if (refreshToken) {
+    localStorage.setItem(REFRESH_KEY, refreshToken)
+  } else {
+    localStorage.removeItem(REFRESH_KEY)
+  }
 }
 
 export function clearTokens() {
@@ -24,43 +36,197 @@ export function clearTokens() {
   localStorage.removeItem(REFRESH_KEY)
 }
 
-async function request(path, { method = 'GET', body, auth = false } = {}) {
-  const headers = { 'Content-Type': 'application/json' }
+// Sends the browser to the backend-managed Google OAuth route
+export function beginGoogleSignIn(flow = 'signin') {
+  const returnUrl = `${window.location.origin}/auth/google/callback`
 
-  if (auth) {
-    const token = getAccessToken()
-    if (token) headers.Authorization = `Bearer ${token}`
-  }
-
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined
+  const query = new URLSearchParams({
+    flow,
+    returnUrl
   })
 
-  const text = await res.text()
-  const data = text ? JSON.parse(text) : null
+  window.location.assign(
+    `${BASE_URL}/auth/google?${query.toString()}`
+  )
+}
 
-  if (!res.ok) {
-    const message = Array.isArray(data?.message) ? data.message.join(', ') : (data?.message || `Request failed (${res.status})`)
-    throw new Error(message)
+// ---------- HTTP request helpers ----------
+
+async function parseResponse(response) {
+  if (response.status === 204) {
+    return null
+  }
+
+  const text = await response.text()
+
+  if (!text) {
+    return null
+  }
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    // Prevent JSON.parse errors if NestJS returns text or an HTML error page
+    return { message: text }
+  }
+}
+
+function getErrorMessage(data, response) {
+  if (Array.isArray(data?.message)) {
+    return data.message.join(', ')
+  }
+
+  return (
+    data?.message ||
+    data?.error ||
+    `Request failed (${response.status})`
+  )
+}
+
+async function refreshSession() {
+  const refreshToken = getRefreshToken()
+
+  if (!refreshToken) {
+    return false
+  }
+
+  let response
+
+  try {
+    response = await fetch(`${BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json'
+      },
+      body: JSON.stringify({ refreshToken })
+    })
+  } catch {
+    return false
+  }
+
+  const data = await parseResponse(response)
+
+  if (!response.ok || !data?.accessToken) {
+    clearTokens()
+    return false
+  }
+
+  setTokens(
+    data.accessToken,
+    data.refreshToken || refreshToken
+  )
+
+  return true
+}
+
+async function request(
+  path,
+  options = {},
+  allowRefresh = true
+) {
+  const {
+    method = 'GET',
+    body,
+    auth = false
+  } = options
+
+  const headers = {
+    Accept: 'application/json'
+  }
+
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+  }
+
+  if (auth) {
+    const accessToken = getAccessToken()
+
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`
+    }
+  }
+
+  let response
+
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers,
+      body:
+        body !== undefined
+          ? JSON.stringify(body)
+          : undefined
+    })
+  } catch {
+    throw new Error(
+      'Cannot connect to the ServiceHub backend. ' +
+      'Check that the backend is running and VITE_API_URL is correct.'
+    )
+  }
+
+  // Try to obtain a new access token when the current token expires
+  if (
+    response.status === 401 &&
+    auth &&
+    allowRefresh &&
+    getRefreshToken()
+  ) {
+    const refreshed = await refreshSession()
+
+    if (refreshed) {
+      return request(path, options, false)
+    }
+  }
+
+  const data = await parseResponse(response)
+
+  if (!response.ok) {
+    throw new Error(getErrorMessage(data, response))
   }
 
   return data
 }
 
-// ---------- Auth ----------
+// Supports APIs returning an array, { data: [] }, or { items: [] }
+function resultArray(result) {
+  if (Array.isArray(result)) {
+    return result
+  }
 
-export async function registerCustomer(payload) {
-  return request('/auth/register/customer', { method: 'POST', body: payload })
+  if (Array.isArray(result?.data)) {
+    return result.data
+  }
+
+  if (Array.isArray(result?.items)) {
+    return result.items
+  }
+
+  return []
 }
 
-export async function registerProvider(payload) {
-  return request('/auth/register/provider', { method: 'POST', body: payload })
+// ---------- Authentication ----------
+
+export function requestCustomerPhoneVerification({ phone }) {
+  return request('/auth/phone-verification/request', {
+    method: 'POST',
+    body: { phone }
+  })
 }
 
-export async function login(payload) {
-  return request('/auth/login', { method: 'POST', body: payload })
+export function verifyCustomerPhoneCode({
+  verificationId,
+  phone,
+  code
+}) {
+  return request('/auth/phone-verification/verify', {
+    method: 'POST',
+    body: {
+      verificationId,
+      phone,
+      code
+    }
+  })
 }
 
 // Exchanges a Google ID token for a session. Fails with "This user has not
@@ -73,18 +239,38 @@ export async function forgotPassword(email, userType) {
   return request('/auth/forgot-password', { method: 'POST', body: { email, userType } })
 }
 
-export async function resetPassword(token, newPassword) {
-  return request('/auth/reset-password', { method: 'POST', body: { token, newPassword } })
+export function registerProvider(payload) {
+  return request('/auth/register/provider', {
+    method: 'POST',
+    body: payload
+  })
 }
 
-// ---------- Services catalog ----------
-
-export async function getServices() {
-  return request('/services')
+export function login(payload) {
+  return request('/auth/login', {
+    method: 'POST',
+    body: payload
+  })
 }
 
-export async function getServiceProviders(serviceId) {
-  return request(`/services/${serviceId}/providers`)
+export function forgotPassword(email, userType) {
+  return request('/auth/forgot-password', {
+    method: 'POST',
+    body: {
+      email,
+      userType
+    }
+  })
+}
+
+export function resetPassword(token, newPassword) {
+  return request('/auth/reset-password', {
+    method: 'POST',
+    body: {
+      token,
+      newPassword
+    }
+  })
 }
 
 // Ranks catalog services against a voice-search transcript (English or Bengali).
@@ -95,91 +281,266 @@ export async function matchTranscript(transcript, language) {
 
 // ---------- Provider self-service ----------
 
-export async function getProviderProfile() {
-  return request('/providers/me/profile', { auth: true })
+export async function getServices() {
+  const result = await request('/services')
+  return resultArray(result)
 }
 
-export async function updateProviderProfile(payload) {
-  return request('/providers/me/profile', { method: 'PUT', body: payload, auth: true })
+export async function getServiceProviders(serviceId) {
+  const result = await request(
+    `/services/${encodeURIComponent(serviceId)}/providers`
+  )
+
+  return resultArray(result)
 }
 
-export async function changeProviderPassword(payload) {
-  return request('/providers/me/change-password', { method: 'PUT', body: payload, auth: true })
-}
+// ---------- Customer bookings ----------
 
-export async function addProviderService(payload) {
-  return request('/providers/me/services', { method: 'POST', body: payload, auth: true })
-}
-
-export async function getMyProviderServices() {
-  return request('/providers/me/services', { auth: true })
-}
-
-export async function updateProviderService(providerServiceId, payload) {
-  return request(`/providers/me/services/${providerServiceId}`, { method: 'PUT', body: payload, auth: true })
-}
-
-export async function getProviderBookings() {
-  return request('/providers/me/bookings', { auth: true })
-}
-
-export async function updateProviderBookingStatus(bookingId, status) {
-  return request(`/providers/me/bookings/${bookingId}/status`, {
-    method: 'PUT',
-    body: { status },
+export function createBooking(payload) {
+  return request('/bookings', {
+    method: 'POST',
+    body: payload,
     auth: true
   })
 }
 
-// ---------- Bookings ----------
-
-export async function createBooking(payload) {
-  return request('/bookings', { method: 'POST', body: payload, auth: true })
-}
-
 export async function getMyBookings() {
-  return request('/bookings/my-bookings', { auth: true })
+  const result = await request('/bookings/my-bookings', {
+    auth: true
+  })
+
+  return resultArray(result)
 }
 
-// Public demo endpoints used by the admin dashboard (no auth required by the backend)
+// These are the current public demonstration endpoints
 export async function getAllBookingsPublic() {
-  return request('/bookings/all')
+  const result = await request('/bookings/all')
+  return resultArray(result)
 }
 
-export async function updateBookingStatusPublic(bookingId, status, providerId) {
-  return request(`/bookings/${bookingId}/status`, { method: 'PATCH', body: { status, providerId } })
+export function updateBookingStatusPublic(
+  bookingId,
+  status,
+  providerId
+) {
+  return request(
+    `/bookings/${encodeURIComponent(bookingId)}/status`,
+    {
+      method: 'PATCH',
+      body: {
+        status,
+        providerId
+      }
+    }
+  )
+}
+
+// ---------- Provider self-service ----------
+
+export function getProviderProfile() {
+  return request('/providers/me/profile', {
+    auth: true
+  })
+}
+
+export function updateProviderProfile(payload) {
+  return request('/providers/me/profile', {
+    method: 'PUT',
+    body: payload,
+    auth: true
+  })
+}
+
+export function changeProviderPassword(payload) {
+  return request('/providers/me/change-password', {
+    method: 'PUT',
+    body: payload,
+    auth: true
+  })
+}
+
+export function addProviderService(payload) {
+  return request('/providers/me/services', {
+    method: 'POST',
+    body: payload,
+    auth: true
+  })
+}
+
+export async function getMyProviderServices() {
+  const result = await request('/providers/me/services', {
+    auth: true
+  })
+
+  return resultArray(result)
+}
+
+export function updateProviderService(
+  providerServiceId,
+  payload
+) {
+  return request(
+    `/providers/me/services/${encodeURIComponent(
+      providerServiceId
+    )}`,
+    {
+      method: 'PUT',
+      body: payload,
+      auth: true
+    }
+  )
+}
+
+export async function getProviderBookings() {
+  const result = await request('/providers/me/bookings', {
+    auth: true
+  })
+
+  return resultArray(result)
+}
+
+export function updateProviderBookingStatus(
+  bookingId,
+  status
+) {
+  return request(
+    `/providers/me/bookings/${encodeURIComponent(
+      bookingId
+    )}/status`,
+    {
+      method: 'PUT',
+      body: { status },
+      auth: true
+    }
+  )
 }
 
 // ---------- Reviews ----------
 
-export async function getProviderReviews(providerId) {
-  return request(`/reviews/provider/${providerId}`)
+export async function getPublicReviews() {
+  const result = await request('/reviews')
+  return resultArray(result)
 }
 
-// ---------- Admin ----------
-
-export async function getAllCustomersAdmin(page = 1, limit = 100) {
-  return request(`/admins/customers?page=${page}&limit=${limit}`, { auth: true })
-}
-
-export async function getAllProvidersAdmin(page = 1, limit = 100) {
-  return request(`/admins/providers?page=${page}&limit=${limit}`, { auth: true })
-}
-
-export async function verifyProvider(providerId) {
-  return request(`/admins/providers/${providerId}/verify`, { method: 'POST', auth: true })
-}
-
-export async function suspendUser(userType, id, reason) {
-  return request(`/admins/users/${userType}/${id}/suspend`, {
+export function createReview(payload) {
+  return request('/reviews', {
     method: 'POST',
-    body: { reason },
+    body: payload
+  })
+}
+
+export async function getProviderReviews(providerId) {
+  const result = await request(
+    `/reviews/provider/${encodeURIComponent(providerId)}`
+  )
+
+  return resultArray(result)
+}
+
+// ---------- Administration ----------
+
+export async function getAllCustomersAdmin(
+  page = 1,
+  limit = 100
+) {
+  const query = new URLSearchParams({
+    page: String(page),
+    limit: String(limit)
+  })
+
+  const result = await request(
+    `/admins/customers?${query.toString()}`,
+    {
+      auth: true
+    }
+  )
+
+  return resultArray(result)
+}
+
+export async function getAllProvidersAdmin(
+  page = 1,
+  limit = 100
+) {
+  const query = new URLSearchParams({
+    page: String(page),
+    limit: String(limit)
+  })
+
+  const result = await request(
+    `/admins/providers?${query.toString()}`,
+    {
+      auth: true
+    }
+  )
+
+  return resultArray(result)
+}
+
+export function verifyProvider(providerId) {
+  return request(
+    `/admins/providers/${encodeURIComponent(
+      providerId
+    )}/verify`,
+    {
+      method: 'POST',
+      auth: true
+    }
+  )
+}
+
+export function suspendUser(userType, id, reason) {
+  return request(
+    `/admins/users/${encodeURIComponent(
+      userType
+    )}/${encodeURIComponent(id)}/suspend`,
+    {
+      method: 'POST',
+      body: { reason },
+      auth: true
+    }
+  )
+}
+
+export function activateUser(userType, id) {
+  return request(
+    `/admins/users/${encodeURIComponent(
+      userType
+    )}/${encodeURIComponent(id)}/activate`,
+    {
+      method: 'POST',
+      auth: true
+    }
+  )
+}
+
+// ---------- Reports and safety ----------
+
+export function createReport(payload) {
+  return request('/reports', {
+    method: 'POST',
+    body: payload,
     auth: true
   })
 }
 
-export async function activateUser(userType, id) {
-  return request(`/admins/users/${userType}/${id}/activate`, { method: 'POST', auth: true })
+export async function getAllReportsAdmin() {
+  const result = await request('/reports', {
+    auth: true
+  })
+
+  return resultArray(result)
+}
+
+export function updateReportStatus(id, status) {
+  return request(
+    `/reports/${encodeURIComponent(id)}/status`,
+    {
+      method: 'PUT',
+      body: { status },
+      auth: true
+    }
+  )
 }
 
 // ---------- Review moderation (admin) ----------
@@ -283,20 +644,71 @@ Respond with ONLY a JSON object (no markdown, no backticks):
 
 // ---------- Reports (used for the "block request" safety workflow) ----------
 
-export async function createReport(payload) {
-  return request('/reports', { method: 'POST', body: payload, auth: true })
+  return resultArray(result)
+
+
+export function requestChatApproval(payload) {
+  return request('/chat/approvals', {
+    method: 'POST',
+    body: payload,
+    auth: true
+  })
 }
 
-export async function getAllReportsAdmin() {
-  return request('/reports', { auth: true })
+export function updateChatApproval(
+  approvalId,
+  status
+) {
+  return request(
+    `/chat/approvals/${encodeURIComponent(
+      approvalId
+    )}`,
+    {
+      method: 'PATCH',
+      body: { status },
+      auth: true
+    }
+  )
 }
 
-export async function updateReportStatus(id, status) {
-  return request(`/reports/${id}/status`, { method: 'PUT', body: { status }, auth: true })
+// ---------- Chat messages ----------
+
+export async function getChatMessages(bookingId) {
+  const query = bookingId
+    ? `?${new URLSearchParams({
+      bookingId: String(bookingId)
+    }).toString()}`
+    : ''
+
+  const result = await request(
+    `/chat/messages${query}`,
+    {
+      auth: true
+    }
+  )
+
+  return resultArray(result)
 }
 
-// ---------- AI Chatbot ----------
+export function sendChatMessage(payload) {
+  return request('/chat/messages', {
+    method: 'POST',
+    body: payload,
+    auth: true
+  })
+}
 
-export async function sendChatbotMessage(message, history) {
-  return request('/chatbot/message', { method: 'POST', body: { message, history } })
+// ---------- AI chatbot ----------
+
+export function sendChatbotMessage(
+  message,
+  history = []
+) {
+  return request('/chatbot/message', {
+    method: 'POST',
+    body: {
+      message,
+      history
+    }
+  })
 }
