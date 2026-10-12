@@ -235,10 +235,6 @@ export async function loginWithGoogle(credential) {
   return request('/auth/google', { method: 'POST', body: { credential } })
 }
 
-export async function forgotPassword(email, userType) {
-  return request('/auth/forgot-password', { method: 'POST', body: { email, userType } })
-}
-
 export function registerProvider(payload) {
   return request('/auth/register/provider', {
     method: 'POST',
@@ -643,9 +639,6 @@ Respond with ONLY a JSON object (no markdown, no backticks):
 }
 
 // ---------- Reports (used for the "block request" safety workflow) ----------
-
-  return resultArray(result)
-
 
 export function requestChatApproval(payload) {
   return request('/chat/approvals', {
