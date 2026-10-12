@@ -311,6 +311,47 @@ function submitReset() {
   color: var(--text, #170b31);
 }
 
+/* Google sign-in uses the same dimensions, radius and type weight as the
+   standard sign-in button while retaining Google's recognisable white style */
+.google-signin-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  border: 1.5px solid var(--line, #d9c9ff);
+  border-radius: 15px;
+  padding: 0 20px;
+  background: var(--surface, #fff);
+  color: var(--text, #170b31);
+  font: inherit;
+  font-weight: 900;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.google-signin-button:hover {
+  transform: translateY(-1px);
+  border-color: #7937f3;
+  background: var(--background, #faf8ff);
+  box-shadow: 0 12px 28px rgba(100, 42, 224, .14);
+}
+
+.google-signin-button:focus-visible {
+  outline: 3px solid rgba(109, 46, 237, .28);
+  outline-offset: 3px;
+}
+
+.google-icon {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+}
+
 .forgot-button {
   justify-self: start;
   border: 0;

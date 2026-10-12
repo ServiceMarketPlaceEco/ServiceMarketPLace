@@ -81,7 +81,7 @@ function submitProvider(authProvider = 'email') {
         type="button"
         @click="submitProvider('google')"
       >
-        Apply with Google demo
+        Apply with Google
       </button>
       <button class="link-btn" type="button" @click="emit('go', 'signin')">
         Back to sign in
