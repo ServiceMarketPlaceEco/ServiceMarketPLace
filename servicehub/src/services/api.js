@@ -36,9 +36,10 @@ export function clearTokens() {
   localStorage.removeItem(REFRESH_KEY)
 }
 
-// Sends the browser to the backend-managed Google OAuth route
+// Sends the browser to the backend-owned Google OAuth route
 export function beginGoogleSignIn(flow = 'signin') {
-  const returnUrl = `${window.location.origin}/auth/google/callback`
+  const returnUrl =
+    `${window.location.origin}/auth/google/callback`
 
   const query = new URLSearchParams({
     flow,
@@ -50,7 +51,7 @@ export function beginGoogleSignIn(flow = 'signin') {
   )
 }
 
-// ---------- HTTP request helpers ----------
+// ---------- HTTP helpers ----------
 
 async function parseResponse(response) {
   if (response.status === 204) {
@@ -66,7 +67,6 @@ async function parseResponse(response) {
   try {
     return JSON.parse(text)
   } catch {
-    // Prevent JSON.parse errors if NestJS returns text or an HTML error page
     return { message: text }
   }
 }
@@ -93,15 +93,19 @@ async function refreshSession() {
   let response
 
   try {
-    response = await fetch(`${BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json'
-      },
-      body: JSON.stringify({ refreshToken })
-    })
+    response = await fetch(
+      `${BASE_URL}/auth/refresh`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
+        },
+        body: JSON.stringify({ refreshToken })
+      }
+    )
   } catch {
+    clearTokens()
     return false
   }
 
@@ -140,32 +144,36 @@ async function request(
   }
 
   if (auth) {
-    const accessToken = getAccessToken()
+    const token = getAccessToken()
 
-    if (accessToken) {
-      headers.Authorization = `Bearer ${accessToken}`
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
     }
   }
 
   let response
 
   try {
-    response = await fetch(`${BASE_URL}${path}`, {
-      method,
-      headers,
-      body:
-        body !== undefined
-          ? JSON.stringify(body)
-          : undefined
-    })
+    response = await fetch(
+      `${BASE_URL}${path}`,
+      {
+        method,
+        headers,
+        body:
+          body !== undefined
+            ? JSON.stringify(body)
+            : undefined
+      }
+    )
   } catch {
     throw new Error(
       'Cannot connect to the ServiceHub backend. ' +
-      'Check that the backend is running and VITE_API_URL is correct.'
+      'Check that the backend is running and ' +
+      'VITE_API_URL is correct.'
     )
   }
 
-  // Try to obtain a new access token when the current token expires
+  // Attempt to refresh an expired access token
   if (
     response.status === 401 &&
     auth &&
@@ -182,13 +190,15 @@ async function request(
   const data = await parseResponse(response)
 
   if (!response.ok) {
-    throw new Error(getErrorMessage(data, response))
+    throw new Error(
+      getErrorMessage(data, response)
+    )
   }
 
   return data
 }
 
-// Supports APIs returning an array, { data: [] }, or { items: [] }
+// Supports arrays, { data: [] }, and { items: [] }
 function resultArray(result) {
   if (Array.isArray(result)) {
     return result
@@ -207,11 +217,16 @@ function resultArray(result) {
 
 // ---------- Authentication ----------
 
-export function requestCustomerPhoneVerification({ phone }) {
-  return request('/auth/phone-verification/request', {
-    method: 'POST',
-    body: { phone }
-  })
+export function requestCustomerPhoneVerification({
+  phone
+}) {
+  return request(
+    '/auth/phone-verification/request',
+    {
+      method: 'POST',
+      body: { phone }
+    }
+  )
 }
 
 export function verifyCustomerPhoneCode({
@@ -219,24 +234,24 @@ export function verifyCustomerPhoneCode({
   phone,
   code
 }) {
-  return request('/auth/phone-verification/verify', {
-    method: 'POST',
-    body: {
-      verificationId,
-      phone,
-      code
+  return request(
+    '/auth/phone-verification/verify',
+    {
+      method: 'POST',
+      body: {
+        verificationId,
+        phone,
+        code
+      }
     }
+  )
+}
+
+export function registerCustomer(payload) {
+  return request('/auth/register/customer', {
+    method: 'POST',
+    body: payload
   })
-}
-
-// Exchanges a Google ID token for a session. Fails with "This user has not
-// been signed up" when no account is registered with the Google email.
-export async function loginWithGoogle(credential) {
-  return request('/auth/google', { method: 'POST', body: { credential } })
-}
-
-export async function forgotPassword(email, userType) {
-  return request('/auth/forgot-password', { method: 'POST', body: { email, userType } })
 }
 
 export function registerProvider(payload) {
@@ -253,7 +268,18 @@ export function login(payload) {
   })
 }
 
-export function forgotPassword(email, userType) {
+// Exchanges a Google credential for a ServiceHub session
+export function loginWithGoogle(credential) {
+  return request('/auth/google', {
+    method: 'POST',
+    body: { credential }
+  })
+}
+
+export function forgotPassword(
+  email,
+  userType
+) {
   return request('/auth/forgot-password', {
     method: 'POST',
     body: {
@@ -263,7 +289,10 @@ export function forgotPassword(email, userType) {
   })
 }
 
-export function resetPassword(token, newPassword) {
+export function resetPassword(
+  token,
+  newPassword
+) {
   return request('/auth/reset-password', {
     method: 'POST',
     body: {
@@ -273,25 +302,37 @@ export function resetPassword(token, newPassword) {
   })
 }
 
-// Ranks catalog services against a voice-search transcript (English or Bengali).
-// Returns { transcript, interpretation, matches: [{ serviceId, serviceName, confidence, reason }], source }
-export async function matchTranscript(transcript, language) {
-  return request('/services/match-transcript', { method: 'POST', body: { transcript, language } })
-}
-
-// ---------- Provider self-service ----------
+// ---------- Services catalogue ----------
 
 export async function getServices() {
   const result = await request('/services')
   return resultArray(result)
 }
 
-export async function getServiceProviders(serviceId) {
+export async function getServiceProviders(
+  serviceId
+) {
   const result = await request(
-    `/services/${encodeURIComponent(serviceId)}/providers`
+    `/services/${encodeURIComponent(
+      serviceId
+    )}/providers`
   )
 
   return resultArray(result)
+}
+
+// Sends English or Bengali transcripts to the backend
+export function matchTranscript(
+  transcript,
+  language
+) {
+  return request('/services/match-transcript', {
+    method: 'POST',
+    body: {
+      transcript,
+      language
+    }
+  })
 }
 
 // ---------- Customer bookings ----------
@@ -305,14 +346,17 @@ export function createBooking(payload) {
 }
 
 export async function getMyBookings() {
-  const result = await request('/bookings/my-bookings', {
-    auth: true
-  })
+  const result = await request(
+    '/bookings/my-bookings',
+    {
+      auth: true
+    }
+  )
 
   return resultArray(result)
 }
 
-// These are the current public demonstration endpoints
+// Current public demonstration endpoints
 export async function getAllBookingsPublic() {
   const result = await request('/bookings/all')
   return resultArray(result)
@@ -324,7 +368,9 @@ export function updateBookingStatusPublic(
   providerId
 ) {
   return request(
-    `/bookings/${encodeURIComponent(bookingId)}/status`,
+    `/bookings/${encodeURIComponent(
+      bookingId
+    )}/status`,
     {
       method: 'PATCH',
       body: {
@@ -343,7 +389,9 @@ export function getProviderProfile() {
   })
 }
 
-export function updateProviderProfile(payload) {
+export function updateProviderProfile(
+  payload
+) {
   return request('/providers/me/profile', {
     method: 'PUT',
     body: payload,
@@ -351,12 +399,17 @@ export function updateProviderProfile(payload) {
   })
 }
 
-export function changeProviderPassword(payload) {
-  return request('/providers/me/change-password', {
-    method: 'PUT',
-    body: payload,
-    auth: true
-  })
+export function changeProviderPassword(
+  payload
+) {
+  return request(
+    '/providers/me/change-password',
+    {
+      method: 'PUT',
+      body: payload,
+      auth: true
+    }
+  )
 }
 
 export function addProviderService(payload) {
@@ -368,9 +421,12 @@ export function addProviderService(payload) {
 }
 
 export async function getMyProviderServices() {
-  const result = await request('/providers/me/services', {
-    auth: true
-  })
+  const result = await request(
+    '/providers/me/services',
+    {
+      auth: true
+    }
+  )
 
   return resultArray(result)
 }
@@ -392,9 +448,12 @@ export function updateProviderService(
 }
 
 export async function getProviderBookings() {
-  const result = await request('/providers/me/bookings', {
-    auth: true
-  })
+  const result = await request(
+    '/providers/me/bookings',
+    {
+      auth: true
+    }
+  )
 
   return resultArray(result)
 }
@@ -429,9 +488,13 @@ export function createReview(payload) {
   })
 }
 
-export async function getProviderReviews(providerId) {
+export async function getProviderReviews(
+  providerId
+) {
   const result = await request(
-    `/reviews/provider/${encodeURIComponent(providerId)}`
+    `/reviews/provider/${encodeURIComponent(
+      providerId
+    )}`
   )
 
   return resultArray(result)
@@ -489,7 +552,11 @@ export function verifyProvider(providerId) {
   )
 }
 
-export function suspendUser(userType, id, reason) {
+export function suspendUser(
+  userType,
+  id,
+  reason
+) {
   return request(
     `/admins/users/${encodeURIComponent(
       userType
@@ -532,7 +599,10 @@ export async function getAllReportsAdmin() {
   return resultArray(result)
 }
 
-export function updateReportStatus(id, status) {
+export function updateReportStatus(
+  id,
+  status
+) {
   return request(
     `/reports/${encodeURIComponent(id)}/status`,
     {
@@ -543,111 +613,123 @@ export function updateReportStatus(id, status) {
   )
 }
 
-// ---------- Review moderation (admin) ----------
+// ---------- Review moderation ----------
 
-export async function scanReviews() {
-  return request('/reviews/moderation/scan')
+export function scanReviews() {
+  return request(
+    '/reviews/moderation/scan',
+    {
+      auth: true
+    }
+  )
 }
 
-export async function keepFlaggedReview(reviewId) {
-  return request(`/reviews/moderation/${reviewId}/keep`, { method: 'POST' })
-}
-
-export async function removeFlaggedReview(reviewId) {
-  return request(`/reviews/moderation/${reviewId}/remove`, { method: 'POST' })
-}
-
-// Screen a single review through the Anthropic API for a second opinion.
-// This calls Claude to analyze whether the review text looks genuine or fake
-// based on the comment content, rating, and the flags already raised.
-export async function aiScreenReview(review) {
-  const prompt = `You are a review moderation assistant for a service marketplace called ServiceHub in Rajshahi, Bangladesh. Analyze this review and determine if it is likely genuine or likely fake.
-
-Review details:
-- Rating: ${review.rating}/5 stars
-- Comment: "${review.comment || '(no comment)'}"
-- Flags already raised by the rule-based detector: ${review.reasons?.map(r => r.detail).join('; ') || 'none'}
-- Review score from detector: ${review.score}
-
-Respond with ONLY a JSON object (no markdown, no backticks):
-{"verdict": "genuine" or "suspicious", "explanation": "one sentence explaining why"}`
-
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+export function keepFlaggedReview(reviewId) {
+  return request(
+    `/reviews/moderation/${encodeURIComponent(
+      reviewId
+    )}/keep`,
+    {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 200,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    })
-
-    const data = await response.json()
-    const text = data.content?.[0]?.text || ''
-    const clean = text.replace(/```json|```/g, '').trim()
-    return JSON.parse(clean)
-  } catch (err) {
-    return { verdict: 'error', explanation: 'AI screening is not available: ' + err.message }
-  }
+      auth: true
+    }
+  )
 }
 
-// ---------- Account moderation (admin) ----------
-
-export async function scanAccounts() {
-  return request('/providers/moderation/scan')
-}
-
-export async function keepFlaggedAccount(accountId) {
-  return request(`/providers/moderation/${accountId}/keep`, { method: 'POST' })
-}
-
-export async function blockFlaggedAccount(accountId, kind) {
-  return request(`/providers/moderation/${accountId}/block`, { method: 'POST', body: { kind } })
-}
-
-// Screen a flagged account through Claude for a second opinion.
-export async function aiScreenAccount(account) {
-  const prompt = `You are an account moderation assistant for a service marketplace called ServiceHub in Rajshahi, Bangladesh. Analyze this account and determine if it is likely genuine or likely fake.
-
-Account details:
-- Type: ${account.kind}
-- Account ID: ${account.accountId}
-- Completed bookings: ${account.completedBookings ?? 'unknown'}
-- Reviews written: ${account.reviewsWritten ?? 'n/a'}
-- Distinct providers reviewed: ${account.distinctProvidersReviewed ?? 'n/a'}
-- Flags raised by the rule-based detector: ${account.reasons?.map(r => r.detail).join('; ') || 'none'}
-- Detection score: ${account.score}
-
-Respond with ONLY a JSON object (no markdown, no backticks):
-{"verdict": "genuine" or "suspicious", "explanation": "one sentence explaining why"}`
-
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+export function removeFlaggedReview(
+  reviewId
+) {
+  return request(
+    `/reviews/moderation/${encodeURIComponent(
+      reviewId
+    )}/remove`,
+    {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 200,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    })
-
-    const data = await response.json()
-    const text = data.content?.[0]?.text || ''
-    const clean = text.replace(/```json|```/g, '').trim()
-    return JSON.parse(clean)
-  } catch (err) {
-    return { verdict: 'error', explanation: 'AI screening is not available: ' + err.message }
-  }
+      auth: true
+    }
+  )
 }
 
-// ---------- Reports (used for the "block request" safety workflow) ----------
+// AI API keys stay on the backend
+export function aiScreenReview(review) {
+  return request(
+    '/reviews/moderation/ai-screen',
+    {
+      method: 'POST',
+      body: { review },
+      auth: true
+    }
+  )
+}
+
+// ---------- Account moderation ----------
+
+export function scanAccounts() {
+  return request(
+    '/providers/moderation/scan',
+    {
+      auth: true
+    }
+  )
+}
+
+export function keepFlaggedAccount(
+  accountId
+) {
+  return request(
+    `/providers/moderation/${encodeURIComponent(
+      accountId
+    )}/keep`,
+    {
+      method: 'POST',
+      auth: true
+    }
+  )
+}
+
+export function blockFlaggedAccount(
+  accountId,
+  kind
+) {
+  return request(
+    `/providers/moderation/${encodeURIComponent(
+      accountId
+    )}/block`,
+    {
+      method: 'POST',
+      body: { kind },
+      auth: true
+    }
+  )
+}
+
+export function aiScreenAccount(account) {
+  return request(
+    '/providers/moderation/ai-screen',
+    {
+      method: 'POST',
+      body: { account },
+      auth: true
+    }
+  )
+}
+
+// ---------- Chat approval ----------
+
+export async function getChatApprovals() {
+  const result = await request(
+    '/chat/approvals',
+    {
+      auth: true
+    }
+  )
 
   return resultArray(result)
+}
 
-
-export function requestChatApproval(payload) {
+export function requestChatApproval(
+  payload
+) {
   return request('/chat/approvals', {
     method: 'POST',
     body: payload,
@@ -673,11 +755,13 @@ export function updateChatApproval(
 
 // ---------- Chat messages ----------
 
-export async function getChatMessages(bookingId) {
+export async function getChatMessages(
+  bookingId
+) {
   const query = bookingId
     ? `?${new URLSearchParams({
-      bookingId: String(bookingId)
-    }).toString()}`
+        bookingId: String(bookingId)
+      }).toString()}`
     : ''
 
   const result = await request(
