@@ -637,22 +637,14 @@ async function signIn(payload) {
     return
   }
 
-  // Temporary fallback until the backend returns the role directly from the
-  // identifier. Provider usernames begin with PR and admin IDs begin with ADM.
-  const normalizedIdentifier = identifier.toLowerCase()
-  const inferredRole = normalizedIdentifier.startsWith('pr')
-    ? 'provider'
-    : normalizedIdentifier.startsWith('adm') || normalizedIdentifier.startsWith('admin')
-      ? 'admin'
-      : 'customer'
-
+  // The backend resolves which account type this email belongs to
+  // (customer, provider or admin) - no need to guess here.
   try {
     const res = await api.login({
       email: identifier,
-      password: payload.password,
-      userType: inferredRole
+      password: payload.password
     })
-    await applySession(res, res.userType || res.user?.role || inferredRole)
+    await applySession(res, res.userType || res.user?.role)
   } catch (err) {
     alert(err.message || 'Sign in failed.')
   }

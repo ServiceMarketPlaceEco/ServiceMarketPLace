@@ -95,9 +95,14 @@ export class LoginDto {
   @IsString()
   password: string;
 
-  @ApiProperty({ enum: UserTypeDto, example: 'customer' })
+  @ApiPropertyOptional({
+    enum: UserTypeDto,
+    example: 'customer',
+    description: 'Optional. If omitted, the account is looked up by email across customer, provider and admin records.',
+  })
+  @IsOptional()
   @IsEnum(UserTypeDto)
-  userType: UserTypeDto;
+  userType?: UserTypeDto;
 }
 
 export class GoogleLoginDto {

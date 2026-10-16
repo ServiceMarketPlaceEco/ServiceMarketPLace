@@ -111,7 +111,16 @@ export class AuthService {
     let userId: string;
     let userType: UserType;
 
-    switch (dto.userType) {
+    // When the caller doesn't know which account type this email belongs to
+    // (e.g. a single "email + password" sign-in form), look it up the same
+    // way loginWithGoogle() does: customer, then provider, then admin.
+    const resolvedType = dto.userType ?? (await this.resolveUserTypeByEmail(dto.email));
+
+    if (!resolvedType) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    switch (resolvedType) {
       case UserTypeDto.CUSTOMER:
         user = await this.customerRepository.findOne({
           where: { email: dto.email },
@@ -171,6 +180,30 @@ export class AuthService {
     }
 
     return this.generateTokens(userId!, user.email, userType!, user);
+  }
+
+  // Finds which account type (if any) a login email belongs to, by checking
+  // each table in turn. Used when the caller doesn't already know the type.
+  private async resolveUserTypeByEmail(email: string): Promise<UserTypeDto | undefined> {
+    const customer = await this.customerRepository.findOne({
+      where: { email },
+      select: ['customerId'],
+    });
+    if (customer) return UserTypeDto.CUSTOMER;
+
+    const provider = await this.providerRepository.findOne({
+      where: { email },
+      select: ['providerId'],
+    });
+    if (provider) return UserTypeDto.PROVIDER;
+
+    const admin = await this.adminRepository.findOne({
+      where: { email },
+      select: ['id'],
+    });
+    if (admin) return UserTypeDto.ADMIN;
+
+    return undefined;
   }
 
   // Login with Google: the Google account's email must belong to an account
