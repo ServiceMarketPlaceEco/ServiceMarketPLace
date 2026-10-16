@@ -610,14 +610,11 @@ async function createProvider(provider) {
 
     await api.registerProvider({
       providerName: provider.name || 'Google Provider',
-      username: provider.username,
       email,
       password: provider.password || undefined,
       phone: digitsOnly(provider.phone),
       address: provider.suburb || provider.area || 'Rajshahi City',
-      serviceType: provider.serviceType,
-      description: provider.experience || undefined,
-      authProvider: provider.authProvider || 'email'
+      description: provider.experience || undefined
     })
 
     // Do not create an authenticated provider session before admin approval.
