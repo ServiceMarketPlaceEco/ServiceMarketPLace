@@ -366,6 +366,7 @@ function normalizeBooking(booking) {
 
   return {
     id: booking.bookingId,
+    serviceId: booking.jobId || providerService?.service?.serviceId || '',
     serviceTitle: booking.serviceName || providerService?.service?.serviceName || booking.notes || 'Service request',
     details: booking.notes || '',
     location: booking.address || 'Rajshahi',

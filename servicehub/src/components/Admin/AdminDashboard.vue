@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { formatStatus } from '../../data/services'
 
 const props = defineProps({
@@ -15,6 +15,24 @@ const emit = defineEmits(['approve-provider', 'reject-provider', 'activate-provi
 const activeView = ref('dashboard')
 const searchTerm = ref('')
 const selectedProviders = ref({})
+
+// Maps serviceId -> providerIds who actually offer that service, so the
+// Assign dropdown only lists relevant providers instead of every active one.
+const serviceProviderIds = ref({})
+
+async function loadProvidersForService(serviceId) {
+  if (!serviceId || serviceId in serviceProviderIds.value) return
+  try {
+    const list = await import('../../services/api.js').then(api => api.getServiceProviders(serviceId))
+    serviceProviderIds.value = { ...serviceProviderIds.value, [serviceId]: list.map(p => p.providerId) }
+  } catch (err) {
+    serviceProviderIds.value = { ...serviceProviderIds.value, [serviceId]: [] }
+  }
+}
+
+watch(() => props.requests, (requests) => {
+  new Set(requests.map(r => r.serviceId).filter(Boolean)).forEach(loadProvidersForService)
+}, { immediate: true })
 
 // Review moderation state
 const flaggedReviews = ref([])
@@ -161,6 +179,17 @@ const visibleRequests = computed(() => {
 })
 
 function providerName(providerId) { return props.accounts.find(account => account.id === providerId)?.name || 'Not assigned' }
+
+// Narrows the Assign dropdown to providers who actually offer the
+// request's service. Falls back to all active providers while that
+// service's provider list is still loading, so the dropdown never
+// looks emptier than it should.
+function eligibleProviders(request) {
+  const ids = serviceProviderIds.value[request.serviceId]
+  if (!ids) return activeProviders.value
+  return activeProviders.value.filter(provider => ids.includes(provider.id))
+}
+
 function assignProvider(request) {
   const providerId = selectedProviders.value[request.id]
   if (!providerId) return alert('Please choose an active provider before assigning the request.')
@@ -358,7 +387,7 @@ function assignProvider(request) {
                         :value="selectedProviders[request.id] ?? request.providerId ?? ''"
                         @change="selectedProviders[request.id] = $event.target.value">
                         <option value="">Choose provider</option>
-                        <option v-for="provider in activeProviders" :key="provider.id" :value="provider.id">{{
+                        <option v-for="provider in eligibleProviders(request)" :key="provider.id" :value="provider.id">{{
                           provider.name }} - {{ provider.serviceType }}</option>
                       </select><button class="primary small" @click="assignProvider(request)">Approve + assign</button>
                     </div>
