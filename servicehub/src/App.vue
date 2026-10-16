@@ -408,11 +408,11 @@ async function refreshBookings() {
 async function refreshAdminAccounts() {
   if (signedInUser.value?.role !== 'admin') return
   try {
-    const [customersRes, providersRes] = await Promise.all([
+    const [customers, providers] = await Promise.all([
       api.getAllCustomersAdmin(),
       api.getAllProvidersAdmin()
     ])
-    const customerAccounts = customersRes.data.map(c => ({
+    const customerAccounts = customers.map(c => ({
       id: c.customerId,
       role: 'customer',
       name: c.name,
@@ -420,7 +420,7 @@ async function refreshAdminAccounts() {
       phone: c.phone,
       status: c.isActive ? 'active' : 'blocked'
     }))
-    const providerAccounts = providersRes.data.map(p => ({
+    const providerAccounts = providers.map(p => ({
       id: p.providerId,
       role: 'provider',
       name: p.providerName,
