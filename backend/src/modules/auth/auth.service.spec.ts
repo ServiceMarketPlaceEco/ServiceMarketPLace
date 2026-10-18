@@ -329,6 +329,58 @@ describe('AuthService', () => {
         service.login({ email: 'a@b.com', password: 'x', userType: 'alien' } as any),
       ).rejects.toThrow(BadRequestException);
     });
+
+    // ---- Auto-detected login (no userType given) ----
+    // A single email+password sign-in form can't know in advance whether the
+    // email belongs to a customer, provider or admin.
+
+    it('resolves a provider automatically when userType is omitted', async () => {
+      const passwordHash = await bcrypt.hash('Password@123', 10);
+      customerRepo.findOne.mockResolvedValue(null);
+      providerRepo.findOne.mockResolvedValue({
+        providerId: 'prov-1',
+        email: 'provider@example.com',
+        passwordHash,
+        isBlocked: false,
+        isActive: true,
+      });
+
+      const result = await service.login({
+        email: 'provider@example.com',
+        password: 'Password@123',
+      } as any);
+
+      expect(result.userType).toBe('provider');
+    });
+
+    it('resolves an admin automatically when userType is omitted and no customer/provider has the email', async () => {
+      const passwordHash = await bcrypt.hash('Password@123', 10);
+      customerRepo.findOne.mockResolvedValue(null);
+      providerRepo.findOne.mockResolvedValue(null);
+      adminRepo.findOne.mockResolvedValue({
+        id: 'admin-1',
+        email: 'admin@example.com',
+        passwordHash,
+        isActive: true,
+      });
+
+      const result = await service.login({
+        email: 'admin@example.com',
+        password: 'Password@123',
+      } as any);
+
+      expect(result.userType).toBe('admin');
+    });
+
+    it('rejects with Invalid credentials when no account has the email and userType is omitted', async () => {
+      customerRepo.findOne.mockResolvedValue(null);
+      providerRepo.findOne.mockResolvedValue(null);
+      adminRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.login({ email: 'nobody@example.com', password: 'x' } as any),
+      ).rejects.toThrow(UnauthorizedException);
+    });
   });
 
   describe('loginWithGoogle', () => {

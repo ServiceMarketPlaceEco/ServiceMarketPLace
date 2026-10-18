@@ -366,6 +366,7 @@ function normalizeBooking(booking) {
 
   return {
     id: booking.bookingId,
+    serviceId: booking.jobId || providerService?.service?.serviceId || '',
     serviceTitle: booking.serviceName || providerService?.service?.serviceName || booking.notes || 'Service request',
     details: booking.notes || '',
     location: booking.address || 'Rajshahi',
@@ -408,11 +409,11 @@ async function refreshBookings() {
 async function refreshAdminAccounts() {
   if (signedInUser.value?.role !== 'admin') return
   try {
-    const [customersRes, providersRes] = await Promise.all([
+    const [customers, providers] = await Promise.all([
       api.getAllCustomersAdmin(),
       api.getAllProvidersAdmin()
     ])
-    const customerAccounts = customersRes.data.map(c => ({
+    const customerAccounts = customers.map(c => ({
       id: c.customerId,
       role: 'customer',
       name: c.name,
@@ -420,7 +421,7 @@ async function refreshAdminAccounts() {
       phone: c.phone,
       status: c.isActive ? 'active' : 'blocked'
     }))
-    const providerAccounts = providersRes.data.map(p => ({
+    const providerAccounts = providers.map(p => ({
       id: p.providerId,
       role: 'provider',
       name: p.providerName,
@@ -610,14 +611,11 @@ async function createProvider(provider) {
 
     await api.registerProvider({
       providerName: provider.name || 'Google Provider',
-      username: provider.username,
       email,
       password: provider.password || undefined,
       phone: digitsOnly(provider.phone),
       address: provider.suburb || provider.area || 'Rajshahi City',
-      serviceType: provider.serviceType,
-      description: provider.experience || undefined,
-      authProvider: provider.authProvider || 'email'
+      description: provider.experience || undefined
     })
 
     // Do not create an authenticated provider session before admin approval.
@@ -640,22 +638,14 @@ async function signIn(payload) {
     return
   }
 
-  // Temporary fallback until the backend returns the role directly from the
-  // identifier. Provider usernames begin with PR and admin IDs begin with ADM.
-  const normalizedIdentifier = identifier.toLowerCase()
-  const inferredRole = normalizedIdentifier.startsWith('pr')
-    ? 'provider'
-    : normalizedIdentifier.startsWith('adm') || normalizedIdentifier.startsWith('admin')
-      ? 'admin'
-      : 'customer'
-
+  // The backend resolves which account type this email belongs to
+  // (customer, provider or admin) - no need to guess here.
   try {
     const res = await api.login({
       email: identifier,
-      password: payload.password,
-      userType: inferredRole
+      password: payload.password
     })
-    await applySession(res, res.user?.role || res.userType || inferredRole)
+    await applySession(res, res.userType || res.user?.role)
   } catch (err) {
     alert(err.message || 'Sign in failed.')
   }
@@ -670,7 +660,7 @@ async function signInWithGoogle({ credential }) {
   googleSignInError.value = ''
   try {
     const res = await api.loginWithGoogle(credential)
-    await applySession(res, res.user?.role || res.userType)
+    await applySession(res, res.userType || res.user?.role)
   } catch (err) {
     googleSignInError.value = err.message || 'Google sign-in failed.'
   }
