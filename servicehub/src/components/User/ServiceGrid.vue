@@ -46,43 +46,28 @@ function handleVoiceConfirmation(result) {
 
       <div class="search-input-wrap voice-enabled-search">
         <svg class="search-svg" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M10.8 18.1a7.3 7.3 0 1 1 5.2-2.2l3.8 3.8-1.7 1.7-3.8-3.8a7.2 7.2 0 0 1-3.5.5Zm0-2.4a4.9 4.9 0 1 0 0-9.8 4.9 4.9 0 0 0 0 9.8Z" />
+          <path
+            d="M10.8 18.1a7.3 7.3 0 1 1 5.2-2.2l3.8 3.8-1.7 1.7-3.8-3.8a7.2 7.2 0 0 1-3.5.5Zm0-2.4a4.9 4.9 0 1 0 0-9.8 4.9 4.9 0 0 0 0 9.8Z" />
         </svg>
 
-        <input
-          id="service-search"
-          v-model="searchQuery"
-          type="search"
-          placeholder="Try cleaning, AC repair, delivery, tutoring..."
-        />
+        <input id="service-search" v-model="searchQuery" type="search"
+          placeholder="Try cleaning, AC repair, delivery, tutoring..." />
 
         <!-- Recording and transcript confirmation are kept in VoiceSearch.vue. -->
-        <VoiceSearch
-          :services="services"
-          @confirmed="handleVoiceConfirmation"
-        />
+        <VoiceSearch :services="services" @confirmed="handleVoiceConfirmation" />
       </div>
 
       <div class="category-row" aria-label="Service categories">
-        <button
-          v-for="category in categories"
-          :key="category"
-          type="button"
-          :class="{ active: selectedCategory === category }"
-          @click="selectedCategory = category"
-        >
+        <button v-for="category in categories" :key="category" type="button"
+          :class="{ active: selectedCategory === category }" @click="selectedCategory = category">
           {{ category === 'All' ? 'All' : category }}
         </button>
       </div>
     </div>
 
     <div v-if="filteredServices.length" class="service-grid refined">
-      <ServiceCard
-        v-for="service in filteredServices"
-        :key="service.id"
-        :service="service"
-        @request="$emit('request-service', $event)"
-      />
+      <ServiceCard v-for="service in filteredServices" :key="service.id" :service="service"
+        @request="$emit('request-service', $event)" />
     </div>
 
     <div v-else class="empty-state">

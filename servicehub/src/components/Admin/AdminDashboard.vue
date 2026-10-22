@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { formatStatus } from '../../data/services'
+import * as api from '../../services/api'
 
 const props = defineProps({
   accounts: { type: Array, default: () => [] },
@@ -10,7 +11,7 @@ const props = defineProps({
   theme: { type: String, default: 'light' }
 })
 
-const emit = defineEmits(['approve-provider', 'reject-provider', 'activate-provider', 'block-customer', 'activate-customer', 'assign-request', 'approve-chat', 'reject-chat', 'block-status-change', 'reset-db', 'sign-out', 'go-home', 'toggle-theme'])
+const emit = defineEmits(['approve-provider', 'reject-provider', 'activate-provider', 'block-customer', 'activate-customer', 'assign-request', 'approve-chat', 'reject-chat', 'block-status-change', 'sign-out', 'go-home', 'toggle-theme'])
 
 const activeView = ref('dashboard')
 const searchTerm = ref('')
@@ -56,7 +57,7 @@ async function runModerationScan() {
   moderationLoading.value = true
   moderationError.value = ''
   try {
-    const result = await import('../../services/api.js').then(api => api.scanReviews())
+    const result = await api.scanReviews()
     flaggedReviews.value = result.queue || []
   } catch (err) {
     moderationError.value = err.message || 'Could not reach the moderation endpoint'
@@ -67,7 +68,7 @@ async function runModerationScan() {
 
 async function keepReview(reviewId) {
   try {
-    await import('../../services/api.js').then(api => api.keepFlaggedReview(reviewId))
+    await api.keepFlaggedReview(reviewId)
     flaggedReviews.value = flaggedReviews.value.filter(r => r.reviewId !== reviewId)
   } catch (err) {
     alert('Could not keep review: ' + err.message)
@@ -77,7 +78,7 @@ async function keepReview(reviewId) {
 async function removeReview(reviewId) {
   if (!confirm('Remove this review? This will delete it and recalculate the provider rating.')) return
   try {
-    await import('../../services/api.js').then(api => api.removeFlaggedReview(reviewId))
+    await api.removeFlaggedReview(reviewId)
     flaggedReviews.value = flaggedReviews.value.filter(r => r.reviewId !== reviewId)
   } catch (err) {
     alert('Could not remove review: ' + err.message)
@@ -87,7 +88,7 @@ async function removeReview(reviewId) {
 async function screenWithAI(review) {
   aiScreeningLoading.value[review.reviewId] = true
   try {
-    const result = await import('../../services/api.js').then(api => api.aiScreenReview(review))
+    const result = await api.aiScreenReview(review)
     aiScreeningResults.value[review.reviewId] = result
   } catch (err) {
     aiScreeningResults.value[review.reviewId] = { verdict: 'error', explanation: err.message }
@@ -100,7 +101,7 @@ async function runAccountScan() {
   accountScanLoading.value = true
   accountScanError.value = ''
   try {
-    const result = await import('../../services/api.js').then(api => api.scanAccounts())
+    const result = await api.scanAccounts()
     flaggedAccounts.value = result.queue || []
   } catch (err) {
     accountScanError.value = err.message || 'Could not reach the account moderation endpoint'
@@ -111,7 +112,7 @@ async function runAccountScan() {
 
 async function keepAccount(accountId) {
   try {
-    await import('../../services/api.js').then(api => api.keepFlaggedAccount(accountId))
+    await api.keepFlaggedAccount(accountId)
     flaggedAccounts.value = flaggedAccounts.value.filter(a => a.accountId !== accountId)
   } catch (err) {
     alert('Could not keep account: ' + err.message)
@@ -121,7 +122,7 @@ async function keepAccount(accountId) {
 async function blockAccount(accountId, kind) {
   if (!confirm('Block this account? They will not be able to sign in.')) return
   try {
-    await import('../../services/api.js').then(api => api.blockFlaggedAccount(accountId, kind))
+    await api.blockFlaggedAccount(accountId, kind)
     flaggedAccounts.value = flaggedAccounts.value.filter(a => a.accountId !== accountId)
   } catch (err) {
     alert('Could not block account: ' + err.message)
@@ -131,7 +132,7 @@ async function blockAccount(accountId, kind) {
 async function screenAccountWithAI(account) {
   accountAiLoading.value[account.accountId] = true
   try {
-    const result = await import('../../services/api.js').then(api => api.aiScreenAccount(account))
+    const result = await api.aiScreenAccount(account)
     accountAiResults.value[account.accountId] = result
   } catch (err) {
     accountAiResults.value[account.accountId] = { verdict: 'error', explanation: err.message }
@@ -172,7 +173,7 @@ function assignProvider(request) {
   <section class="ops-layout modern-ops-layout admin-layout">
     <aside class="ops-sidebar modern-sidebar">
       <div class="ops-user compact-user">
-        <div><strong>Admin Panel</strong><small>admin@servicehub.local</small></div>
+        <div><strong>Admin workspace</strong><small>ServiceHub management</small></div>
       </div>
 
       <nav class="ops-menu modern-menu">
@@ -182,10 +183,9 @@ function assignProvider(request) {
           providers</button>
         <button :class="{ active: activeView === 'requests' }" @click="activeView = 'requests'">Requests</button>
         <button :class="{ active: activeView === 'chat' }" @click="activeView = 'chat'">Chat approvals</button>
-        <button :class="{ active: activeView === 'analytics' }" @click="activeView = 'analytics'">Analytics</button>
         <button :class="{ active: activeView === 'blocks' }" @click="activeView = 'blocks'">Block requests</button>
-        <button :class="{ active: activeView === 'moderation' }" @click="activeView = 'moderation'">Review moderation</button>
-        <button :class="{ active: activeView === 'settings' }" @click="activeView = 'settings'">Settings</button>
+        <button :class="{ active: activeView === 'moderation' }" @click="activeView = 'moderation'">Review
+          moderation</button>
       </nav>
 
       <div class="ops-bottom modern-bottom">
@@ -207,9 +207,9 @@ function assignProvider(request) {
       <template v-if="activeView === 'dashboard'">
         <div class="stat-grid four">
           <article class="stat-card"><span>Total users</span><strong>{{ customerAccounts.length
-              }}</strong></article>
+          }}</strong></article>
           <article class="stat-card"><span>Service providers</span><strong>{{ providerAccounts.length
-              }}</strong><small>{{ pendingProviders.length }} pending approval</small></article>
+          }}</strong><small>{{ pendingProviders.length }} pending approval</small></article>
           <article class="stat-card"><span>Total requests</span><strong>{{ requests.length }}</strong><small>{{
             waitingRequests.length }} waiting assignment</small></article>
           <article class="stat-card"><span>Total revenue</span><strong>BDT {{ totalRevenue.toLocaleString() }}</strong>
@@ -222,7 +222,7 @@ function assignProvider(request) {
             <article v-for="request in requests.slice(0, 4)" :key="request.id" class="request-row">
               <div><strong>{{ request.serviceTitle }}</strong><small>{{ request.customerName }} · {{
                 request.preferredDate }}</small></div><strong>BDT {{ Number(request.budget || 0).toLocaleString()
-                }}</strong>
+                  }}</strong>
             </article>
           </section>
           <section class="ops-panel">
@@ -261,9 +261,12 @@ function assignProvider(request) {
                   <td><strong>{{ account.name }}</strong></td>
                   <td>{{ account.email }}<small>{{ account.phone }}</small></td>
                   <td>{{requests.filter(r => r.customerId === account.id).length}}</td>
-                  <td>{{requests.filter(r => r.customerId === account.id).reduce((sum, r) => sum + Number(r.budget || 0), 0).toLocaleString()}}৳</td>
+                  <td>{{requests.filter(r => r.customerId === account.id).reduce((sum, r) => sum + Number(r.budget ||
+                    0), 0).toLocaleString()}}৳</td>
                   <td><span class="status-pill" :class="account.status">{{ account.status }}</span></td>
-                  <td><button class="secondary small" @click="account.status === 'blocked' ? $emit('activate-customer', account.id) : $emit('block-customer', account.id)">{{ account.status === 'blocked' ?
+                  <td><button class="secondary small"
+                      @click="account.status === 'blocked' ? $emit('activate-customer', account.id) : $emit('block-customer', account.id)">{{
+                        account.status === 'blocked' ?
                       'Unblock' : 'Block' }}</button></td>
                 </tr>
               </tbody>
@@ -297,7 +300,8 @@ function assignProvider(request) {
                   <td>{{ provider.serviceType || 'General service' }}</td>
                   <td>N/A</td>
                   <td>{{requests.filter(r => r.providerId === provider.id).length}}</td>
-                  <td>{{requests.filter(r => r.providerId === provider.id).reduce((sum, r) => sum + Number(r.budget || 0), 0).toLocaleString()}}৳</td>
+                  <td>{{requests.filter(r => r.providerId === provider.id).reduce((sum, r) => sum + Number(r.budget ||
+                    0), 0).toLocaleString()}}৳</td>
                   <td><span class="status-pill" :class="provider.status">{{ provider.status }}</span></td>
                   <td class="row-actions"><button v-if="provider.status === 'pending-admin-approval'"
                       class="primary small" @click="$emit('approve-provider', provider.id)">Approve</button><button
@@ -318,7 +322,7 @@ function assignProvider(request) {
           <article class="stat-card"><span>Waiting</span><strong>{{ waitingRequests.length }}</strong></article>
           <article class="stat-card"><span>Assigned</span><strong>{{ assignedRequests.length }}</strong></article>
           <article class="stat-card"><span>Completed</span><strong>{{requests.filter(r => r.status ===
-              'completed').length }}</strong></article>
+            'completed').length}}</strong></article>
           <article class="stat-card"><span>Total</span><strong>{{ requests.length }}</strong></article>
         </div>
         <section class="ops-panel">
@@ -344,7 +348,8 @@ function assignProvider(request) {
                   <td><strong>{{ request.id }}</strong></td>
                   <td>{{ request.serviceTitle }}</td>
                   <td>{{ request.customerName }}</td>
-                  <td>{{ providerName(request.providerId) }}<small>{{ formatStatus(request.providerStatus) }}</small></td>
+                  <td>{{ providerName(request.providerId) }}<small>{{ formatStatus(request.providerStatus) }}</small>
+                  </td>
                   <td>{{ request.preferredDate }}<small>{{ request.location }}</small></td>
                   <td>{{ request.budget || 0 }}৳</td>
                   <td><span class="status-pill" :class="request.needsUpfrontPayment ? 'pending' : 'active'">{{
@@ -352,10 +357,9 @@ function assignProvider(request) {
                       v-if="request.needsUpfrontPayment">{{ request.bankName }} · {{ request.accountName }}</small></td>
                   <td><span class="status-pill"
                       :class="String(request.status).toLowerCase().replaceAll('_', '-').replaceAll(' ', '-')">{{
-                      formatStatus(request.status) }}</span></td>
+                        formatStatus(request.status) }}</span></td>
                   <td>
-                    <div class="row-actions"><select
-                        :value="selectedProviders[request.id] ?? request.providerId ?? ''"
+                    <div class="row-actions"><select :value="selectedProviders[request.id] ?? request.providerId ?? ''"
                         @change="selectedProviders[request.id] = $event.target.value">
                         <option value="">Choose provider</option>
                         <option v-for="provider in activeProviders" :key="provider.id" :value="provider.id">{{
@@ -443,7 +447,8 @@ function assignProvider(request) {
       <template v-if="activeView === 'moderation'">
         <div class="moderation-tabs">
           <button :class="{ active: moderationTab === 'reviews' }" @click="moderationTab = 'reviews'">Reviews</button>
-          <button :class="{ active: moderationTab === 'accounts' }" @click="moderationTab = 'accounts'">Accounts</button>
+          <button :class="{ active: moderationTab === 'accounts' }"
+            @click="moderationTab = 'accounts'">Accounts</button>
         </div>
 
         <!-- REVIEWS TAB -->
@@ -463,7 +468,8 @@ function assignProvider(request) {
 
           <div v-if="flaggedReviews.length > 0" class="moderation-filters">
             <button :class="{ active: riskFilter === 'high' }" @click="riskFilter = 'high'">High risk only</button>
-            <button :class="{ active: riskFilter === 'medium' }" @click="riskFilter = 'medium'">Medium and above</button>
+            <button :class="{ active: riskFilter === 'medium' }" @click="riskFilter = 'medium'">Medium and
+              above</button>
             <button :class="{ active: riskFilter === 'all' }" @click="riskFilter = 'all'">Show all</button>
           </div>
 
@@ -476,7 +482,9 @@ function assignProvider(request) {
           </div>
 
           <div v-if="flaggedReviews.length > 0" class="moderation-summary">
-            <strong>{{ flaggedReviews.length }}</strong> review{{ flaggedReviews.length === 1 ? '' : 's' }} flagged total — showing <strong>{{ filteredFlagged.length }}</strong> ({{ riskFilter === 'all' ? 'all risks' : riskFilter === 'high' ? 'high risk only' : 'medium and above' }})
+            <strong>{{ flaggedReviews.length }}</strong> review{{ flaggedReviews.length === 1 ? '' : 's' }} flagged
+            total — showing <strong>{{ filteredFlagged.length }}</strong> ({{ riskFilter === 'all' ? 'all risks' :
+              riskFilter === 'high' ? 'high risk only' : 'medium and above' }})
           </div>
 
           <article v-for="review in filteredFlagged" :key="review.reviewId" class="moderation-card">
@@ -486,7 +494,8 @@ function assignProvider(request) {
                 <span class="risk-badge" :class="riskLevel(review.score).cls">{{ riskLevel(review.score).label }}</span>
                 <div class="risk-meter" :title="'Risk score: ' + review.score + '/10'">
                   <div class="risk-meter-track">
-                    <div class="risk-meter-fill" :class="riskLevel(review.score).cls" :style="{ width: riskMeterPercent(review.score) + '%' }"></div>
+                    <div class="risk-meter-fill" :class="riskLevel(review.score).cls"
+                      :style="{ width: riskMeterPercent(review.score) + '%' }"></div>
                   </div>
                   <span class="risk-meter-label">{{ review.score }}/10</span>
                 </div>
@@ -515,13 +524,16 @@ function assignProvider(request) {
             <div v-if="aiScreeningResults[review.reviewId]" class="ai-screening-result">
               <h4>AI screening result</h4>
               <div class="ai-verdict" :class="aiScreeningResults[review.reviewId].verdict">
-                <strong>{{ aiScreeningResults[review.reviewId].verdict === 'genuine' ? 'Likely genuine' : aiScreeningResults[review.reviewId].verdict === 'suspicious' ? 'Likely fake' : 'Could not determine' }}</strong>
+                <strong>{{ aiScreeningResults[review.reviewId].verdict === 'genuine' ? 'Likely genuine' :
+                  aiScreeningResults[review.reviewId].verdict === 'suspicious' ? 'Likely fake' : 'Could not determine'
+                  }}</strong>
                 <p>{{ aiScreeningResults[review.reviewId].explanation }}</p>
               </div>
             </div>
 
             <div class="moderation-actions">
-              <button class="secondary small" @click="screenWithAI(review)" :disabled="aiScreeningLoading[review.reviewId]">
+              <button class="secondary small" @click="screenWithAI(review)"
+                :disabled="aiScreeningLoading[review.reviewId]">
                 {{ aiScreeningLoading[review.reviewId] ? 'Screening...' : 'Screen with AI' }}
               </button>
               <button class="success small" @click="keepReview(review.reviewId)">Keep review</button>
@@ -545,9 +557,12 @@ function assignProvider(request) {
           </p>
 
           <div v-if="flaggedAccounts.length > 0" class="moderation-filters">
-            <button :class="{ active: accountRiskFilter === 'high' }" @click="accountRiskFilter = 'high'">High risk only</button>
-            <button :class="{ active: accountRiskFilter === 'medium' }" @click="accountRiskFilter = 'medium'">Medium and above</button>
-            <button :class="{ active: accountRiskFilter === 'all' }" @click="accountRiskFilter = 'all'">Show all</button>
+            <button :class="{ active: accountRiskFilter === 'high' }" @click="accountRiskFilter = 'high'">High risk
+              only</button>
+            <button :class="{ active: accountRiskFilter === 'medium' }" @click="accountRiskFilter = 'medium'">Medium and
+              above</button>
+            <button :class="{ active: accountRiskFilter === 'all' }" @click="accountRiskFilter = 'all'">Show
+              all</button>
           </div>
 
           <div v-if="accountScanError" class="empty-state" style="color: var(--danger, #c0392b)">
@@ -559,17 +574,22 @@ function assignProvider(request) {
           </div>
 
           <div v-if="flaggedAccounts.length > 0" class="moderation-summary">
-            <strong>{{ flaggedAccounts.length }}</strong> account{{ flaggedAccounts.length === 1 ? '' : 's' }} flagged total — showing <strong>{{ filteredAccounts.length }}</strong> ({{ accountRiskFilter === 'all' ? 'all risks' : accountRiskFilter === 'high' ? 'high risk only' : 'medium and above' }})
+            <strong>{{ flaggedAccounts.length }}</strong> account{{ flaggedAccounts.length === 1 ? '' : 's' }} flagged
+            total — showing <strong>{{ filteredAccounts.length }}</strong> ({{ accountRiskFilter === 'all' ? 'all risks'
+              : accountRiskFilter === 'high' ? 'high risk only' : 'medium and above' }})
           </div>
 
           <article v-for="account in filteredAccounts" :key="account.accountId" class="moderation-card">
             <div class="moderation-header">
               <div>
-                <strong>{{ account.kind === 'provider' ? 'Provider' : 'Customer' }} {{ account.accountId.slice(0, 8) }}</strong>
-                <span class="risk-badge" :class="riskLevel(account.score).cls">{{ riskLevel(account.score).label }}</span>
+                <strong>{{ account.kind === 'provider' ? 'Provider' : 'Customer' }} {{ account.accountId.slice(0, 8)
+                  }}</strong>
+                <span class="risk-badge" :class="riskLevel(account.score).cls">{{ riskLevel(account.score).label
+                  }}</span>
                 <div class="risk-meter" :title="'Risk score: ' + account.score + '/10'">
                   <div class="risk-meter-track">
-                    <div class="risk-meter-fill" :class="riskLevel(account.score).cls" :style="{ width: riskMeterPercent(account.score) + '%' }"></div>
+                    <div class="risk-meter-fill" :class="riskLevel(account.score).cls"
+                      :style="{ width: riskMeterPercent(account.score) + '%' }"></div>
                   </div>
                   <span class="risk-meter-label">{{ account.score }}/10</span>
                 </div>
@@ -578,7 +598,8 @@ function assignProvider(request) {
                 <span>Type: {{ account.kind }}</span>
                 <span v-if="account.completedBookings !== undefined">Bookings: {{ account.completedBookings }}</span>
                 <span v-if="account.reviewsWritten !== undefined">Reviews: {{ account.reviewsWritten }}</span>
-                <span v-if="account.distinctProvidersReviewed !== undefined">Providers reviewed: {{ account.distinctProvidersReviewed }}</span>
+                <span v-if="account.distinctProvidersReviewed !== undefined">Providers reviewed: {{
+                  account.distinctProvidersReviewed }}</span>
               </div>
             </div>
 
@@ -594,49 +615,26 @@ function assignProvider(request) {
             <div v-if="accountAiResults[account.accountId]" class="ai-screening-result">
               <h4>AI screening result</h4>
               <div class="ai-verdict" :class="accountAiResults[account.accountId].verdict">
-                <strong>{{ accountAiResults[account.accountId].verdict === 'genuine' ? 'Likely genuine' : accountAiResults[account.accountId].verdict === 'suspicious' ? 'Likely fake' : 'Could not determine' }}</strong>
+                <strong>{{ accountAiResults[account.accountId].verdict === 'genuine' ? 'Likely genuine' :
+                  accountAiResults[account.accountId].verdict === 'suspicious' ? 'Likely fake' : 'Could not determine'
+                  }}</strong>
                 <p>{{ accountAiResults[account.accountId].explanation }}</p>
               </div>
             </div>
 
             <div class="moderation-actions">
-              <button class="secondary small" @click="screenAccountWithAI(account)" :disabled="accountAiLoading[account.accountId]">
+              <button class="secondary small" @click="screenAccountWithAI(account)"
+                :disabled="accountAiLoading[account.accountId]">
                 {{ accountAiLoading[account.accountId] ? 'Screening...' : 'Screen with AI' }}
               </button>
               <button class="success small" @click="keepAccount(account.accountId)">Keep account</button>
-              <button class="danger-soft small" @click="blockAccount(account.accountId, account.kind)">Block account</button>
+              <button class="danger-soft small" @click="blockAccount(account.accountId, account.kind)">Block
+                account</button>
             </div>
           </article>
         </section>
       </template>
 
-      <template v-if="activeView === 'analytics'">
-        <section class="ops-panel">
-          <h2>Marketplace analytics</h2>
-          <div class="analytics-grid">
-            <article><span>Conversion rate</span><strong>38%</strong>
-              <p>request submissions from service views</p>
-            </article>
-            <article><span>Average response time</span><strong>22 min</strong>
-              <p>provider first response estimate</p>
-            </article>
-            <article><span>Top area</span><strong>Rajshahi City</strong>
-              <p>highest request volume</p>
-            </article>
-          </div>
-        </section>
-      </template>
-      <template v-if="activeView === 'settings'">
-        <section class="ops-panel settings-panel">
-          <h2>Admin settings</h2>
-          <div class="settings-grid"><label>Platform name<input value="ServiceHub" /></label><label>Default city<input
-                value="Rajshahi City" /></label><label>Support email<input
-                value="support@servicehub.com" /></label><label>Backend status<input
-                value="ready for database API connection" /></label></div>
-          <div class="form-actions"><button class="secondary" @click="$emit('reset-db')">Reset local demo
-              data</button><button class="primary">Save settings</button></div>
-        </section>
-      </template>
     </main>
   </section>
 </template>

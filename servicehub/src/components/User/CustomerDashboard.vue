@@ -33,7 +33,6 @@ defineEmits(['request-another', 'view-tracking'])
     <div v-else class="table-card clean-card">
       <div class="panel-heading">
         <h3>Previous requests</h3>
-        <button class="secondary small" @click="$emit('view-tracking')">View tracking demo</button>
       </div>
 
       <div class="responsive-table">
@@ -66,7 +65,7 @@ defineEmits(['request-another', 'view-tracking'])
                 <span class="status-pill" :class="request.status">{{ formatStatus(request.status) }}</span>
               </td>
               <td>
-                <button class="secondary small" @click="$emit('view-tracking')">Track</button>
+                <button class="secondary small" @click="$emit('view-tracking', request)">Track</button>
               </td>
             </tr>
           </tbody>

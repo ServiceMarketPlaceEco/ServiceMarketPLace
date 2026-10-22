@@ -356,7 +356,7 @@ export async function getMyBookings() {
   return resultArray(result)
 }
 
-// Current public demonstration endpoints
+// Public booking-management endpoints
 export async function getAllBookingsPublic() {
   const result = await request('/bookings/all')
   return resultArray(result)
@@ -760,8 +760,8 @@ export async function getChatMessages(
 ) {
   const query = bookingId
     ? `?${new URLSearchParams({
-        bookingId: String(bookingId)
-      }).toString()}`
+      bookingId: String(bookingId)
+    }).toString()}`
     : ''
 
   const result = await request(

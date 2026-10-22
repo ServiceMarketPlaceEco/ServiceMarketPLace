@@ -2,7 +2,7 @@
 import { reactive, ref } from 'vue'
 import { locations } from '../../data/services'
 
-const emit = defineEmits(['create-account', 'google-create-account', 'go-signin'])
+const emit = defineEmits(['create-account', 'go-signin'])
 const error = ref('')
 
 const form = reactive({
@@ -34,22 +34,6 @@ function submitForm() {
   })
 }
 
-function continueWithGoogle() {
-  if (!form.name.trim() || !form.username.trim() || !form.phone.trim() || !form.location) {
-    error.value = 'Enter your name, username, phone and location before continuing with Google.'
-    return
-  }
-
-  emit('google-create-account', {
-    name: form.name.trim(),
-    username: form.username.trim(),
-    phone: form.phone.trim(),
-    password: form.password || 'google-demo',
-    location: form.location,
-    email: form.email.trim(),
-    accountMethod: 'google'
-  })
-}
 </script>
 
 <template>
@@ -63,7 +47,8 @@ function continueWithGoogle() {
       </p>
 
       <label>Name * <input v-model="form.name" type="text" placeholder="Example: Sam" /></label>
-      <label>Username * <input v-model.trim="form.username" type="text" required autocomplete="username" placeholder="Example: sam24" /></label>
+      <label>Username * <input v-model.trim="form.username" type="text" required autocomplete="username"
+          placeholder="Example: sam24" /></label>
       <label>Phone number * <input v-model="form.phone" type="tel" placeholder="Example: 01XXXXXXXXX" /></label>
       <label>Password * <input v-model="form.password" type="password" placeholder="Create a password" /></label>
 
@@ -82,7 +67,6 @@ function continueWithGoogle() {
       <p v-if="error" class="error-text">{{ error }}</p>
 
       <button class="primary" type="submit">Create account</button>
-      <button class="secondary" type="button" @click="continueWithGoogle">Continue with Google</button>
       <button class="link-btn" type="button" @click="emit('go-signin')">Already have an account?</button>
     </form>
   </section>

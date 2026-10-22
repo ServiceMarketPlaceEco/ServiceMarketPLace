@@ -313,47 +313,26 @@ onBeforeUnmount(() => {
 
 <template>
   <!-- This standalone component renders the button beside the search input. -->
-  <button
-    class="voice-button"
-    type="button"
-    aria-label="Search for a service using voice"
-    title="Voice search"
-    @click="openVoiceSearch"
-  >
+  <button class="voice-button" type="button" aria-label="Search for a service using voice" title="Voice search"
+    @click="openVoiceSearch">
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
-        d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a1 1 0 1 1 2 0 7 7 0 0 1-6 6.93V20h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2.07A7 7 0 0 1 5 11a1 1 0 1 1 2 0 5 5 0 0 0 10 0Z"
-      />
+        d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a1 1 0 1 1 2 0 7 7 0 0 1-6 6.93V20h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2.07A7 7 0 0 1 5 11a1 1 0 1 1 2 0 5 5 0 0 0 10 0Z" />
     </svg>
   </button>
 
   <!-- Teleport prevents the modal from being clipped by ServiceGrid containers. -->
   <Teleport to="body">
-    <div
-      v-if="modalOpen"
-      class="voice-modal-backdrop"
-      @click.self="closeVoiceSearch"
-    >
-      <section
-        class="voice-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="voice-modal-title"
-      >
-        <button
-          class="voice-close"
-          type="button"
-          aria-label="Close voice search"
-          @click="closeVoiceSearch"
-        >
+    <div v-if="modalOpen" class="voice-modal-backdrop" @click.self="closeVoiceSearch">
+      <section class="voice-modal" role="dialog" aria-modal="true" aria-labelledby="voice-modal-title">
+        <button class="voice-close" type="button" aria-label="Close voice search" @click="closeVoiceSearch">
           ×
         </button>
 
         <div class="voice-orb" :class="{ listening: isListening }">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
-              d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a1 1 0 1 1 2 0 7 7 0 0 1-6 6.93V20h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2.07A7 7 0 0 1 5 11a1 1 0 1 1 2 0 5 5 0 0 0 10 0Z"
-            />
+              d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a1 1 0 1 1 2 0 7 7 0 0 1-6 6.93V20h3a1 1 0 1 1 0 2H8a1 1 0 1 1 0-2h3v-2.07A7 7 0 0 1 5 11a1 1 0 1 1 2 0 5 5 0 0 0 10 0Z" />
           </svg>
         </div>
 
@@ -368,47 +347,27 @@ onBeforeUnmount(() => {
         <fieldset class="language-choice">
           <legend>Recognition language</legend>
           <label>
-            <input
-              v-model="language"
-              type="radio"
-              value="en-AU"
-              @change="restartForLanguage"
-            />
+            <input v-model="language" type="radio" value="en-AU" @change="restartForLanguage" />
             English
           </label>
           <label>
-            <input
-              v-model="language"
-              type="radio"
-              value="bn-BD"
-              @change="restartForLanguage"
-            />
+            <input v-model="language" type="radio" value="bn-BD" @change="restartForLanguage" />
             বাংলা (Bengali)
           </label>
         </fieldset>
 
         <label class="transcript-field">
           Transcript
-          <textarea
-            ref="transcriptInput"
-            v-model="transcript"
-            rows="4"
-            :placeholder="
-              language === 'bn-BD'
-                ? 'উদাহরণ: আমার বাসার এসি মেরামত করতে হবে'
-                : 'Example: I need someone to repair my air conditioner'
-            "
-          ></textarea>
+          <textarea ref="transcriptInput" v-model="transcript" rows="4" :placeholder="language === 'bn-BD'
+              ? 'উদাহরণ: আমার বাসার এসি মেরামত করতে হবে'
+              : 'Example: I need someone to repair my air conditioner'
+            "></textarea>
         </label>
 
         <label v-if="suggestedServices.length" class="service-match-field">
           Suggested service
           <select v-model="selectedService">
-            <option
-              v-for="service in suggestedServices"
-              :key="service.id"
-              :value="service"
-            >
+            <option v-for="service in suggestedServices" :key="service.id" :value="service">
               {{ service.title }} — {{ service.category }}
             </option>
           </select>
@@ -422,11 +381,7 @@ onBeforeUnmount(() => {
           Finding the closest services…
         </p>
 
-        <p
-          v-else-if="transcript.trim() && !suggestedServices.length"
-          class="voice-warning"
-          aria-live="polite"
-        >
+        <p v-else-if="transcript.trim() && !suggestedServices.length" class="voice-warning" aria-live="polite">
           No clear service match yet. Edit the transcript or record again.
         </p>
 
@@ -439,19 +394,11 @@ onBeforeUnmount(() => {
         </p>
 
         <div class="voice-actions">
-          <button
-            class="voice-secondary"
-            type="button"
-            @click="isListening ? stopListening() : startListening()"
-          >
+          <button class="voice-secondary" type="button" @click="isListening ? stopListening() : startListening()">
             {{ isListening ? 'Stop recording' : 'Try again' }}
           </button>
-          <button
-            class="voice-primary"
-            type="button"
-            :disabled="!transcript.trim() || !selectedService"
-            @click="confirmVoiceSearch"
-          >
+          <button class="voice-primary" type="button" :disabled="!transcript.trim() || !selectedService"
+            @click="confirmVoiceSearch">
             Continue to booking
           </button>
         </div>
@@ -671,6 +618,7 @@ onBeforeUnmount(() => {
 }
 
 @keyframes voice-pulse {
+
   0%,
   100% {
     box-shadow: 0 0 0 0 rgb(124 58 237 / 35%);
