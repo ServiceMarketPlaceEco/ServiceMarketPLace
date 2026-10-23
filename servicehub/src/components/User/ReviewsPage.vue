@@ -112,21 +112,12 @@ function submitReview() {
     </div>
 
     <Teleport to="body">
-      <div
-        v-if="showReviewForm"
-        class="modal-backdrop"
-        role="presentation"
-        @click.self="showReviewForm = false"
-        @keydown.esc="showReviewForm = false"
-      >
-        <form
-          class="modal-card review-form"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="review-form-title"
-          @submit.prevent="submitReview"
-        >
-          <button class="icon-close" type="button" aria-label="Close review form" @click="showReviewForm = false">×</button>
+      <div v-if="showReviewForm" class="modal-backdrop" role="presentation" @click.self="showReviewForm = false"
+        @keydown.esc="showReviewForm = false">
+        <form class="modal-card review-form" role="dialog" aria-modal="true" aria-labelledby="review-form-title"
+          @submit.prevent="submitReview">
+          <button class="icon-close" type="button" aria-label="Close review form"
+            @click="showReviewForm = false">×</button>
           <p class="eyebrow">Share your experience</p>
           <h2 id="review-form-title">Write a review</h2>
 
@@ -197,7 +188,7 @@ function submitReview() {
   padding: clamp(1.5rem, 4vw, 3rem);
 }
 
-.review-hero > div {
+.review-hero>div {
   max-width: 47rem;
 }
 
@@ -286,7 +277,7 @@ function submitReview() {
   gap: 0.8rem;
 }
 
-.review-card-top > div:nth-child(2) {
+.review-card-top>div:nth-child(2) {
   display: flex;
   flex-direction: column;
 }

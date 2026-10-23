@@ -1,0 +1,375 @@
+<script setup>
+import { computed, ref, watch } from 'vue'
+import { formatStatus } from '../../data/services'
+
+const props = defineProps({
+  requests: { type: Array, default: () => [] },
+  selectedRequest: { type: Object, default: null }
+})
+
+const emit = defineEmits(['back'])
+const selectedRequestId = ref(props.selectedRequest?.id || props.selectedRequest?.requestId || '')
+
+watch(() => props.selectedRequest, request => {
+  selectedRequestId.value = request?.id || request?.requestId || ''
+})
+
+const booking = computed(() => props.selectedRequest
+  || props.requests.find(item => (item.id || item.requestId) === selectedRequestId.value)
+  || props.requests[0]
+  || null)
+
+const stages = [
+  { key: 'pending', label: 'Request received' },
+  { key: 'assigned', label: 'Provider assigned' },
+  { key: 'in-progress', label: 'Service in progress' },
+  { key: 'completed', label: 'Service completed' }
+]
+
+const statusAliases = {
+  pending: 'pending',
+  'waiting-admin-approval': 'pending',
+  'waiting-provider-acceptance': 'pending',
+  confirmed: 'assigned',
+  accepted: 'assigned',
+  assigned: 'assigned',
+  'assigned-to-provider': 'assigned',
+  in_progress: 'in-progress',
+  'in-progress': 'in-progress',
+  completed: 'completed',
+  cancelled: 'cancelled',
+  declined: 'cancelled'
+}
+
+const currentStatus = computed(() => {
+  const status = booking.value?.providerStatus || booking.value?.status || 'pending'
+  return statusAliases[status] || 'pending'
+})
+
+const currentStageIndex = computed(() => {
+  if (currentStatus.value === 'cancelled') return -1
+  return Math.max(0, stages.findIndex(stage => stage.key === currentStatus.value))
+})
+
+const statusMessage = computed(() => ({
+  pending: 'Your request has been received and is waiting for a provider.',
+  assigned: 'A provider has been assigned and will contact you before travelling.',
+  'in-progress': 'Your provider has started the service.',
+  completed: 'Your provider has marked this service as completed.',
+  cancelled: 'This booking has been cancelled.'
+}[currentStatus.value]))
+
+const bookingReference = computed(() => booking.value?.id || booking.value?.requestId || 'Pending')
+const destination = computed(() => booking.value?.customerLocation || booking.value?.location || 'Not provided')
+
+function callProvider() {
+  const phone = String(booking.value?.providerPhone || '').replace(/[^+\d]/g, '')
+  if (phone) window.location.href = `tel:${phone}`
+}
+</script>
+
+<template>
+  <section class="tracking-page" aria-labelledby="tracking-title">
+    <header class="tracking-header">
+      <div>
+        <button class="back-button" type="button" @click="emit('back')">
+          <span aria-hidden="true">←</span> Back to dashboard
+        </button>
+        <p class="eyebrow">Service tracking</p>
+        <h1 id="tracking-title">Track your booking</h1>
+        <p>Follow the latest status reported by ServiceHub and your assigned provider.</p>
+      </div>
+
+      <label v-if="requests.length > 1" class="booking-selector">
+        Choose a booking
+        <select v-model="selectedRequestId">
+          <option v-for="item in requests" :key="item.id || item.requestId" :value="item.id || item.requestId">
+            {{ item.serviceTitle || 'Service request' }} — {{ item.id || item.requestId }}
+          </option>
+        </select>
+      </label>
+    </header>
+
+    <div v-if="!booking" class="clean-card empty-state">
+      <h2>No booking selected</h2>
+      <p>Your submitted bookings will appear here when tracking information is available.</p>
+      <button class="primary" type="button" @click="emit('back')">Return to dashboard</button>
+    </div>
+
+    <template v-else>
+      <div class="tracking-grid">
+        <article class="clean-card booking-card">
+          <div class="booking-heading">
+            <div>
+              <p class="eyebrow">Booking {{ bookingReference }}</p>
+              <h2>{{ booking.serviceTitle || 'Local service' }}</h2>
+            </div>
+            <span class="status-pill" :class="currentStatus">{{ formatStatus(currentStatus) }}</span>
+          </div>
+
+          <dl class="booking-details">
+            <div>
+              <dt>Service address</dt>
+              <dd>{{ destination }}</dd>
+            </div>
+            <div>
+              <dt>Preferred date</dt>
+              <dd>{{ booking.preferredDate || booking.createdAt || 'To be confirmed' }}</dd>
+            </div>
+            <div>
+              <dt>Preferred time</dt>
+              <dd>{{ booking.preferredTime || 'To be confirmed' }}</dd>
+            </div>
+            <div>
+              <dt>Provider</dt>
+              <dd>{{ booking.providerName || 'Waiting for assignment' }}</dd>
+            </div>
+          </dl>
+
+          <div class="current-update" role="status" aria-live="polite">
+            <span aria-hidden="true">{{ currentStatus === 'cancelled' ? '!' : '✓' }}</span>
+            <div>
+              <strong>{{ formatStatus(currentStatus) }}</strong>
+              <p>{{ statusMessage }}</p>
+            </div>
+          </div>
+        </article>
+
+        <aside class="clean-card progress-card">
+          <h2>Booking progress</h2>
+          <ol class="tracking-timeline">
+            <li v-for="(stage, index) in stages" :key="stage.key" :class="{
+              complete: currentStageIndex >= index,
+              active: currentStageIndex === index
+            }">
+              <span class="timeline-dot">{{ currentStageIndex > index ? '✓' : index + 1 }}</span>
+              <div>
+                <strong>{{ stage.label }}</strong>
+                <small v-if="currentStageIndex === index">Current status</small>
+                <small v-else-if="currentStageIndex > index">Completed</small>
+                <small v-else>Pending</small>
+              </div>
+            </li>
+          </ol>
+          <p v-if="currentStatus === 'cancelled'" class="cancelled-message">
+            Contact ServiceHub support if you need help with this cancelled booking.
+          </p>
+        </aside>
+      </div>
+
+      <article v-if="booking.providerName" class="clean-card provider-card">
+        <div class="provider-avatar" aria-hidden="true">{{ booking.providerName.charAt(0).toUpperCase() }}</div>
+        <div>
+          <p>Your assigned provider</p>
+          <h2>{{ booking.providerName }}</h2>
+          <span>Verified ServiceHub provider</span>
+        </div>
+        <button v-if="booking.providerPhone" class="secondary" type="button" @click="callProvider">
+          Call provider
+        </button>
+      </article>
+    </template>
+  </section>
+</template>
+
+<style scoped>
+.tracking-page {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: clamp(2.5rem, 6vw, 5rem) 0;
+}
+
+.tracking-header,
+.booking-heading,
+.provider-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.tracking-header {
+  align-items: end;
+  margin-bottom: 1.75rem;
+}
+
+.tracking-header h1 {
+  margin: .35rem 0 .65rem;
+  font-size: clamp(2.4rem, 5vw, 4.2rem);
+  line-height: 1;
+}
+
+.tracking-header p:last-child {
+  margin: 0;
+  color: var(--muted);
+}
+
+.back-button {
+  margin-bottom: 1.25rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--brand);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.booking-selector {
+  display: grid;
+  gap: .45rem;
+  min-width: min(100%, 22rem);
+  font-weight: 800;
+}
+
+.tracking-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(18rem, .65fr);
+  gap: 1.5rem;
+}
+
+.booking-card,
+.progress-card,
+.provider-card,
+.empty-state {
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+}
+
+.booking-heading h2,
+.provider-card h2 {
+  margin: .2rem 0 0;
+}
+
+.booking-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+.booking-details div {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+}
+
+.booking-details dt {
+  margin-bottom: .35rem;
+  color: var(--muted);
+  font-size: .82rem;
+  font-weight: 800;
+}
+
+.booking-details dd {
+  margin: 0;
+  color: var(--heading);
+  font-weight: 800;
+}
+
+.current-update {
+  display: flex;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+}
+
+.current-update>span,
+.timeline-dot {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--brand);
+  color: white;
+  font-weight: 900;
+}
+
+.current-update p {
+  margin: .35rem 0 0;
+  color: var(--muted);
+}
+
+.tracking-timeline {
+  display: grid;
+  gap: 1rem;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tracking-timeline li {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  opacity: .48;
+}
+
+.tracking-timeline li.complete,
+.tracking-timeline li.active {
+  opacity: 1;
+}
+
+.tracking-timeline li:not(.complete) .timeline-dot {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.tracking-timeline div {
+  display: grid;
+}
+
+.tracking-timeline small,
+.provider-card p,
+.provider-card span {
+  color: var(--muted);
+}
+
+.cancelled-message {
+  margin-top: 1.5rem;
+  color: #b42318;
+}
+
+.provider-card {
+  margin-top: 1.5rem;
+}
+
+.provider-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: var(--brand);
+  color: white;
+  font-size: 1.25rem;
+  font-weight: 900;
+}
+
+.provider-card>div:nth-child(2) {
+  flex: 1;
+}
+
+.provider-card p {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+
+  .tracking-header,
+  .booking-heading,
+  .provider-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tracking-grid,
+  .booking-details {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

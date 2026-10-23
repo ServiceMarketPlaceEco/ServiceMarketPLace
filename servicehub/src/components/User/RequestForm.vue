@@ -33,7 +33,8 @@ const priceLabel = computed(() => formatBDT(props.service?.price))
         <p class="eyebrow">Create request</p>
         <h2>{{ service?.title }}</h2>
         <p>
-          Base price starts from {{ priceLabel }}. Add the task location, schedule and details so admin can assign the right provider.
+          Base price starts from {{ priceLabel }}. Add the task location, schedule and details so admin can assign the
+          right provider.
         </p>
       </div>
 
@@ -44,23 +45,20 @@ const priceLabel = computed(() => formatBDT(props.service?.price))
       </aside>
     </div>
 
-    <form
-      class="request-form clean-card"
-      @submit.prevent="$emit('submit-request', {
-        ...form,
-        serviceId: service.id,
-        serviceTitle: service.title,
-        customerId: customer.id,
-        customerName: customer.name,
-        needsUpfrontPayment: requiresUpfrontPayment,
-        upfrontAmount: requiresUpfrontPayment ? upfrontPayment.amount : 0,
-        bankName: requiresUpfrontPayment ? upfrontPayment.bankName : '',
-        accountName: requiresUpfrontPayment ? upfrontPayment.accountName : '',
-        accountNumber: requiresUpfrontPayment ? upfrontPayment.accountNumber : '',
-        paymentNote: requiresUpfrontPayment ? upfrontPayment.note : '',
-        paymentStatus: requiresUpfrontPayment ? 'bank-transfer-required' : 'pay-after-service'
-      })"
-    >
+    <form class="request-form clean-card" @submit.prevent="$emit('submit-request', {
+      ...form,
+      serviceId: service.id,
+      serviceTitle: service.title,
+      customerId: customer.id,
+      customerName: customer.name,
+      needsUpfrontPayment: requiresUpfrontPayment,
+      upfrontAmount: requiresUpfrontPayment ? upfrontPayment.amount : 0,
+      bankName: requiresUpfrontPayment ? upfrontPayment.bankName : '',
+      accountName: requiresUpfrontPayment ? upfrontPayment.accountName : '',
+      accountNumber: requiresUpfrontPayment ? upfrontPayment.accountNumber : '',
+      paymentNote: requiresUpfrontPayment ? upfrontPayment.note : '',
+      paymentStatus: requiresUpfrontPayment ? 'bank-transfer-required' : 'pay-after-service'
+    })">
       <section class="form-section">
         <div class="step-number">1</div>
         <div>
@@ -110,11 +108,8 @@ const priceLabel = computed(() => formatBDT(props.service?.price))
         <div class="form-grid">
           <label class="full">
             Details
-            <textarea
-              v-model="form.details"
-              required
-              placeholder="Example: moving from ground floor, two boxes, one table, lift access available..."
-            ></textarea>
+            <textarea v-model="form.details" required
+              placeholder="Example: moving from ground floor, two boxes, one table, lift access available..."></textarea>
           </label>
         </div>
       </section>

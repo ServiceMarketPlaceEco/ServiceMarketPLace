@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 
-const emit = defineEmits(['created', 'google-create', 'go'])
+const emit = defineEmits(['created', 'go'])
 const error = ref('')
 
 const form = reactive({
@@ -15,7 +15,7 @@ const form = reactive({
   experience: ''
 })
 
-function submitProvider(authProvider = 'email') {
+function submitProvider() {
   error.value = ''
   const username = form.username.trim().toUpperCase()
   if (!username.startsWith('PR') || username.length < 3) {
@@ -23,22 +23,19 @@ function submitProvider(authProvider = 'email') {
     return
   }
 
-  emit(authProvider === 'google' ? 'google-create' : 'created', {
+  emit('created', {
     ...form,
     username,
     role: 'provider',
-    authProvider,
-    name: form.name || (authProvider === 'google' ? 'Google Provider' : '')
+    authProvider: 'email',
+    name: form.name
   })
 }
 </script>
 
 <template>
   <section class="auth-page provider-register-page split-auth-page">
-    <form
-      class="auth-card clean-card"
-      @submit.prevent="submitProvider('email')"
-    >
+    <form class="auth-card clean-card" @submit.prevent="submitProvider">
       <p class="eyebrow">Provider registration</p>
       <h2>Apply to become a provider</h2>
       <p class="muted">
@@ -46,10 +43,12 @@ function submitProvider(authProvider = 'email') {
       </p>
 
       <label>Name *<input v-model="form.name" required placeholder="Example: Rajshahi AC Team" /></label>
-      <label>Provider username *<input v-model.trim="form.username" required autocomplete="username" placeholder="Example: PRRAJSHAHI01" /></label>
+      <label>Provider username *<input v-model.trim="form.username" required autocomplete="username"
+          placeholder="Example: PRRAJSHAHI01" /></label>
       <small class="muted">Provider usernames must begin with PR.</small>
       <label>Email *<input v-model="form.email" type="email" required placeholder="provider@email.com" /></label>
-      <label>Password *<input v-model="form.password" type="password" required placeholder="Create a password" /></label>
+      <label>Password *<input v-model="form.password" type="password" required
+          placeholder="Create a password" /></label>
       <label>Phone *<input v-model="form.phone" required placeholder="01XXXXXXXXX" /></label>
       <label>Service area<input v-model="form.suburb" placeholder="Example: Boalia" /></label>
 
@@ -69,20 +68,11 @@ function submitProvider(authProvider = 'email') {
 
       <label>
         Experience
-        <textarea
-          v-model="form.experience"
-          placeholder="Briefly explain your skills, tools, availability and service experience"
-        ></textarea>
+        <textarea v-model="form.experience"
+          placeholder="Briefly explain your skills, tools, availability and service experience"></textarea>
       </label>
 
       <button class="primary" type="submit">Submit provider application</button>
-      <button
-        class="secondary"
-        type="button"
-        @click="submitProvider('google')"
-      >
-        Apply with Google
-      </button>
       <button class="link-btn" type="button" @click="emit('go', 'signin')">
         Back to sign in
       </button>
@@ -91,19 +81,23 @@ function submitProvider(authProvider = 'email') {
     <aside class="provider-showcase-panel clean-card">
       <div class="provider-photo-grid">
         <article>
-          <img src="https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=700&q=80" alt="Cleaning provider" />
+          <img src="https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=700&q=80"
+            alt="Cleaning provider" />
           <span>Cleaning</span>
         </article>
         <article>
-          <img src="https://images.unsplash.com/photo-1621905252507-b35492cc74b4?auto=format&fit=crop&w=700&q=80" alt="Repair provider" />
+          <img src="https://images.unsplash.com/photo-1621905252507-b35492cc74b4?auto=format&fit=crop&w=700&q=80"
+            alt="Repair provider" />
           <span>Repair</span>
         </article>
         <article>
-          <img src="https://images.unsplash.com/photo-1526367790999-0150786686a2?auto=format&fit=crop&w=700&q=80" alt="Delivery provider" />
+          <img src="https://images.unsplash.com/photo-1526367790999-0150786686a2?auto=format&fit=crop&w=700&q=80"
+            alt="Delivery provider" />
           <span>Delivery</span>
         </article>
         <article>
-          <img src="https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=700&q=80" alt="Tutoring provider" />
+          <img src="https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=700&q=80"
+            alt="Tutoring provider" />
           <span>Tutoring</span>
         </article>
       </div>

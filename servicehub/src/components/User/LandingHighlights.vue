@@ -7,38 +7,14 @@ const props = defineProps({
 
 defineEmits(['become-provider'])
 
-const sampleReviews = [
-  {
-    id: 'sample-1',
-    name: 'Sabrina Rahman',
-    serviceTitle: 'Home Cleaning',
-    rating: 5,
-    comment: 'The provider arrived on time and completed everything carefully.',
-  },
-  {
-    id: 'sample-2',
-    name: 'Rafiq Ahmed',
-    serviceTitle: 'AC Repair',
-    rating: 5,
-    comment: 'Clear communication, professional work and helpful status updates.',
-  },
-  {
-    id: 'sample-3',
-    name: 'Nusrat Jahan',
-    serviceTitle: 'Local Delivery',
-    rating: 4,
-    comment: 'Easy to request and I could follow the service progress.',
-  },
-]
-
 const displayedReviews = computed(() =>
-  (props.reviews.length ? props.reviews : sampleReviews).slice(0, 3)
+  props.reviews.slice(0, 3)
 )
 
 const averageRating = computed(() => {
   if (!displayedReviews.value.length) return '0.0'
-  const total = displayedReviews.value.reduce((sum, review) => sum + Number(review.rating), 0)
-  return (total / displayedReviews.value.length).toFixed(1)
+  const total = props.reviews.reduce((sum, review) => sum + Number(review.rating), 0)
+  return (total / props.reviews.length).toFixed(1)
 })
 </script>
 
@@ -58,11 +34,7 @@ const averageRating = computed(() => {
     </div>
 
     <div class="landing-review-grid">
-      <article
-        v-for="review in displayedReviews"
-        :key="review.id"
-        class="clean-card landing-review-card"
-      >
+      <article v-for="review in displayedReviews" :key="review.id" class="clean-card landing-review-card">
         <div class="review-stars" :aria-label="`${review.rating} out of 5 stars`">
           {{ '★'.repeat(Number(review.rating)) }}{{ '☆'.repeat(5 - Number(review.rating)) }}
         </div>
@@ -70,6 +42,9 @@ const averageRating = computed(() => {
         <strong>{{ review.name }}</strong>
         <small>{{ review.serviceTitle || review.service }}</small>
       </article>
+      <div v-if="!displayedReviews.length" class="clean-card empty-state">
+        Customer reviews will appear here after completed services.
+      </div>
     </div>
   </section>
 
@@ -203,7 +178,7 @@ const averageRating = computed(() => {
   font-size: clamp(2.25rem, 4.5vw, 4rem);
 }
 
-.provider-invitation-copy > p:not(.eyebrow) {
+.provider-invitation-copy>p:not(.eyebrow) {
   max-width: 34rem;
   color: var(--muted);
   font-size: 1.05rem;
@@ -213,7 +188,7 @@ const averageRating = computed(() => {
   padding-inline: 1.4rem;
 }
 
-.provider-invitation-copy > small {
+.provider-invitation-copy>small {
   color: var(--muted);
   font-weight: 700;
 }
@@ -264,7 +239,7 @@ const averageRating = computed(() => {
   font-weight: 900;
 }
 
-.provider-benefit-grid article > div {
+.provider-benefit-grid article>div {
   display: grid;
   gap: 0.3rem;
 }
@@ -287,6 +262,7 @@ const averageRating = computed(() => {
 }
 
 @media (max-width: 800px) {
+
   .landing-heading-row,
   .provider-invitation-card {
     align-items: stretch;
@@ -307,7 +283,7 @@ const averageRating = computed(() => {
     width: 100%;
   }
 
-  .provider-invitation-copy > small {
+  .provider-invitation-copy>small {
     text-align: center;
   }
 }

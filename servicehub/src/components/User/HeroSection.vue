@@ -1,6 +1,6 @@
 <script setup>
 // Guests start by creating a customer account before accessing services.
-defineEmits(['get-started', 'view-tracking'])
+defineEmits(['get-started', 'learn-more'])
 </script>
 
 <template>
@@ -15,14 +15,14 @@ defineEmits(['get-started', 'view-tracking'])
         </p>
         <div class="hero-actions">
           <button class="primary" type="button" @click="$emit('get-started')">Get started</button>
-          <button class="secondary" type="button" @click="$emit('view-tracking')">View tracking demo</button>
+          <button class="secondary" type="button" @click="$emit('learn-more')">How it works</button>
         </div>
       </div>
 
       <aside class="price-card">
-        <span>Sprint feature</span>
-        <strong>QR + tracking</strong>
-        <p>Prototype sign-in, request management and DiDi-style progress tracking in one workflow.</p>
+        <span>Clear updates from booking to completion</span>
+        <strong>Book with confidence</strong>
+        <p>Find verified providers, manage requests and follow service progress in one place.</p>
       </aside>
     </div>
   </section>

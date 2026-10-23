@@ -37,6 +37,14 @@ const averageRating = computed(() => {
   if (!props.reviews.length) return 0
   return (props.reviews.reduce((sum, r) => sum + Number(r.rating || 0), 0) / props.reviews.length).toFixed(1)
 })
+const responseRate = computed(() => {
+  if (!props.reviews.length) return 0
+  const replyCount = props.reviews.filter(review => localReplies.value[review.id]).length
+  return Math.round((replyCount / props.reviews.length) * 100)
+})
+const pendingReplies = computed(() =>
+  props.reviews.filter(review => !localReplies.value[review.id]).length
+)
 
 const displayName = computed(() => props.currentUser?.name || 'Rajshahi Provider')
 const providerService = computed(() => props.currentUser?.serviceType || 'General service')
@@ -142,18 +150,20 @@ function savePassword() {
         <div>
           <h1>{{ activeView === 'dashboard' ? 'Provider dashboard' : activeView }}</h1>
           <p>Manage services, assigned requests, reviews and approved customer chats.</p>
-        </div><input v-model="searchTerm" aria-label="Search provider workspace" placeholder="Search provider workspace..." />
+        </div><input v-model="searchTerm" aria-label="Search provider workspace"
+          placeholder="Search provider workspace..." />
       </header>
 
       <template v-if="activeView === 'dashboard'">
         <div class="stat-grid four">
           <article class="stat-card"><span>Total earnings</span><strong>৳{{ monthlyEstimate.toLocaleString()
-              }}</strong><small>active jobs estimate</small></article>
+          }}</strong><small>active jobs estimate</small></article>
           <article class="stat-card"><span>Waiting acceptance</span><strong>{{ pendingRequests.length }}</strong>
           </article>
           <article class="stat-card"><span>Total assigned jobs</span><strong>{{ providerRequests.length }}</strong>
           </article>
-          <article class="stat-card"><span>Average rating</span><strong>{{ averageRating }}</strong><small>{{ reviews.length }}
+          <article class="stat-card"><span>Average rating</span><strong>{{ averageRating }}</strong><small>{{
+            reviews.length }}
               reviews</small></article>
         </div>
         <div class="ops-grid two">
@@ -177,7 +187,7 @@ function savePassword() {
               <h2>Recent reviews</h2><button class="secondary small" @click="activeView = 'reviews'">View all</button>
             </div>
             <article v-for="review in reviews.slice(0, 2)" :key="review.id" class="review-row"><strong>{{ review.name
-                }}</strong><small>{{ review.service }} · {{ review.rating }}/5</small>
+            }}</strong><small>{{ review.service }} · {{ review.rating }}/5</small>
               <p>{{ review.text }}</p>
             </article>
           </section>
@@ -199,8 +209,10 @@ function savePassword() {
           </div>
           <article v-for="service in providerServices" :key="service.id" class="service-line">
             <div><strong>{{ service.title }}</strong>
-              <p>{{ service.description || 'Professional local service with clear pricing and availability.' }}</p><small>৳{{ service.price }}+</small>
-            </div><label class="switch"><input :checked="service.active" type="checkbox" @change="toggleService(service)" /><span></span></label>
+              <p>{{ service.description || 'Professional local service with clear pricing and availability.' }}</p>
+              <small>৳{{ service.price }}+</small>
+            </div><label class="switch"><input :checked="service.active" type="checkbox"
+                @change="toggleService(service)" /><span></span></label>
           </article>
         </section>
       </template>
@@ -218,8 +230,9 @@ function savePassword() {
           <article v-for="request in filteredRequests" :key="request.id" class="large-request-row">
             <div>
               <h3>{{ request.serviceTitle }}</h3>
-              <p>{{ request.customerName }}<span v-if="request.customerPhone"> · {{ request.customerPhone }}</span> · {{ request.location }} · {{ request.preferredDate }}</p><small>{{
-                request.details }}</small><small v-if="request.needsUpfrontPayment">Bank payment required: {{
+              <p>{{ request.customerName }}<span v-if="request.customerPhone"> · {{ request.customerPhone }}</span> · {{
+                request.location }} · {{ request.preferredDate }}</p><small>{{
+                  request.details }}</small><small v-if="request.needsUpfrontPayment">Bank payment required: {{
                   request.bankName }} · {{ request.accountName }}</small>
             </div><strong>৳{{ request.budget }}</strong><span class="status-pill"
               :class="String(request.providerStatus || request.status).toLowerCase().replaceAll(' ', '-').replaceAll('_', '-')">{{
@@ -230,9 +243,8 @@ function savePassword() {
                 @click="acceptRequest(request)">Accept</button><button v-if="request.providerStatus === 'accepted'"
                 class="primary small" @click="startJob(request)">Start job</button><button
                 v-if="request.providerStatus === 'in-progress'" class="success small"
-                @click="completeJob(request)">Complete</button><button
-                v-if="request.providerStatus === 'completed'" class="secondary small"
-                @click="undoComplete(request)">Undo complete</button></div>
+                @click="completeJob(request)">Complete</button><button v-if="request.providerStatus === 'completed'"
+                class="secondary small" @click="undoComplete(request)">Undo complete</button></div>
           </article>
         </section>
       </template>
@@ -247,7 +259,7 @@ function savePassword() {
               @click="requestChat(request)">Request admin approval</button>
             <div v-else>
               <p v-for="m in messages.filter(item => item.requestId === request.id)" :key="m.id"><strong>{{ m.senderRole
-                  }}:</strong> {{ m.message }}</p>
+              }}:</strong> {{ m.message }}</p>
               <div class="form-actions"><input v-model="messageByRequest[request.id]"
                   placeholder="Message customer" /><button class="primary small"
                   @click="submitMessage(request.id)">Send</button></div>
@@ -260,10 +272,8 @@ function savePassword() {
         <div class="stat-grid four">
           <article class="stat-card"><span>Average rating</span><strong>{{ averageRating }}</strong></article>
           <article class="stat-card"><span>Total reviews</span><strong>{{ reviews.length }}</strong></article>
-          <article class="stat-card"><span>Response rate</span><strong>{{reviews.length ? Math.round((reviews.filter(r =>
-            localReplies[r.id]).length / reviews.length) * 100) : 0}}%</strong></article>
-          <article class="stat-card"><span>Pending replies</span><strong>{{reviews.filter(r => !localReplies[r.id]).length
-              }}</strong></article>
+          <article class="stat-card"><span>Response rate</span><strong>{{ responseRate }}%</strong></article>
+          <article class="stat-card"><span>Pending replies</span><strong>{{ pendingReplies }}</strong></article>
         </div>
         <section class="ops-panel">
           <h2>Customer reviews</h2>
@@ -272,7 +282,8 @@ function savePassword() {
             <div><strong>{{ review.name }}</strong><small>{{ review.service }} · {{ review.rating }}/5</small>
               <p>{{ review.text }}</p>
               <p v-if="localReplies[review.id]" class="reply-box">{{ localReplies[review.id] }}</p>
-            </div><button v-if="!localReplies[review.id]" class="primary small" @click="replyTarget = review">Reply</button>
+            </div><button v-if="!localReplies[review.id]" class="primary small"
+              @click="replyTarget = review">Reply</button>
           </article>
         </section>
       </template>
@@ -295,9 +306,8 @@ function savePassword() {
           <p class="muted">Update your account password.</p>
           <div class="settings-grid"><label>Current password<input v-model="passwordForm.currentPassword"
                 type="password" placeholder="Current password" /></label><label>New password<input
-                v-model="passwordForm.newPassword" type="password"
-                placeholder="New password" /></label></div><button class="secondary small mt-action"
-            @click="savePassword">Update password</button>
+                v-model="passwordForm.newPassword" type="password" placeholder="New password" /></label></div><button
+            class="secondary small mt-action" @click="savePassword">Update password</button>
         </section>
 
         <section class="ops-panel">
@@ -337,9 +347,10 @@ function savePassword() {
         <div class="form-grid"><label class="full">Service
             <select v-model="newService.serviceId">
               <option value="">Choose a service</option>
-              <option v-for="service in addableServices" :key="service.serviceId" :value="service.serviceId">{{ service.title }}</option>
-            </select></label><label>Starting price<input v-model="newService.price"
-              type="number" placeholder="৳" /></label><label>Description<input v-model="newService.description"
+              <option v-for="service in addableServices" :key="service.serviceId" :value="service.serviceId">{{
+                service.title }}</option>
+            </select></label><label>Starting price<input v-model="newService.price" type="number"
+              placeholder="৳" /></label><label>Description<input v-model="newService.description"
               placeholder="Example: Same-day AC cleaning" /></label></div>
         <div class="form-actions"><button class="secondary" @click="showServiceModal = false">Cancel</button><button
             class="primary" @click="addService">Save service</button></div>

@@ -13,7 +13,7 @@ import RequestForm from './components/User/RequestForm.vue'
 import CustomerDashboard from './components/User/CustomerDashboard.vue'
 import ProviderDashboard from './components/Provider/ProviderDashboard.vue'
 import AdminDashboard from './components/Admin/AdminDashboard.vue'
-import TrackingDemo from './components/User/TrackingDemo.vue'
+import TrackingPage from './components/User/TrackingPage.vue'
 import FooterSection from './components/User/FooterSection.vue'
 import AIChatbot from './components/AI/AIChatbot.vue'
 import LandingHighlights from './components/User/LandingHighlights.vue'
@@ -59,6 +59,7 @@ const currentPage = ref(savedUser ? 'dashboard' : 'home')
 const theme = ref(localStorage.getItem('servicehub-theme') || 'light')
 const signedInUser = ref(savedUser)
 const selectedService = ref(null)
+const selectedTrackingRequest = ref(null)
 const services = ref([])
 const requests = ref([])
 const accounts = ref([])
@@ -268,6 +269,11 @@ function goTo(page) {
   }
 
   currentPage.value = targetPage
+}
+
+function openTracking(request = null) {
+  selectedTrackingRequest.value = request
+  goTo('tracking')
 }
 function toggleTheme() { theme.value = theme.value === 'dark' ? 'light' : 'dark' }
 function signOut() {
@@ -917,14 +923,6 @@ async function updateBlockRequest({ id, status }) {
   }
 }
 
-async function refreshAdminData() {
-  await Promise.all([
-    refreshAdminAccounts(),
-    refreshAdminReports(),
-    refreshBookings(),
-    refreshChatData()
-  ])
-}
 </script>
 
 <template>
@@ -934,7 +932,7 @@ async function refreshAdminData() {
 
     <main ref="appMain" class="app-main" tabindex="-1">
       <template v-if="currentPage === 'home'">
-        <HeroSection @get-started="goTo('register')" @view-tracking="goTo('tracking')" />
+        <HeroSection @get-started="goTo('register')" @learn-more="goTo('how')" />
         <LandingHighlights :reviews="reviews" @become-provider="goTo('provider-register')" />
       </template>
 
@@ -946,18 +944,17 @@ async function refreshAdminData() {
       <ReviewsPage v-else-if="currentPage === 'reviews'" :reviews="reviews" :services="services"
         :signed-in-user="signedInUser" @submit-review="submitReview" />
       <SignInPage v-else-if="currentPage === 'signin'" :google-error="googleSignInError" @sign-in="signIn"
-        @google-sign-in="signInWithGoogle" @go-register="goTo('register')"
-        @forgot-password="requestPasswordReset" @reset-password="confirmPasswordReset" />
+        @google-sign-in="signInWithGoogle" @go-register="goTo('register')" @forgot-password="requestPasswordReset"
+        @reset-password="confirmPasswordReset" />
       <RegisterPage v-else-if="currentPage === 'register'" @create-account="createAccount"
-        @google-create-account="createAccount" @go-signin="goTo('signin')" />
-      <ProviderRegisterPage v-else-if="currentPage === 'provider-register'" @created="createProvider"
-        @google-create="createProvider" @go="goTo" />
+        @go-signin="goTo('signin')" />
+      <ProviderRegisterPage v-else-if="currentPage === 'provider-register'" @created="createProvider" @go="goTo" />
       <RequestForm v-else-if="currentPage === 'request'" :service="selectedService" :customer="signedInUser"
         @submit-request="submitRequest" @back="goTo('services')" />
 
       <CustomerDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'customer'"
         :customer="signedInUser" :requests="requests" @request-another="goTo('services')"
-        @view-tracking="goTo('tracking')" />
+        @view-tracking="openTracking" />
 
       <ProviderDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'provider'"
         :current-user="signedInUser" :requests="requests" :chat-approvals="chatApprovals" :messages="messages"
@@ -973,10 +970,10 @@ async function refreshAdminData() {
         @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @approve-provider="approveProvider"
         @reject-provider="rejectProvider" @activate-provider="activateProvider" @block-customer="blockCustomer"
         @activate-customer="activateCustomer" @assign-request="assignRequest" @approve-chat="approveChat"
-        @reject-chat="rejectChat" @block-status-change="updateBlockRequest" @reset-db="refreshAdminData" />
+        @reject-chat="rejectChat" @block-status-change="updateBlockRequest" />
 
-      <TrackingDemo v-else-if="currentPage === 'tracking'" :requests="requests" :signed-in-user="signedInUser"
-        @back="goTo(signedInUser ? 'dashboard' : 'home')" />
+      <TrackingPage v-else-if="currentPage === 'tracking'" :requests="requests"
+        :selected-request="selectedTrackingRequest" @back="goTo(signedInUser ? 'dashboard' : 'home')" />
 
       <section v-else class="page-section">
         <div class="clean-card">
@@ -1071,8 +1068,7 @@ async function refreshAdminData() {
     </Teleport>
 
     <!-- The assistant stays available on public pages and every dashboard. -->
-    <AIChatbot :signed-in-user="signedInUser" :requests="requests" :services="services" :current-page="currentPage"
-      @navigate="goTo" />
+    <AIChatbot />
 
     <FooterSection v-if="!isOpsDashboard" />
   </div>

@@ -28,7 +28,7 @@ const googleUnavailable = ref('')
 onMounted(async () => {
   const clientId = getGoogleClientId()
   if (!clientId) {
-    googleUnavailable.value = 'Google sign-in is not configured yet.'
+    googleUnavailable.value = 'Google sign-in is currently unavailable.'
     return
   }
 
