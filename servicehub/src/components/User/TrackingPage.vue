@@ -60,7 +60,7 @@ const statusMessage = computed(() => ({
 }[currentStatus.value]))
 
 const bookingReference = computed(() => booking.value?.id || booking.value?.requestId || 'Pending')
-const destination = computed(() => booking.value?.customerLocation || booking.value?.location || 'Not provided')
+const destination = computed(() => booking.value?.location || booking.value?.customerLocation || 'Not provided')
 
 function callProvider() {
   const phone = String(booking.value?.providerPhone || '').replace(/[^+\d]/g, '')
