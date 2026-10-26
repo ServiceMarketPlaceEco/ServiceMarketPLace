@@ -14,6 +14,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { Between } from 'typeorm';
 import { PaymentsService } from './payments.service';
 import { PaymentStatus } from './entities/payment.entity';
 
@@ -189,7 +190,10 @@ describe('PaymentsService', () => {
       } as any);
 
       const [options] = paymentRepo.find.mock.calls[0];
-      expect(options.where.paymentDate).toBeDefined();
+      // Check the exact range, not just that some filter exists.
+      expect(options.where.paymentDate).toEqual(
+        Between(new Date('2026-08-01'), new Date('2026-08-31')),
+      );
     });
 
     it('returns newest payments first', async () => {

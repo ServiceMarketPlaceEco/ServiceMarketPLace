@@ -16,7 +16,7 @@ describe('SignInPage Google sign-in', () => {
     await flushPromises()
     const button = wrapper.findAll('button').find(b => b.text() === 'Continue with Google')
     expect(button.attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('Google sign-in is not configured yet.')
+    expect(wrapper.text()).toContain('Google sign-in is currently unavailable.')
   })
 
   it('shows the not-signed-up message and links to registration', async () => {

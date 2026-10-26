@@ -11,15 +11,16 @@ describe('RegisterPage', () => {
 
   it('sends clean customer details after a valid form', async () => {
     const wrapper = mount(RegisterPage)
-    const inputs = wrapper.findAll('input')
-    await inputs[0].setValue('  Jess  ')
-    await inputs[1].setValue('01700000000')
-    await inputs[2].setValue('Password@123')
+    // Find fields by what they are, not their order, so new fields do not break this test.
+    await wrapper.find('input[placeholder="Example: Sam"]').setValue('  Jess  ')
+    await wrapper.find('input[autocomplete="username"]').setValue('  jess21  ')
+    await wrapper.find('input[type="tel"]').setValue('01700000000')
+    await wrapper.find('input[type="password"]').setValue('Password@123')
     await wrapper.find('select').setValue(wrapper.findAll('option')[1].element.value)
-    await inputs[3].setValue('jess@example.com')
+    await wrapper.find('input[type="email"]').setValue('jess@example.com')
     await wrapper.find('form').trigger('submit')
 
-    expect(wrapper.emitted('create-account')[0][0]).toMatchObject({ name: 'Jess', phone: '01700000000', email: 'jess@example.com', accountMethod: 'phone' })
+    expect(wrapper.emitted('create-account')[0][0]).toMatchObject({ name: 'Jess', username: 'jess21', phone: '01700000000', email: 'jess@example.com', accountMethod: 'phone' })
   })
 
   it('opens the sign in page from the account link', async () => {

@@ -15,6 +15,7 @@ npm-debug.log*
 
 # Coverage
 coverage
+coverage-all
 
 # Editor directories and files
 .vscode/*

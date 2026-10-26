@@ -228,6 +228,22 @@ numbered file (e.g. `backend/database/migrations/001_add_x.sql`) with the matchi
 same database the code expects. New seed files go in `backend/database/seeds/` with the
 next number.
 
+## Running the tests
+
+None of the tests need MySQL, an OpenAI key or the internet: the database, email and
+OpenAI calls are mocked.
+
+| Suite | Folder | Command |
+|---|---|---|
+| Backend unit tests (Jest) | `backend` | `npm test` |
+| Backend integration tests (Jest + Supertest, real guards and validation) | `backend` | `npm run test:e2e` |
+| Whole-backend coverage (unit + integration, every source file) | `backend` | `npm run test:cov:all` |
+| Frontend unit tests (Vitest) | `servicehub` | `npm run test:run` |
+| Frontend browser tests (Playwright, starts the dev server itself) | `servicehub` | `npm run test:e2e` |
+
+`npm run test:cov:all` prints a summary and writes an HTML report to `backend/coverage-all/index.html`.
+The first time you run the Playwright tests on a machine, install the browser with `npx playwright install chromium` (in `servicehub`).
+
 ---
 
 # Connecting to the Team's Shared Database (optional)
