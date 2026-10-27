@@ -70,6 +70,8 @@ const reviews = ref([])
 const appMain = ref(null)
 const providerServices = ref([])
 const providerReviews = ref([])
+// booking ids the signed in customer has already reviewed (see ReviewsPage)
+const reviewedBookingIds = ref([])
 
 // Customer phone verification state. The pending registration is kept only in
 // memory until the code is confirmed, so its password is never stored locally.
@@ -325,6 +327,7 @@ async function loadPublicReviews() {
       role: review.userType || review.role || 'guest',
       serviceId: review.serviceId,
       serviceTitle: review.serviceTitle || review.service?.serviceName || 'Service',
+      providerName: review.providerName || '',
       rating: Number(review.rating || 0),
       comment: review.comment || '',
       createdAt: review.createdAt
@@ -403,7 +406,12 @@ async function refreshBookings() {
   }
   try {
     let raw = []
-    if (signedInUser.value.role === 'customer') raw = await api.getMyBookings()
+    if (signedInUser.value.role === 'customer') {
+      raw = await api.getMyBookings()
+      // if this one fails the form just offers every finished booking, and the
+      // backend still stops a second review with "already reviewed"
+      reviewedBookingIds.value = await api.getMyReviewedBookingIds().catch(() => [])
+    }
     else if (signedInUser.value.role === 'provider') raw = await api.getProviderBookings()
     else raw = await api.getAllBookingsPublic()
     requests.value = raw.map(normalizeBooking)
@@ -704,20 +712,29 @@ function openRequest(service) {
   currentPage.value = 'request'
 }
 
+// a review is always about one finished booking. the backend works out the
+// provider from the booking, so we only send what the customer chose
 async function submitReview(review) {
   try {
     await api.createReview({
-      username: review.name || signedInUser.value?.name,
-      userType: review.role || signedInUser.value?.role || 'guest',
-      serviceId: review.serviceId,
+      bookingId: review.bookingId,
       rating: Number(review.rating),
       comment: review.comment
     })
+    reviewedBookingIds.value = [...reviewedBookingIds.value, review.bookingId]
     await loadPublicReviews()
   } catch (err) {
     alert(err.message || 'Could not submit review.')
   }
 }
+
+// finished bookings the customer can still review
+const reviewableBookings = computed(() =>
+  signedInUser.value?.role === 'customer'
+    ? requests.value.filter(request =>
+      request.status === 'completed' && !reviewedBookingIds.value.includes(request.id))
+    : []
+)
 
 async function submitRequest(form) {
   try {
@@ -941,8 +958,9 @@ async function updateBlockRequest({ id, status }) {
         @request-service="openRequest" />
 
       <HowItWorksPage v-else-if="currentPage === 'how'" />
-      <ReviewsPage v-else-if="currentPage === 'reviews'" :reviews="reviews" :services="services"
-        :signed-in-user="signedInUser" @submit-review="submitReview" />
+      <ReviewsPage v-else-if="currentPage === 'reviews'" :reviews="reviews"
+        :reviewable-bookings="reviewableBookings" :signed-in-user="signedInUser"
+        @submit-review="submitReview" @sign-in="goTo('signin')" />
       <SignInPage v-else-if="currentPage === 'signin'" :google-error="googleSignInError" @sign-in="signIn"
         @google-sign-in="signInWithGoogle" @go-register="goTo('register')" @forgot-password="requestPasswordReset"
         @reset-password="confirmPasswordReset" />

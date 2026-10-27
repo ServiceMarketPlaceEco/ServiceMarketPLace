@@ -35,6 +35,25 @@ export class ReviewsController {
     return this.reviewsService.create(user.userId, dto);
   }
 
+  // public list for the reviews page and the home page highlights.
+  // has to sit above @Get(':id') so it isnt treated as a review id
+  @Get()
+  @ApiOperation({ summary: 'Latest public reviews for the reviews page' })
+  @ApiResponse({ status: 200, description: 'Up to 50 newest reviews, newest first' })
+  async findPublic() {
+    return this.reviewsService.findPublic();
+  }
+
+  // the signed in customers already reviewed bookings, so the form can hide them
+  @Get('mine/booking-ids')
+  @UseGuards(JwtAuthGuard, CustomerGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Booking ids the signed in customer has already reviewed' })
+  @ApiResponse({ status: 200, description: 'Array of booking ids' })
+  async findMyReviewedBookingIds(@CurrentUser() user: CurrentUserData) {
+    return this.reviewsService.findReviewedBookingIds(user.userId);
+  }
+
   @Get('provider/:providerId')
   @ApiOperation({ summary: 'Get all reviews for a provider' })
   @ApiResponse({ status: 200, description: 'List of reviews', type: [ReviewResponseDto] })
