@@ -67,7 +67,7 @@ describe('Provider endpoints (integration)', () => {
     providerServiceRepo = mockRepo();
     reviewRepo = mockRepo();
     mail = { sendBookingStatusUpdate: jest.fn(), sendBookingConfirmation: jest.fn(), sendBookingCancellation: jest.fn() };
-    // fake ai so the tests never call openai for real
+    // fake ai so the tests never call claude for real
     aiScreening = { screen: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({

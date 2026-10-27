@@ -481,11 +481,23 @@ export async function getPublicReviews() {
   return resultArray(result)
 }
 
+// only signed in customers can review, and only a completed booking.
+// payload is { bookingId, rating, comment }. auth: true was missing before,
+// so even signed in customers got "Unauthorized" (H6 in the qa report)
 export function createReview(payload) {
   return request('/reviews', {
     method: 'POST',
-    body: payload
+    body: payload,
+    auth: true
   })
+}
+
+// booking ids this customer has already reviewed, so the form can hide them
+export async function getMyReviewedBookingIds() {
+  const result = await request('/reviews/mine/booking-ids', {
+    auth: true
+  })
+  return resultArray(result)
 }
 
 export async function getProviderReviews(

@@ -4,7 +4,7 @@
 //   GET  /scan       -> run the detector, return the flagged queue
 //   POST /:id/keep   -> admin decided a flagged review is fine, leave it
 //   POST /:id/remove -> admin decided its fake, delete it
-//   POST /ai-screen  -> ask the ai for a second opinion on one flagged review
+//   POST /ai-screen  -> ask claude for a second opinion on one flagged review
 //
 // admin only. JwtAuthGuard checks the login token is real, AdminGuard checks
 // the user is actually an admin. they go on the class so every route here is
@@ -55,7 +55,7 @@ export class ReviewModerationController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Ask AI for a second opinion on a flagged review (admin)' })
   @ApiResponse({ status: 200, description: '{ verdict, explanation }' })
-  @ApiResponse({ status: 503, description: 'OPENAI_API_KEY is not set or OpenAI is down' })
+  @ApiResponse({ status: 503, description: 'ANTHROPIC_API_KEY is not set or Claude is down' })
   async aiScreen(@Body() body: AiScreenReviewDto) {
     // only send what the ai needs to judge it. no ids, names or emails,
     // so we arent sending peoples details to an outside company
