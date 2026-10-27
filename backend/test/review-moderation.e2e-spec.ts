@@ -63,7 +63,7 @@ describe('Review moderation endpoints (integration)', () => {
     bookingRepo = mockRepo();
     providerRepo = mockRepo();
     adminRepo = { ...mockRepo(), findOne: jest.fn(async () => ({ id: 'admin-1', isActive: true, role: 'admin' })) };
-    // fake ai so the tests never call openai for real
+    // fake ai so the tests never call claude for real
     aiScreening = { screen: jest.fn() };
 
     // the rating recalculation on remove uses a query builder, so give the
@@ -268,7 +268,7 @@ describe('Review moderation endpoints (integration)', () => {
       expect(aiScreening.screen).not.toHaveBeenCalled();
     });
 
-    it('passes on a 503 when openai is not set up, so the dashboard can show it', async () => {
+    it('passes on a 503 when claude is not set up, so the dashboard can show it', async () => {
       const { ServiceUnavailableException } = await import('@nestjs/common');
       aiScreening.screen.mockRejectedValue(new ServiceUnavailableException('AI screening is not configured yet.'));
 
