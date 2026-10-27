@@ -1,63 +1,66 @@
 <script setup>
+// public reviews page + the "Write a review" form
+//
+// reviews are tied to a finished booking now. before this the form let
+// anyone (even guests) pick any service and type any name, but the backend
+// only accepts a review from a signed in customer for one of their own
+// completed bookings, so every submit failed (H6 in the qa report). it also
+// means every review on the page comes from someone who really used the
+// service, which is the whole point of the fake review checks on the admin side.
 import { computed, reactive, ref } from 'vue'
 
 const props = defineProps({
   reviews: { type: Array, default: () => [] },
-  services: { type: Array, default: () => [] },
+  // finished bookings this customer hasnt reviewed yet (worked out in App.vue)
+  reviewableBookings: { type: Array, default: () => [] },
   signedInUser: { type: Object, default: null },
 })
 
-const emit = defineEmits(['submit-review'])
+const emit = defineEmits(['submit-review', 'sign-in'])
 const showReviewForm = ref(false)
 
 const form = reactive({
-  // Signed-in details are convenient defaults, but sign-in is not required.
-  username: props.signedInUser?.name || '',
-  reviewerType: ['customer', 'provider'].includes(props.signedInUser?.role)
-    ? props.signedInUser.role
-    : 'customer',
-  serviceId: '',
+  bookingId: '',
   rating: 5,
   comment: '',
 })
 
-// Logged-in accounts use their stored identity and role. Guests can still
-// submit a review by supplying both fields themselves.
-const hasDetectedRole = computed(() =>
-  ['customer', 'provider'].includes(props.signedInUser?.role)
-)
-const reviewerName = computed(() =>
-  hasDetectedRole.value ? props.signedInUser.name : form.username.trim()
-)
-const reviewerType = computed(() =>
-  hasDetectedRole.value ? props.signedInUser.role : form.reviewerType
-)
+const isCustomer = computed(() => props.signedInUser?.role === 'customer')
+
 const averageRating = computed(() => {
   if (!props.reviews.length) return '0.0'
   const total = props.reviews.reduce((sum, review) => sum + Number(review.rating), 0)
   return (total / props.reviews.length).toFixed(1)
 })
 
-function submitReview() {
-  if (
-    !reviewerName.value ||
-    !reviewerType.value ||
-    !form.serviceId ||
-    !form.comment.trim()
-  ) return
+// what goes in the booking dropdown, eg "Home Cleaning · rajshahi cleaners · 2026-11-02"
+function bookingLabel(booking) {
+  return [booking.serviceTitle, booking.providerName, booking.preferredDate]
+    .filter(Boolean)
+    .join(' · ')
+}
 
-  const service = props.services.find((item) => item.id === form.serviceId)
+function openForm() {
+  // pick the booking straight away when theres only one to choose from
+  form.bookingId = props.reviewableBookings.length === 1 ? props.reviewableBookings[0].id : ''
+  showReviewForm.value = true
+}
+
+function goToSignIn() {
+  showReviewForm.value = false
+  emit('sign-in')
+}
+
+function submitReview() {
+  if (!form.bookingId || !form.comment.trim()) return
 
   emit('submit-review', {
-    name: reviewerName.value,
-    role: reviewerType.value,
-    serviceId: form.serviceId,
-    serviceTitle: service?.title || 'ServiceHub service',
+    bookingId: form.bookingId,
     rating: Number(form.rating),
     comment: form.comment.trim(),
   })
 
-  form.serviceId = ''
+  form.bookingId = ''
   form.rating = 5
   form.comment = ''
   showReviewForm.value = false
@@ -70,9 +73,9 @@ function submitReview() {
       <div>
         <p class="eyebrow">ServiceHub reviews</p>
         <h2>Real experiences from the Rajshahi community</h2>
-        <p>Browse feedback from customers and providers, or share your own service experience.</p>
+        <p>Every review comes from a customer after a completed booking.</p>
       </div>
-      <button class="primary" type="button" @click="showReviewForm = true">
+      <button class="primary" type="button" @click="openForm">
         Write a review
       </button>
     </header>
@@ -88,8 +91,8 @@ function submitReview() {
         <small>Community reviews</small>
       </article>
       <article class="clean-card">
-        <strong>Open</strong>
-        <small>Customer and provider feedback</small>
+        <strong>Verified</strong>
+        <small>From completed bookings</small>
       </article>
     </div>
 
@@ -99,7 +102,7 @@ function submitReview() {
           <div class="reviewer-avatar" aria-hidden="true">{{ review.name?.charAt(0).toUpperCase() }}</div>
           <div>
             <strong>{{ review.name }}</strong>
-            <small>{{ review.serviceTitle }} · {{ review.role }}</small>
+            <small>{{ review.serviceTitle }}<template v-if="review.providerName"> · {{ review.providerName }}</template></small>
           </div>
           <span :aria-label="`${review.rating} out of 5 stars`">{{ review.rating }}/5 ★</span>
         </div>
@@ -114,37 +117,66 @@ function submitReview() {
     <Teleport to="body">
       <div v-if="showReviewForm" class="modal-backdrop" role="presentation" @click.self="showReviewForm = false"
         @keydown.esc="showReviewForm = false">
-        <form class="modal-card review-form" role="dialog" aria-modal="true" aria-labelledby="review-form-title"
+
+        <!-- guests: reviews need an account, so send them to sign in -->
+        <div v-if="!signedInUser" class="modal-card review-form review-notice" role="dialog" aria-modal="true"
+          aria-labelledby="review-form-title">
+          <button class="icon-close" type="button" aria-label="Close" @click="showReviewForm = false">×</button>
+          <p class="eyebrow">Share your experience</p>
+          <h2 id="review-form-title">Sign in to write a review</h2>
+          <p>Reviews come from customers who have finished a booking, so please sign in first.</p>
+          <div class="form-actions">
+            <button class="secondary" type="button" @click="showReviewForm = false">Cancel</button>
+            <button class="primary" type="button" @click="goToSignIn">Sign in</button>
+          </div>
+        </div>
+
+        <!-- providers and admins cant review (the backend only lets customers) -->
+        <div v-else-if="!isCustomer" class="modal-card review-form review-notice" role="dialog" aria-modal="true"
+          aria-labelledby="review-form-title">
+          <button class="icon-close" type="button" aria-label="Close" @click="showReviewForm = false">×</button>
+          <p class="eyebrow">Share your experience</p>
+          <h2 id="review-form-title">Only customers can write reviews</h2>
+          <p>Reviews are left by customers after a completed booking.</p>
+          <div class="form-actions">
+            <button class="primary" type="button" @click="showReviewForm = false">OK</button>
+          </div>
+        </div>
+
+        <!-- customer, but nothing finished to review yet -->
+        <div v-else-if="!reviewableBookings.length" class="modal-card review-form review-notice" role="dialog"
+          aria-modal="true" aria-labelledby="review-form-title">
+          <button class="icon-close" type="button" aria-label="Close" @click="showReviewForm = false">×</button>
+          <p class="eyebrow">Share your experience</p>
+          <h2 id="review-form-title">No finished bookings to review</h2>
+          <p>You can write a review once one of your bookings is completed. Bookings you have already reviewed
+            are not shown.</p>
+          <div class="form-actions">
+            <button class="primary" type="button" @click="showReviewForm = false">OK</button>
+          </div>
+        </div>
+
+        <!-- the actual form -->
+        <form v-else class="modal-card review-form" role="dialog" aria-modal="true" aria-labelledby="review-form-title"
           @submit.prevent="submitReview">
           <button class="icon-close" type="button" aria-label="Close review form"
             @click="showReviewForm = false">×</button>
           <p class="eyebrow">Share your experience</p>
           <h2 id="review-form-title">Write a review</h2>
 
-          <div v-if="hasDetectedRole" class="reviewer-identity" role="status">
+          <div class="reviewer-identity" role="status">
             <span>Reviewing as</span>
             <strong>{{ signedInUser.name }}</strong>
             <small>{{ signedInUser.role }}</small>
           </div>
 
-          <label v-else>
-            Username
-            <input v-model="form.username" required autocomplete="username" placeholder="Enter your username" />
-          </label>
-
-          <label v-if="!hasDetectedRole">
-            User type
-            <select v-model="form.reviewerType" required>
-              <option value="customer">Customer</option>
-              <option value="provider">Provider</option>
-            </select>
-          </label>
-
           <label>
-            Service
-            <select v-model="form.serviceId" required>
-              <option disabled value="">Choose a service</option>
-              <option v-for="service in services" :key="service.id" :value="service.id">{{ service.title }}</option>
+            Booking
+            <select v-model="form.bookingId" required>
+              <option disabled value="">Choose a finished booking</option>
+              <option v-for="booking in reviewableBookings" :key="booking.id" :value="booking.id">
+                {{ bookingLabel(booking) }}
+              </option>
             </select>
           </label>
 
@@ -243,6 +275,10 @@ function submitReview() {
 
 .reviewer-identity small {
   text-transform: capitalize;
+}
+
+.review-notice p:not(.eyebrow) {
+  color: var(--muted);
 }
 
 .review-form label {
