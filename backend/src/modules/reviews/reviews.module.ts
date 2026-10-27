@@ -9,6 +9,7 @@ import { Customer } from '../customers/entities/customer.entity';
 import { MailModule } from '../mail/mail.module';
 import { ReviewModerationController } from './moderation/review-moderation.controller';
 import { ReviewModerationService } from './moderation/review-moderation.service';
+import { AiScreeningService } from '../../common/ai';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { ReviewModerationService } from './moderation/review-moderation.service'
     MailModule,
   ],
   controllers: [ReviewsController, ReviewModerationController],
-  providers: [ReviewsService, ReviewModerationService],
+  providers: [ReviewsService, ReviewModerationService, AiScreeningService],
   exports: [ReviewsService],
 })
 export class ReviewsModule {}

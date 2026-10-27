@@ -30,13 +30,13 @@ describe('ProvidersService', () => {
   });
 
   describe('findAll (public provider list)', () => {
-    it('only lists active, unblocked providers, best rated first', async () => {
+    it('only lists active, unblocked, admin approved providers, best rated first', async () => {
       providerRepo.find.mockResolvedValue([]);
 
       await service.findAll({} as any);
 
       const [options] = providerRepo.find.mock.calls[0];
-      expect(options.where).toEqual({ isActive: true, isBlocked: false });
+      expect(options.where).toEqual({ isActive: true, isBlocked: false, isVerified: true });
       expect(options.order).toEqual({ rating: 'DESC' });
     });
 
@@ -50,23 +50,23 @@ describe('ProvidersService', () => {
       expect(options.select).not.toContain('passwordHash');
     });
 
-    it('applies the verified, minimum rating and name search filters', async () => {
+    it('applies the minimum rating and name search filters', async () => {
       providerRepo.find.mockResolvedValue([]);
 
-      await service.findAll({ verified: true, minRating: 4, search: 'clean' } as any);
+      await service.findAll({ minRating: 4, search: 'clean' } as any);
 
       const [options] = providerRepo.find.mock.calls[0];
-      expect(options.where.isVerified).toBe(true);
       expect(options.where.rating).toEqual(MoreThanOrEqual(4));
       expect(options.where.providerName).toEqual(Like('%clean%'));
     });
 
-    it('keeps verified=false as a real filter instead of ignoring it', async () => {
+    // M7 in the qa report - ?verified=false used to list unapproved providers
+    it('never lists unapproved providers, even when asked with verified=false', async () => {
       providerRepo.find.mockResolvedValue([]);
 
       await service.findAll({ verified: false } as any);
 
-      expect(providerRepo.find.mock.calls[0][0].where.isVerified).toBe(false);
+      expect(providerRepo.find.mock.calls[0][0].where.isVerified).toBe(true);
     });
 
     it('only keeps providers who currently offer the requested service', async () => {
@@ -120,11 +120,16 @@ describe('ProvidersService', () => {
       expect(result.providerName).toBe('Rajshahi Cleaners');
     });
 
-    it('hides blocked or inactive providers from the public', async () => {
+    it('hides blocked, inactive or unapproved providers from the public', async () => {
       providerRepo.findOne.mockResolvedValue(null);
 
       await expect(service.getPublicProfile('p-1')).rejects.toThrow(NotFoundException);
-      expect(providerRepo.findOne.mock.calls[0][0].where).toEqual({ providerId: 'p-1', isActive: true, isBlocked: false });
+      expect(providerRepo.findOne.mock.calls[0][0].where).toEqual({
+        providerId: 'p-1',
+        isActive: true,
+        isBlocked: false,
+        isVerified: true,
+      });
     });
   });
 

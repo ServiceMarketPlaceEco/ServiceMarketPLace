@@ -61,7 +61,7 @@ describe('AccountModerationService', () => {
           email: 'p@x.com',
           phone: '8801700000000', // numbers are turned into text for the phone checks
           createdAt: created,
-          nid: 123,
+          // the ABN (123) is NOT passed on as the nid any more - see the L8 test below
           completedBookings: 3,
         },
         {
@@ -111,6 +111,22 @@ describe('AccountModerationService', () => {
         for (const reason of account.reasons) expect(typeof reason.detail).toBe('string');
       }
       expect(flagged.map((a) => a.accountId).sort()).toEqual(['p-1', 'p-2']);
+    });
+
+    // L8 in the qa report - an australian ABN isnt a bangladesh NID, so passing
+    // it in made every provider with an ABN look like they had a fake NID
+    it('does not flag a provider as having an invalid NID just because they gave an ABN', async () => {
+      providerRepo.find.mockResolvedValue([
+        // 11 digits, a normal ABN. as a nid it would fail (needs 10, 13 or 17)
+        { providerId: 'p-1', email: 'p@x.com', phone: null, createdAt: new Date('2025-01-01'), abn: 51824753556 },
+      ]);
+      customerRepo.find.mockResolvedValue([]);
+      bookingRepo.count.mockResolvedValue(5);
+
+      const flagged = await service.scanAllAccounts();
+
+      const signals = flagged.flatMap((a) => a.reasons.map((r) => r.signal));
+      expect(signals).not.toContain('INVALID_NID');
     });
 
     it('returns an empty queue when there are no accounts', async () => {

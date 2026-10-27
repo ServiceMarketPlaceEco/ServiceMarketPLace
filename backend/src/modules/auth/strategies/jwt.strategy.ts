@@ -53,6 +53,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         if (!user || !user.isActive || user.isBlocked) {
           throw new UnauthorizedException('Provider account is not active');
         }
+        // registering a provider still hands back tokens, so this is what
+        // actually stops an unapproved provider using them. the admin has to
+        // approve them first (sets isVerified) - M7 in the qa report
+        if (!(user as ServiceProvider).isVerified) {
+          throw new UnauthorizedException('Your provider application is still waiting for admin approval');
+        }
         break;
       case 'admin':
         user = await this.adminRepository.findOne({
