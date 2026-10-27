@@ -64,6 +64,17 @@ export class Booking {
   @Column({ name: 'total_amount', type: 'decimal', precision: 10, scale: 2, nullable: true })
   totalAmount: number | null;
 
+  // Provider's live position while this booking is confirmed/in progress, for
+  // the customer's tracking map. Null until the provider starts sharing.
+  @Column({ name: 'provider_lat', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  providerLat: number | null;
+
+  @Column({ name: 'provider_lng', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  providerLng: number | null;
+
+  @Column({ name: 'location_updated_at', type: 'datetime', nullable: true })
+  locationUpdatedAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

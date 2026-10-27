@@ -247,6 +247,57 @@ describe('BookingsService', () => {
     });
   });
 
+  describe('updateProviderLocation', () => {
+    const bookingWith = (status: BookingStatus) => ({
+      bookingId: 'b-1',
+      customerId: 'cust-1',
+      status,
+      providerService: { providerId: 'prov-1' },
+    });
+
+    it('records the position while the job is confirmed', async () => {
+      bookingRepo.findOne.mockResolvedValue(bookingWith(BookingStatus.CONFIRMED));
+
+      const result = await service.updateProviderLocation('prov-1', 'b-1', 24.3745, 88.6042);
+
+      expect(result.providerLat).toBe(24.3745);
+      expect(result.providerLng).toBe(88.6042);
+      expect(result.locationUpdatedAt).toBeInstanceOf(Date);
+    });
+
+    it('records the position while the job is in progress', async () => {
+      bookingRepo.findOne.mockResolvedValue(bookingWith(BookingStatus.IN_PROGRESS));
+
+      const result = await service.updateProviderLocation('prov-1', 'b-1', 24.37, 88.6);
+
+      expect(result.providerLat).toBe(24.37);
+    });
+
+    it('refuses to record a position for a pending booking', async () => {
+      bookingRepo.findOne.mockResolvedValue(bookingWith(BookingStatus.PENDING));
+
+      await expect(
+        service.updateProviderLocation('prov-1', 'b-1', 24.37, 88.6),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses to record a position for a completed booking', async () => {
+      bookingRepo.findOne.mockResolvedValue(bookingWith(BookingStatus.COMPLETED));
+
+      await expect(
+        service.updateProviderLocation('prov-1', 'b-1', 24.37, 88.6),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('blocks a different provider from sharing a position on this booking', async () => {
+      bookingRepo.findOne.mockResolvedValue(bookingWith(BookingStatus.IN_PROGRESS));
+
+      await expect(
+        service.updateProviderLocation('prov-2', 'b-1', 24.37, 88.6),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
   describe('updateStatusAdmin', () => {
     it('maps the frontend status labels like Accepted to the right enum', async () => {
       bookingRepo.findOne.mockResolvedValue({ bookingId: 'b-1', status: BookingStatus.PENDING });

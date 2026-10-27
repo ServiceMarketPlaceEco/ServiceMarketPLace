@@ -1,6 +1,33 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { formatStatus } from '../../data/services'
+import * as api from '../../services/api'
+import L from 'leaflet'
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
+import markerIcon from 'leaflet/dist/images/marker-icon.png'
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'
+import 'leaflet/dist/leaflet.css'
+
+// Leaflet's default marker icon paths break once bundled; point them at the
+// bundler-resolved URLs instead.
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow
+})
+
+const providerIcon = L.divIcon({
+  className: 'provider-marker',
+  html: '<span>P</span>',
+  iconSize: [32, 32],
+  iconAnchor: [16, 16]
+})
+const customerIcon = L.divIcon({
+  className: 'customer-marker',
+  html: '<span>C</span>',
+  iconSize: [32, 32],
+  iconAnchor: [16, 16]
+})
 
 const props = defineProps({
   requests: { type: Array, default: () => [] },
@@ -14,8 +41,8 @@ watch(() => props.selectedRequest, request => {
   selectedRequestId.value = request?.id || request?.requestId || ''
 })
 
-const booking = computed(() => props.selectedRequest
-  || props.requests.find(item => (item.id || item.requestId) === selectedRequestId.value)
+const booking = computed(() => props.requests.find(item => (item.id || item.requestId) === selectedRequestId.value)
+  || props.selectedRequest
   || props.requests[0]
   || null)
 
@@ -61,6 +88,117 @@ const statusMessage = computed(() => ({
 
 const bookingReference = computed(() => booking.value?.id || booking.value?.requestId || 'Pending')
 const destination = computed(() => booking.value?.location || booking.value?.customerLocation || 'Not provided')
+
+// ---------- Live map ----------
+// Only an assigned/in-progress booking has anything meaningful to track: a
+// provider to follow, moving toward the customer. The provider's position
+// is polled from the backend; the customer's own position is captured once
+// (with their permission) as a fixed reference point on the map.
+const showMap = computed(() => ['assigned', 'in-progress'].includes(currentStatus.value))
+const locationUnavailable = ref(false)
+
+const mapEl = ref(null)
+let map = null
+let providerMarker = null
+let customerMarker = null
+let pollTimer = null
+
+const providerPosition = ref(null)
+const customerPosition = ref(null)
+
+const RAJSHAHI_CENTER = [24.3745, 88.6042]
+
+function ensureMap() {
+  if (map || !mapEl.value) return
+  map = L.map(mapEl.value).setView(RAJSHAHI_CENTER, 13)
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19
+  }).addTo(map)
+}
+
+function fitMapToMarkers() {
+  if (!map) return
+  const points = [providerMarker, customerMarker].filter(Boolean).map(marker => marker.getLatLng())
+  if (points.length === 1) map.setView(points[0], 14)
+  else if (points.length > 1) map.fitBounds(L.latLngBounds(points), { padding: [48, 48] })
+}
+
+watch(providerPosition, position => {
+  if (!position || !map) return
+  const latLng = [position.lat, position.lng]
+  if (providerMarker) providerMarker.setLatLng(latLng)
+  else {
+    providerMarker = L.marker(latLng, { icon: providerIcon })
+      .addTo(map)
+      .bindPopup(booking.value?.providerName || 'Your provider')
+  }
+  fitMapToMarkers()
+})
+
+watch(customerPosition, position => {
+  if (!position || !map) return
+  const latLng = [position.lat, position.lng]
+  if (customerMarker) customerMarker.setLatLng(latLng)
+  else customerMarker = L.marker(latLng, { icon: customerIcon }).addTo(map).bindPopup('Your location')
+  fitMapToMarkers()
+})
+
+async function pollProviderPosition() {
+  if (!booking.value?.id) return
+  try {
+    const fresh = await api.getBookingById(booking.value.id)
+    if (fresh?.providerLat != null && fresh?.providerLng != null) {
+      providerPosition.value = { lat: Number(fresh.providerLat), lng: Number(fresh.providerLng) }
+    }
+  } catch {
+    // A single failed poll isn't worth surfacing - the next one will retry.
+  }
+}
+
+function stopPolling() {
+  if (pollTimer) clearInterval(pollTimer)
+  pollTimer = null
+}
+
+function startPolling() {
+  stopPolling()
+  pollProviderPosition()
+  pollTimer = setInterval(pollProviderPosition, 5000)
+}
+
+function captureCustomerPosition() {
+  if (!navigator.geolocation || customerPosition.value) return
+  navigator.geolocation.getCurrentPosition(
+    pos => { customerPosition.value = { lat: pos.coords.latitude, lng: pos.coords.longitude } },
+    () => { locationUnavailable.value = true },
+    { timeout: 8000 }
+  )
+}
+
+watch(showMap, async visible => {
+  if (!visible) {
+    stopPolling()
+    return
+  }
+  await nextTick()
+  ensureMap()
+  captureCustomerPosition()
+  startPolling()
+}, { immediate: true })
+
+watch(() => booking.value?.id, () => {
+  providerMarker?.remove()
+  providerMarker = null
+  providerPosition.value = null
+  if (showMap.value) startPolling()
+})
+
+onBeforeUnmount(() => {
+  stopPolling()
+  map?.remove()
+  map = null
+})
 
 function callProvider() {
   const phone = String(booking.value?.providerPhone || '').replace(/[^+\d]/g, '')
@@ -156,6 +294,18 @@ function callProvider() {
           </p>
         </aside>
       </div>
+
+      <article v-if="showMap" class="clean-card map-card">
+        <div class="map-heading">
+          <h2>Live location</h2>
+          <p v-if="!providerPosition" class="map-hint">Waiting for your provider to share their location…</p>
+          <p v-else class="map-hint">Your provider's position updates automatically every few seconds.</p>
+        </div>
+        <div ref="mapEl" class="map-canvas"></div>
+        <p v-if="locationUnavailable" class="map-hint">
+          We couldn't access your location, so only your provider is shown on the map.
+        </p>
+      </article>
 
       <article v-if="booking.providerName" class="clean-card provider-card">
         <div class="provider-avatar" aria-hidden="true">{{ booking.providerName.charAt(0).toUpperCase() }}</div>
@@ -331,6 +481,57 @@ function callProvider() {
 .cancelled-message {
   margin-top: 1.5rem;
   color: #b42318;
+}
+
+.map-card {
+  margin-top: 1.5rem;
+}
+
+.map-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .5rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.map-heading h2 {
+  margin: 0;
+}
+
+.map-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: .9rem;
+}
+
+.map-canvas {
+  width: 100%;
+  height: 22rem;
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+:deep(.provider-marker),
+:deep(.customer-marker) {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid white;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+  color: white;
+  font-weight: 900;
+}
+
+:deep(.provider-marker) {
+  background: var(--brand, #6d28d9);
+}
+
+:deep(.customer-marker) {
+  background: #0f9d58;
 }
 
 .provider-card {
