@@ -55,6 +55,81 @@ describe('ReviewsService', () => {
     service = new ReviewsService(reviewRepo, bookingRepo, providerRepo, mailService);
   });
 
+  // the public reviews page (H6 - there was no GET /reviews before)
+  describe('findPublic', () => {
+    const fullReview = {
+      reviewId: 'r-1',
+      bookingId: 'b-1',
+      customerId: 'c-1',
+      providerId: 'p-1',
+      rating: 5,
+      comment: 'came on time and fixed the leak',
+      createdAt: new Date('2026-10-01'),
+      customer: { customerId: 'c-1', name: 'Fatima', email: 'fatima@x.com', phone: 1711111111 },
+      provider: { providerId: 'p-1', providerName: 'Rahim Plumbing Services', email: 'rahim@x.com' },
+      booking: { providerService: { service: { serviceName: 'Plumbing' } } },
+    };
+
+    it('only asks for reviews of approved, unblocked providers from unblocked customers', async () => {
+      reviewRepo.find.mockResolvedValue([]);
+
+      await service.findPublic();
+
+      const [options] = reviewRepo.find.mock.calls[0];
+      expect(options.where).toEqual({
+        provider: { isVerified: true, isBlocked: false },
+        customer: { isBlocked: false },
+      });
+      expect(options.order).toEqual({ createdAt: 'DESC' });
+      expect(options.take).toBe(50);
+    });
+
+    it('flattens each review into the shape the reviews page reads', async () => {
+      reviewRepo.find.mockResolvedValue([fullReview]);
+
+      const [review] = await service.findPublic();
+
+      expect(review).toEqual({
+        reviewId: 'r-1',
+        rating: 5,
+        comment: 'came on time and fixed the leak',
+        createdAt: new Date('2026-10-01'),
+        name: 'Fatima',
+        role: 'customer',
+        serviceTitle: 'Plumbing',
+        providerName: 'Rahim Plumbing Services',
+      });
+    });
+
+    it('never sends emails, phone numbers or customer ids to the public page', async () => {
+      reviewRepo.find.mockResolvedValue([fullReview]);
+
+      const text = JSON.stringify(await service.findPublic());
+
+      expect(text).not.toContain('fatima@x.com');
+      expect(text).not.toContain('rahim@x.com');
+      expect(text).not.toContain('1711111111');
+      expect(text).not.toContain('c-1');
+    });
+
+    it('fills in sensible defaults when a relation is missing', async () => {
+      reviewRepo.find.mockResolvedValue([{ reviewId: 'r-2', rating: 3, comment: 'ok', createdAt: new Date() }]);
+
+      const [review] = await service.findPublic();
+
+      expect(review).toMatchObject({ name: 'ServiceHub customer', serviceTitle: 'Service', providerName: '' });
+    });
+  });
+
+  describe('findReviewedBookingIds', () => {
+    it('returns the booking ids this customer has already reviewed', async () => {
+      reviewRepo.find.mockResolvedValue([{ bookingId: 'b-1' }, { bookingId: 'b-7' }]);
+
+      expect(await service.findReviewedBookingIds('c-1')).toEqual(['b-1', 'b-7']);
+      expect(reviewRepo.find.mock.calls[0][0].where).toEqual({ customerId: 'c-1' });
+    });
+  });
+
   describe('create', () => {
     const dto: any = { bookingId: 'b-1', rating: 5, comment: 'great work, very tidy' };
 

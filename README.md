@@ -91,8 +91,9 @@ DB_DATABASE=servicehub        # will be created for you
 ```
 
 Leave the other values as they are for local use. The mail settings are only
-needed for email features, and `OPENAI_API_KEY` only for the AI chatbot and
-AI voice-search matching. Without the key, voice search still works using the
+needed for email features, `OPENAI_API_KEY` only for the AI chatbot and
+AI voice-search matching, and `ANTHROPIC_API_KEY` only for the "Screen with AI"
+button on the admin moderation page (it uses Claude). Without the key, voice search still works using the
 built-in rule-based matcher (synonyms, Bengali terms and typo tolerance).
 
 ## 4. Create the database, tables and seed data
@@ -227,6 +228,22 @@ numbered file (e.g. `backend/database/migrations/001_add_x.sql`) with the matchi
 `ALTER TABLE`/`CREATE TABLE` statements, so that `npm run db:setup` keeps producing the
 same database the code expects. New seed files go in `backend/database/seeds/` with the
 next number.
+
+## Running the tests
+
+None of the tests need MySQL, an OpenAI key or the internet: the database, email and
+OpenAI calls are mocked.
+
+| Suite | Folder | Command |
+|---|---|---|
+| Backend unit tests (Jest) | `backend` | `npm test` |
+| Backend integration tests (Jest + Supertest, real guards and validation) | `backend` | `npm run test:e2e` |
+| Whole-backend coverage (unit + integration, every source file) | `backend` | `npm run test:cov:all` |
+| Frontend unit tests (Vitest) | `servicehub` | `npm run test:run` |
+| Frontend browser tests (Playwright, starts the dev server itself) | `servicehub` | `npm run test:e2e` |
+
+`npm run test:cov:all` prints a summary and writes an HTML report to `backend/coverage-all/index.html`.
+The first time you run the Playwright tests on a machine, install the browser with `npx playwright install chromium` (in `servicehub`).
 
 ---
 

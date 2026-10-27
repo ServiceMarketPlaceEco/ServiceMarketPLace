@@ -22,11 +22,11 @@ export class ProvidersService {
   ) {}
 
   async findAll(query: ProviderListQueryDto): Promise<ServiceProvider[]> {
-    const where: any = { isActive: true, isBlocked: false };
-
-    if (query.verified !== undefined) {
-      where.isVerified = query.verified;
-    }
+    // customers only ever see providers an admin has approved. before this
+    // unapproved providers showed up here and could be booked (M7 in the qa
+    // report). the ?verified= filter is still accepted so old links dont
+    // break with a 400, but it cant be used to list unapproved providers any more
+    const where: any = { isActive: true, isBlocked: false, isVerified: true };
 
     if (query.minRating) {
       where.rating = MoreThanOrEqual(query.minRating);
@@ -79,7 +79,8 @@ export class ProvidersService {
 
   async getPublicProfile(providerId: string): Promise<any> {
     const provider = await this.providerRepository.findOne({
-      where: { providerId, isActive: true, isBlocked: false },
+      // same rule as the list - no public profile until they are approved
+      where: { providerId, isActive: true, isBlocked: false, isVerified: true },
       select: [
         'providerId',
         'providerName',

@@ -13,6 +13,18 @@ import { ServiceProvider } from '../providers/entities/service-provider.entity';
 import { CreateReviewDto, UpdateReviewDto } from './dto';
 import { MailService } from '../mail/mail.service';
 
+// what GET /reviews sends back for each review on the public page
+export interface PublicReview {
+  reviewId: string;
+  rating: number;
+  comment: string;
+  createdAt: Date;
+  name: string;
+  role: 'customer';
+  serviceTitle: string;
+  providerName: string;
+}
+
 @Injectable()
 export class ReviewsService {
   constructor(
@@ -69,6 +81,48 @@ export class ReviewsService {
     await this.mailService.sendNewReviewNotification(savedReview, booking.providerService.provider);
 
     return savedReview;
+  }
+
+  // the public reviews page. before this there was no GET /reviews at all, so
+  // the page always said 0 reviews even with reviews in the database (H6 in
+  // the qa report).
+  //
+  // only reviews about approved, unblocked providers from unblocked customers
+  // show up, so once the admin blocks a fake account its reviews disappear
+  // from the page too. we send back a flat, public-safe shape - just the
+  // customers name, no email, phone or ids apart from the review id.
+  async findPublic(limit = 50): Promise<PublicReview[]> {
+    const reviews = await this.reviewRepository.find({
+      where: {
+        provider: { isVerified: true, isBlocked: false },
+        customer: { isBlocked: false },
+      },
+      relations: ['customer', 'provider', 'booking', 'booking.providerService', 'booking.providerService.service'],
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+
+    return reviews.map((review) => ({
+      reviewId: review.reviewId,
+      rating: review.rating,
+      comment: review.comment,
+      createdAt: review.createdAt,
+      name: review.customer?.name || 'ServiceHub customer',
+      // only customers can write reviews (CustomerGuard on POST /reviews)
+      role: 'customer',
+      serviceTitle: review.booking?.providerService?.service?.serviceName || 'Service',
+      providerName: review.provider?.providerName || '',
+    }));
+  }
+
+  // which of this customers bookings already have a review. the reviews page
+  // uses it so the form only offers finished bookings they havent reviewed yet
+  async findReviewedBookingIds(customerId: string): Promise<string[]> {
+    const reviews = await this.reviewRepository.find({
+      where: { customerId },
+      select: { bookingId: true },
+    });
+    return reviews.map((review) => review.bookingId);
   }
 
   async findByProvider(providerId: string): Promise<Review[]> {

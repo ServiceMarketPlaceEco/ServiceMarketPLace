@@ -42,6 +42,7 @@ describe('Review endpoints (integration)', () => {
       providerId: 'prov-1',
       isActive: true,
       isBlocked: false,
+      isVerified: true, // approved by an admin
     });
     return signTestToken({ sub: 'prov-1', email: 'p@x.com', userType: 'provider' });
   }
@@ -256,6 +257,99 @@ describe('Review endpoints (integration)', () => {
   });
 
   // ---------- reading reviews ----------
+
+  // H6 in the qa report - the reviews page called GET /reviews but it didnt exist
+  describe('GET /api/reviews (public reviews page)', () => {
+    it('is public and returns the flat list the page reads', async () => {
+      reviewRepo.find.mockResolvedValue([
+        {
+          reviewId: 'r-1',
+          rating: 4,
+          comment: 'tidy work',
+          createdAt: new Date('2026-10-01'),
+          customer: { name: 'Karim', email: 'karim@x.com' },
+          provider: { providerName: 'Rahim Plumbing Services' },
+          booking: { providerService: { service: { serviceName: 'Plumbing' } } },
+        },
+      ]);
+
+      const res = await request(app.getHttpServer()).get('/api/reviews').expect(200);
+
+      expect(res.body).toEqual([
+        {
+          reviewId: 'r-1',
+          rating: 4,
+          comment: 'tidy work',
+          createdAt: '2026-10-01T00:00:00.000Z',
+          name: 'Karim',
+          role: 'customer',
+          serviceTitle: 'Plumbing',
+          providerName: 'Rahim Plumbing Services',
+        },
+      ]);
+      expect(JSON.stringify(res.body)).not.toContain('karim@x.com');
+    });
+
+    it('returns an empty list when there are no reviews', async () => {
+      reviewRepo.find.mockResolvedValue([]);
+      const res = await request(app.getHttpServer()).get('/api/reviews').expect(200);
+      expect(res.body).toEqual([]);
+    });
+  });
+
+  describe('GET /api/reviews/mine/booking-ids', () => {
+    it('gives a signed in customer the bookings they already reviewed', async () => {
+      const token = customerToken('cust-1');
+      reviewRepo.find.mockResolvedValue([{ bookingId: 'b-1' }]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/reviews/mine/booking-ids')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(res.body).toEqual(['b-1']);
+      expect(reviewRepo.find.mock.calls[0][0].where).toEqual({ customerId: 'cust-1' });
+    });
+
+    it('needs a login (401)', async () => {
+      await request(app.getHttpServer()).get('/api/reviews/mine/booking-ids').expect(401);
+    });
+
+    it('is customers only (403 for a provider)', async () => {
+      await request(app.getHttpServer())
+        .get('/api/reviews/mine/booking-ids')
+        .set('Authorization', `Bearer ${providerTokenValue()}`)
+        .expect(403);
+    });
+  });
+
+  // this is exactly what the fixed form sends now
+  it('POST /api/reviews accepts the body the reviews page sends', async () => {
+    const token = customerToken('cust-1');
+    bookingRepo.findOne.mockResolvedValue({
+      bookingId: '3f2b8c1e-9a4d-4e2b-8f1a-1c2d3e4f5a6b',
+      customerId: 'cust-1',
+      status: 'completed',
+      providerService: { providerId: 'prov-1', provider: { providerName: 'Rahim', email: 'r@x.com' } },
+    });
+    reviewRepo.findOne.mockResolvedValue(null);
+
+    await request(app.getHttpServer())
+      .post('/api/reviews')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ bookingId: '3f2b8c1e-9a4d-4e2b-8f1a-1c2d3e4f5a6b', rating: 5, comment: 'fixed it fast' })
+      .expect(201);
+  });
+
+  // and this is what the old form sent, which can never work
+  it('POST /api/reviews rejects the old form body (username, userType, serviceId)', async () => {
+    const token = customerToken('cust-1');
+    await request(app.getHttpServer())
+      .post('/api/reviews')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ username: 'amy', userType: 'customer', serviceId: 's-1', rating: 5, comment: 'great' })
+      .expect(400);
+  });
 
   describe('GET /api/reviews/provider/:providerId', () => {
     it('is public, anyone can read a providers reviews', async () => {

@@ -23,11 +23,11 @@ async function prepareApi(page, role) {
 async function signIn(page, role, email) {
   await prepareApi(page, role)
   await page.goto('/')
-  await page.getByRole('button', { name: 'Sign in' }).first().click()
-  await page.locator('.auth-card select').selectOption(role)
-  await page.getByPlaceholder(/admin01/i).fill(email)
-  await page.getByPlaceholder('Enter password').fill('Password@123')
-  await page.locator('.auth-card').getByRole('button', { name: 'Sign in' }).click()
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  // No role dropdown: the backend works out the role from the email.
+  await page.getByPlaceholder(/amy01/i).fill(email)
+  await page.getByPlaceholder('Enter your password').fill('Password@123')
+  await page.getByRole('button', { name: 'Sign in securely' }).click()
 }
 
 test('customer signs in, sees bookings and can return to services', async ({ page }) => {
@@ -41,6 +41,7 @@ test('customer signs in, sees bookings and can return to services', async ({ pag
 test('provider signs in and opens each main workspace area', async ({ page }) => {
   await signIn(page, 'provider', 'provider@test.com')
   await expect(page.getByRole('heading', { name: 'Provider dashboard' })).toBeVisible()
+  await expect(page.locator('.ops-role-pill')).toContainText(/provider/i)
   for (const name of ['My services', 'Requests', 'Messages', 'Reviews', 'Settings']) {
     await page.getByRole('button', { name, exact: true }).click()
     await expect(page.locator('.ops-topbar h1')).toContainText(new RegExp(name.replace('My services', 'services'), 'i'))
@@ -48,7 +49,7 @@ test('provider signs in and opens each main workspace area', async ({ page }) =>
 })
 
 test('admin signs in and opens user and provider management', async ({ page }) => {
-  await signIn(page, 'admin', 'admin@test.com')
+  await signIn(page, 'admin', 'admin@servicehub.local')
   await expect(page.getByRole('heading', { name: 'Admin dashboard' })).toBeVisible()
   await page.getByRole('button', { name: 'Users', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'User management' })).toBeVisible()
