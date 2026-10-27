@@ -150,6 +150,11 @@ export class AuthService {
           if (!user.isActive) {
             throw new UnauthorizedException('Your account is not active');
           }
+          // providers cant sign in until an admin approves their application.
+          // before this they could sign in straight away (M7 in the qa report)
+          if (!(user as ServiceProvider).isVerified) {
+            throw new UnauthorizedException('Your provider application is still waiting for admin approval');
+          }
         }
         break;
 
@@ -240,6 +245,10 @@ export class AuthService {
     const provider = await this.providerRepository.findOne({ where: { email } });
     if (provider) {
       this.assertCanSignIn(provider);
+      // same approval rule as the password sign in
+      if (!provider.isVerified) {
+        throw new UnauthorizedException('Your provider application is still waiting for admin approval');
+      }
       return this.generateTokens(provider.providerId, provider.email, UserType.PROVIDER, provider);
     }
 

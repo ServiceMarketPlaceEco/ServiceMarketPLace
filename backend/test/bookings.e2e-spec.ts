@@ -92,6 +92,7 @@ describe('Bookings endpoints (integration)', () => {
         providerId: 'prov-1',
         isActive: true,
         isBlocked: false,
+        isVerified: true, // approved by an admin
       });
       const token = signTestToken({ sub: 'prov-1', email: 'p@x.com', userType: 'provider' });
 

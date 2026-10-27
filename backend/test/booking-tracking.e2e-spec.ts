@@ -89,7 +89,7 @@ describe('Booking status tracking journey (integration)', () => {
     };
     // Every account in this story is active, so the JWT strategy lets them in.
     customerRepo = { ...mockRepo(), findOne: jest.fn(async () => ({ isActive: true, isBlocked: false })) };
-    providerRepo = { ...mockRepo(), findOne: jest.fn(async () => ({ isActive: true, isBlocked: false })) };
+    providerRepo = { ...mockRepo(), findOne: jest.fn(async () => ({ isActive: true, isBlocked: false, isVerified: true })) };
     adminRepo = { ...mockRepo(), findOne: jest.fn(async () => ({ id: 'admin-1', isActive: true, role: 'admin' })) };
     mail = { sendBookingConfirmation: jest.fn(), sendBookingCancellation: jest.fn(), sendBookingStatusUpdate: jest.fn() };
 
