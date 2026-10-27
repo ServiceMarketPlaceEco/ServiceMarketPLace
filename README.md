@@ -91,8 +91,9 @@ DB_DATABASE=servicehub        # will be created for you
 ```
 
 Leave the other values as they are for local use. The mail settings are only
-needed for email features, and `OPENAI_API_KEY` only for the AI chatbot and
-AI voice-search matching. Without the key, voice search still works using the
+needed for email features, `OPENAI_API_KEY` only for the AI chatbot and
+AI voice-search matching, and `ANTHROPIC_API_KEY` only for the "Screen with AI"
+button on the admin moderation page (it uses Claude). Without the key, voice search still works using the
 built-in rule-based matcher (synonyms, Bengali terms and typo tolerance).
 
 ## 4. Create the database, tables and seed data

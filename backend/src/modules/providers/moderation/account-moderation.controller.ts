@@ -5,7 +5,7 @@
 //   GET  /scan      -> run the detector over every provider and customer
 //   POST /:id/keep  -> admin decided the account is fine, leave it
 //   POST /:id/block -> admin decided its fake, block it (they cant sign in)
-//   POST /ai-screen -> ask the ai for a second opinion on one flagged account
+//   POST /ai-screen -> ask claude for a second opinion on one flagged account
 //
 // admin only, same as the review queue. the guards go on the class so every
 // route is covered. before this anyone could block any account without
@@ -52,7 +52,7 @@ export class AccountModerationController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Ask AI for a second opinion on a flagged account (admin)' })
   @ApiResponse({ status: 200, description: '{ verdict, explanation }' })
-  @ApiResponse({ status: 503, description: 'OPENAI_API_KEY is not set or OpenAI is down' })
+  @ApiResponse({ status: 503, description: 'ANTHROPIC_API_KEY is not set or Claude is down' })
   async aiScreen(@Body() body: AiScreenAccountDto) {
     // only the account type, score and the detectors reasons go to the ai.
     // no email or phone - the reasons already say what looked wrong
