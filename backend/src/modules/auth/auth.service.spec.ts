@@ -343,6 +343,7 @@ describe('AuthService', () => {
         passwordHash,
         isBlocked: false,
         isActive: true,
+        isVerified: true, // approved by an admin
       });
 
       const result = await service.login({
@@ -351,6 +352,24 @@ describe('AuthService', () => {
       } as any);
 
       expect(result.userType).toBe('provider');
+    });
+
+    // M7 in the qa report - providers have to wait for admin approval
+    it('stops a provider signing in before an admin has approved them', async () => {
+      const passwordHash = await bcrypt.hash('Password@123', 10);
+      customerRepo.findOne.mockResolvedValue(null);
+      providerRepo.findOne.mockResolvedValue({
+        providerId: 'prov-new',
+        email: 'new.provider@example.com',
+        passwordHash,
+        isBlocked: false,
+        isActive: true,
+        isVerified: false,
+      });
+
+      await expect(
+        service.login({ email: 'new.provider@example.com', password: 'Password@123' } as any),
+      ).rejects.toThrow('waiting for admin approval');
     });
 
     it('resolves an admin automatically when userType is omitted and no customer/provider has the email', async () => {
@@ -420,10 +439,25 @@ describe('AuthService', () => {
         passwordHash: 'hash',
         isActive: true,
         isBlocked: false,
+        isVerified: true,
       });
 
       const result = await service.loginWithGoogle('google-id-token');
       expect(result.userType).toBe('provider');
+    });
+
+    it('stops an unapproved provider signing in with google too', async () => {
+      googleReturns({ email: 'pro@example.com', email_verified: true });
+      customerRepo.findOne.mockResolvedValue(null);
+      providerRepo.findOne.mockResolvedValue({
+        providerId: 'prov-1',
+        email: 'pro@example.com',
+        isActive: true,
+        isBlocked: false,
+        isVerified: false,
+      });
+
+      await expect(service.loginWithGoogle('google-id-token')).rejects.toThrow('waiting for admin approval');
     });
 
     it('signs in an admin whose email matches', async () => {

@@ -25,6 +25,7 @@ import { Review } from '../src/modules/reviews/entities/review.entity';
 import { Admin } from '../src/modules/admins/entities/admin.entity';
 import { MailService } from '../src/modules/mail/mail.service';
 import { JwtStrategy } from '../src/modules/auth/strategies/jwt.strategy';
+import { AiScreeningService } from '../src/common/ai';
 import { mockRepo, testConfigService, applyMainConfig, signTestToken } from './test-helpers';
 
 const SERVICE_UUID = '3f2b8c1e-9a4d-4e2b-8f1a-1c2d3e4f5a6b';
@@ -38,11 +39,13 @@ describe('Provider endpoints (integration)', () => {
   let providerServiceRepo: any;
   let reviewRepo: any;
   let mail: any;
+  let aiScreening: any;
 
   // The JWT strategy looks the user up on every request, so each token helper
   // also sets up that lookup.
   function providerToken(overrides: any = {}) {
-    providerRepo.findOne.mockResolvedValue({ providerId: 'prov-1', isActive: true, isBlocked: false, ...overrides });
+    // isVerified: true = an admin has approved them, otherwise the jwt strategy turns them away
+    providerRepo.findOne.mockResolvedValue({ providerId: 'prov-1', isActive: true, isBlocked: false, isVerified: true, ...overrides });
     return signTestToken({ sub: 'prov-1', email: 'p@x.com', userType: 'provider' });
   }
 
@@ -64,6 +67,8 @@ describe('Provider endpoints (integration)', () => {
     providerServiceRepo = mockRepo();
     reviewRepo = mockRepo();
     mail = { sendBookingStatusUpdate: jest.fn(), sendBookingConfirmation: jest.fn(), sendBookingCancellation: jest.fn() };
+    // fake ai so the tests never call openai for real
+    aiScreening = { screen: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({
       imports: [PassportModule],
@@ -81,6 +86,7 @@ describe('Provider endpoints (integration)', () => {
         { provide: getRepositoryToken(ProviderService), useValue: providerServiceRepo },
         { provide: getRepositoryToken(Review), useValue: reviewRepo },
         { provide: MailService, useValue: mail },
+        { provide: AiScreeningService, useValue: aiScreening },
       ],
     }).compile();
 
@@ -231,7 +237,7 @@ describe('Provider endpoints (integration)', () => {
       const passwordHash = await bcrypt.hash('OldPass@1', 10);
       // first lookup is the JWT strategy, second is the password check
       providerRepo.findOne
-        .mockResolvedValueOnce({ providerId: 'prov-1', isActive: true, isBlocked: false })
+        .mockResolvedValueOnce({ providerId: 'prov-1', isActive: true, isBlocked: false, isVerified: true })
         .mockResolvedValueOnce({ providerId: 'prov-1', passwordHash });
 
       const res = await request(app.getHttpServer())
@@ -246,7 +252,7 @@ describe('Provider endpoints (integration)', () => {
     it('PUT /me/change-password returns 401 for a wrong current password', async () => {
       const token = providerToken();
       providerRepo.findOne
-        .mockResolvedValueOnce({ providerId: 'prov-1', isActive: true, isBlocked: false })
+        .mockResolvedValueOnce({ providerId: 'prov-1', isActive: true, isBlocked: false, isVerified: true })
         .mockResolvedValueOnce({ providerId: 'prov-1', passwordHash: await bcrypt.hash('OldPass@1', 10) });
 
       await request(app.getHttpServer())
@@ -422,10 +428,8 @@ describe('Provider endpoints (integration)', () => {
   });
 
   // ---------- Fake-account moderation (admin dashboard) ----------
-  // These are called with an admin token, which is how the admin dashboard
-  // uses them. NOTE: the routes currently have no guard at all (see the QA
-  // report). Using an admin token here means these tests keep passing once
-  // the developers add JwtAuthGuard + AdminGuard.
+  // admin only now (JwtAuthGuard + AdminGuard on the controller), so these are
+  // called with an admin token, which is how the admin dashboard uses them.
 
   describe('account moderation', () => {
     it('GET /providers/moderation/scan returns the flagged count and queue', async () => {
@@ -477,5 +481,89 @@ describe('Provider endpoints (integration)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
     });
+
+    // H3 in the qa report - these used to work without signing in
+    describe('only admins can use it', () => {
+      it('turns away a request with no login', async () => {
+        await request(app.getHttpServer()).get('/api/providers/moderation/scan').expect(401);
+        await request(app.getHttpServer())
+          .post('/api/providers/moderation/prov-9/block')
+          .send({ kind: 'provider' })
+          .expect(401);
+        expect(providerRepo.save).not.toHaveBeenCalled();
+      });
+
+      it('turns away a signed in customer', async () => {
+        await request(app.getHttpServer())
+          .post('/api/providers/moderation/prov-9/block')
+          .set('Authorization', `Bearer ${customerToken()}`)
+          .send({ kind: 'provider' })
+          .expect(403);
+        expect(providerRepo.save).not.toHaveBeenCalled();
+      });
+
+      it('turns away a signed in provider', async () => {
+        await request(app.getHttpServer())
+          .get('/api/providers/moderation/scan')
+          .set('Authorization', `Bearer ${providerToken()}`)
+          .expect(403);
+      });
+    });
+
+    // M5 in the qa report - the "Screen with AI" button used to get "Cannot POST"
+    describe('POST /providers/moderation/ai-screen', () => {
+      it('returns the ai verdict and only sends the ai the type, score and reasons', async () => {
+        const token = adminToken();
+        aiScreening.screen.mockResolvedValue({ verdict: 'suspicious', explanation: 'Shares a phone with another account.' });
+
+        const res = await request(app.getHttpServer())
+          .post('/api/providers/moderation/ai-screen')
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            account: {
+              accountId: 'prov-9',
+              kind: 'provider',
+              email: 'private@x.com',
+              score: 5,
+              reasons: [{ signal: 'DUPLICATE_IDENTITY', detail: 'Shares contact/ID details with account prov-8', weight: 3 }],
+            },
+          })
+          .expect(200);
+
+        expect(res.body).toEqual({ verdict: 'suspicious', explanation: 'Shares a phone with another account.' });
+        expect(aiScreening.screen).toHaveBeenCalledWith('account', {
+          kind: 'provider',
+          detectorScore: 5,
+          detectorReasons: ['Shares contact/ID details with account prov-8'],
+        });
+        // the email never goes to the ai
+        expect(JSON.stringify(aiScreening.screen.mock.calls[0])).not.toContain('private@x.com');
+      });
+
+      it('rejects a body without the account', async () => {
+        await request(app.getHttpServer())
+          .post('/api/providers/moderation/ai-screen')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send({})
+          .expect(400);
+        expect(aiScreening.screen).not.toHaveBeenCalled();
+      });
+
+      it('is admin only like the rest of the queue', async () => {
+        await request(app.getHttpServer())
+          .post('/api/providers/moderation/ai-screen')
+          .send({ account: { kind: 'provider' } })
+          .expect(401);
+        expect(aiScreening.screen).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  // M7 in the qa report - a provider token is useless until an admin approves them
+  it('turns away a provider who has not been approved yet', async () => {
+    await request(app.getHttpServer())
+      .get('/api/providers/me/profile')
+      .set('Authorization', `Bearer ${providerToken({ isVerified: false })}`)
+      .expect(401);
   });
 });

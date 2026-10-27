@@ -42,6 +42,7 @@ describe('Review endpoints (integration)', () => {
       providerId: 'prov-1',
       isActive: true,
       isBlocked: false,
+      isVerified: true, // approved by an admin
     });
     return signTestToken({ sub: 'prov-1', email: 'p@x.com', userType: 'provider' });
   }

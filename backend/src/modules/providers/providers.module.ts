@@ -10,6 +10,7 @@ import { AccountModerationService } from './moderation/account-moderation.servic
 import { Customer } from '../customers/entities/customer.entity';
 import { Booking } from '../bookings/entities/booking.entity';
 import { Review } from '../reviews/entities/review.entity';
+import { AiScreeningService } from '../../common/ai';
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { Review } from '../reviews/entities/review.entity';
     forwardRef(() => BookingsModule),
   ],
   controllers: [ProvidersController, AccountModerationController],
-  providers: [ProvidersService, AccountModerationService],
+  providers: [ProvidersService, AccountModerationService, AiScreeningService],
   exports: [ProvidersService],
 })
 export class ProvidersModule {}

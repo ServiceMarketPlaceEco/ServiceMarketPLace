@@ -42,7 +42,12 @@ export class AccountModerationService {
         email: p.email,
         phone: p.phone ? String(p.phone) : null,
         createdAt: p.createdAt,
-        nid: p.abn, // ABN field used in place of NID for now
+        // no nid here on purpose. we used to pass the ABN in as the nid, but an
+        // ABN is an australian business number (11 digits) and the nid check is
+        // for bangladesh national ids (10, 13 or 17 digits), so every provider
+        // with an ABN got flagged as "invalid NID" (L8 in the qa report). the
+        // detector skips the nid check when there isnt one, so leave it out
+        // until providers actually give us an nid.
         completedBookings,
       });
     }
