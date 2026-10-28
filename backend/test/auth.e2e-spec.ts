@@ -13,6 +13,7 @@ import { Customer } from '../src/modules/customers/entities/customer.entity';
 import { ServiceProvider } from '../src/modules/providers/entities/service-provider.entity';
 import { Admin } from '../src/modules/admins/entities/admin.entity';
 import { RefreshToken } from '../src/modules/auth/entities/refresh-token.entity';
+import { PhoneVerification } from '../src/modules/auth/entities/phone-verification.entity';
 import { MailService } from '../src/modules/mail/mail.service';
 import { mockRepo, testConfigService, applyMainConfig, TEST_JWT_SECRET } from './test-helpers';
 
@@ -22,6 +23,7 @@ describe('Auth endpoints (integration)', () => {
   let providerRepo: any;
   let adminRepo: any;
   let refreshRepo: any;
+  let phoneVerificationRepo: any;
   let mailService: any;
 
   beforeAll(async () => {
@@ -29,6 +31,7 @@ describe('Auth endpoints (integration)', () => {
     providerRepo = mockRepo();
     adminRepo = mockRepo();
     refreshRepo = mockRepo();
+    phoneVerificationRepo = mockRepo();
     mailService = {
       sendWelcomeEmail: jest.fn(),
       sendProviderWelcomeEmail: jest.fn(),
@@ -45,6 +48,7 @@ describe('Auth endpoints (integration)', () => {
         { provide: getRepositoryToken(ServiceProvider), useValue: providerRepo },
         { provide: getRepositoryToken(Admin), useValue: adminRepo },
         { provide: getRepositoryToken(RefreshToken), useValue: refreshRepo },
+        { provide: getRepositoryToken(PhoneVerification), useValue: phoneVerificationRepo },
         { provide: MailService, useValue: mailService },
       ],
     }).compile();
@@ -65,6 +69,7 @@ describe('Auth endpoints (integration)', () => {
   describe('POST /api/auth/register/customer', () => {
     const validBody = {
       name: 'Test Customer',
+      username: 'testcustomer',
       email: 'test@example.com',
       password: 'Password@123',
       phone: '01700000000',
@@ -136,7 +141,7 @@ describe('Auth endpoints (integration)', () => {
 
       const res = await request(app.getHttpServer())
         .post('/api/auth/login')
-        .send({ email: 'test@example.com', password: 'Password@123', userType: 'customer' })
+        .send({ identifier: 'test@example.com', password: 'Password@123', userType: 'customer' })
         .expect(200);
 
       expect(res.body.accessToken).toBeDefined();
@@ -154,7 +159,7 @@ describe('Auth endpoints (integration)', () => {
 
       await request(app.getHttpServer())
         .post('/api/auth/login')
-        .send({ email: 'test@example.com', password: 'WrongPassword@1', userType: 'customer' })
+        .send({ identifier: 'test@example.com', password: 'WrongPassword@1', userType: 'customer' })
         .expect(401);
     });
 
@@ -163,7 +168,7 @@ describe('Auth endpoints (integration)', () => {
 
       await request(app.getHttpServer())
         .post('/api/auth/login')
-        .send({ email: 'ghost@example.com', password: 'Password@123', userType: 'customer' })
+        .send({ identifier: 'ghost@example.com', password: 'Password@123', userType: 'customer' })
         .expect(401);
     });
 
@@ -183,7 +188,7 @@ describe('Auth endpoints (integration)', () => {
       const res = await request(app.getHttpServer())
         .post('/api/auth/login')
         .send({
-          email: 'admin@servicehub.local',
+          identifier: 'admin@servicehub.local',
           password: 'Password@123',
           userType: 'admin',
         })
@@ -207,7 +212,7 @@ describe('Auth endpoints (integration)', () => {
       const res = await request(app.getHttpServer())
         .post('/api/auth/login')
         .send({
-          email: 'admin@servicehub.local',
+          identifier: 'admin@servicehub.local',
           password: 'Password@123',
           userType: 'admin',
         })
@@ -228,7 +233,7 @@ describe('Auth endpoints (integration)', () => {
       await request(app.getHttpServer())
         .post('/api/auth/login')
         .send({
-          email: 'admin@servicehub.local',
+          identifier: 'admin@servicehub.local',
           password: 'WrongPassword@1',
           userType: 'admin',
         })
@@ -241,7 +246,7 @@ describe('Auth endpoints (integration)', () => {
       await request(app.getHttpServer())
         .post('/api/auth/login')
         .send({
-          email: 'nobody@servicehub.local',
+          identifier: 'nobody@servicehub.local',
           password: 'Password@123',
           userType: 'admin',
         })
@@ -259,7 +264,7 @@ describe('Auth endpoints (integration)', () => {
       await request(app.getHttpServer())
         .post('/api/auth/login')
         .send({
-          email: 'admin@servicehub.local',
+          identifier: 'admin@servicehub.local',
           password: 'Password@123',
           userType: 'admin',
         })
@@ -269,7 +274,7 @@ describe('Auth endpoints (integration)', () => {
     it('returns 400 when userType isnt one of the allowed values', async () => {
       await request(app.getHttpServer())
         .post('/api/auth/login')
-        .send({ email: 'test@example.com', password: 'Password@123', userType: 'wizard' })
+        .send({ identifier: 'test@example.com', password: 'Password@123', userType: 'wizard' })
         .expect(400);
     });
   });

@@ -625,6 +625,7 @@ async function createProvider(provider) {
 
     await api.registerProvider({
       providerName: provider.name || 'Google Provider',
+      username: provider.username,
       email,
       password: provider.password || undefined,
       phone: digitsOnly(provider.phone),
@@ -652,11 +653,11 @@ async function signIn(payload) {
     return
   }
 
-  // The backend resolves which account type this email belongs to
-  // (customer, provider or admin) - no need to guess here.
+  // The backend resolves which account type this identifier (username,
+  // phone or email) belongs to - no need to guess here.
   try {
     const res = await api.login({
-      email: identifier,
+      identifier,
       password: payload.password
     })
     await applySession(res, res.userType || res.user?.role)

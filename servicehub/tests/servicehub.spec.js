@@ -403,7 +403,7 @@ test('28. sign in sends only the identifier and password; the backend decides th
 
   await signInAs(page, 'provider@servicehub.local')
 
-  await expect.poll(() => sentBody?.email).toBe('provider@servicehub.local')
+  await expect.poll(() => sentBody?.identifier).toBe('provider@servicehub.local')
   expect(sentBody.userType).toBeUndefined()
   // The role in the response, not anything typed, decides which workspace opens.
   await expect(page.locator('.ops-role-pill')).toContainText(/provider/i)

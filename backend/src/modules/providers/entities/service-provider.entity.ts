@@ -18,6 +18,11 @@ export class ServiceProvider {
   @Column({ name: 'provider_name', length: 255 })
   providerName: string;
 
+  // Alternate sign-in identifier alongside email/phone. Nullable because
+  // accounts created before this existed have none.
+  @Column({ type: 'varchar', unique: true, nullable: true, length: 50 })
+  username: string | null;
+
   @Column({ unique: true, length: 255 })
   email: string;
 

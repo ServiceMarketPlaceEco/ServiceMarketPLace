@@ -28,6 +28,7 @@ describe('AuthService', () => {
   let providerRepo: any;
   let adminRepo: any;
   let refreshRepo: any;
+  let phoneVerificationRepo: any;
   let jwtService: any;
   let configService: any;
   let mailService: any;
@@ -37,6 +38,7 @@ describe('AuthService', () => {
     providerRepo = mockRepo();
     adminRepo = mockRepo();
     refreshRepo = mockRepo();
+    phoneVerificationRepo = mockRepo();
 
     jwtService = {
       sign: jest.fn(() => 'fake-jwt-token'),
@@ -57,6 +59,7 @@ describe('AuthService', () => {
       providerRepo,
       adminRepo,
       refreshRepo,
+      phoneVerificationRepo,
       jwtService,
       configService,
       mailService,
@@ -66,6 +69,7 @@ describe('AuthService', () => {
   describe('registerCustomer', () => {
     const dto: any = {
       name: 'Test Customer',
+      username: 'testcustomer',
       email: 'test@example.com',
       password: 'Password@123',
       phone: '01700000000',
@@ -111,11 +115,162 @@ describe('AuthService', () => {
       const matches = await bcrypt.compare(dto.password, savedCustomer.passwordHash);
       expect(matches).toBe(true);
     });
+
+    it('persists the username so it can be used to sign in later', async () => {
+      customerRepo.findOne.mockResolvedValue(null);
+      let savedCustomer: any;
+      customerRepo.save.mockImplementation(async (c: any) => {
+        savedCustomer = c;
+        return { ...c, customerId: 'cust-1' };
+      });
+
+      await service.registerCustomer(dto);
+
+      expect(savedCustomer.username).toBe('testcustomer');
+    });
+
+    it('throws ConflictException when the username is already taken', async () => {
+      customerRepo.findOne.mockImplementation(async ({ where }: any) =>
+        where.username ? { customerId: 'existing' } : null,
+      );
+
+      await expect(service.registerCustomer(dto)).rejects.toThrow(ConflictException);
+      expect(customerRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('consumes a valid phoneVerificationToken and creates the account', async () => {
+      customerRepo.findOne.mockResolvedValue(null);
+      customerRepo.save.mockImplementation(async (c: any) => ({ ...c, customerId: 'cust-1' }));
+      const verification = {
+        id: 'verify-1',
+        phone: dto.phone,
+        isVerified: true,
+        isConsumed: false,
+        verificationToken: 'phone-token-1',
+        expiresAt: new Date(Date.now() + 60_000),
+      };
+      phoneVerificationRepo.findOne.mockResolvedValue(verification);
+      phoneVerificationRepo.save.mockImplementation(async (v: any) => v);
+
+      await service.registerCustomer({ ...dto, phoneVerificationToken: 'phone-token-1' });
+
+      expect(phoneVerificationRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ isConsumed: true }),
+      );
+    });
+
+    it('rejects registration when the phoneVerificationToken is invalid', async () => {
+      customerRepo.findOne.mockResolvedValue(null);
+      phoneVerificationRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.registerCustomer({ ...dto, phoneVerificationToken: 'nope' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(customerRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects registration when the token was issued for a different phone number', async () => {
+      customerRepo.findOne.mockResolvedValue(null);
+      phoneVerificationRepo.findOne.mockResolvedValue({
+        id: 'verify-1',
+        phone: '01999999999',
+        isVerified: true,
+        isConsumed: false,
+        verificationToken: 'phone-token-1',
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+
+      await expect(
+        service.registerCustomer({ ...dto, phoneVerificationToken: 'phone-token-1' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(customerRepo.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('requestPhoneVerification / verifyPhoneCode', () => {
+    it('creates a verification row and returns a devCode outside production', async () => {
+      configService.get.mockImplementation((key: string, fallback?: string) => {
+        if (key === 'NODE_ENV') return 'test';
+        return fallback || 'test-secret';
+      });
+      phoneVerificationRepo.save.mockImplementation(async (v: any) => {
+        v.id = 'verify-1';
+        return v;
+      });
+
+      const result = await service.requestPhoneVerification('01700000000');
+
+      expect(result.verificationId).toBe('verify-1');
+      expect(result.devCode).toMatch(/^\d{6}$/);
+    });
+
+    it('omits the devCode in production', async () => {
+      configService.get.mockImplementation((key: string, fallback?: string) => {
+        if (key === 'NODE_ENV') return 'production';
+        return fallback || 'test-secret';
+      });
+      phoneVerificationRepo.save.mockImplementation(async (v: any) => {
+        v.id = 'verify-1';
+        return v;
+      });
+
+      const result = await service.requestPhoneVerification('01700000000');
+
+      expect(result.devCode).toBeUndefined();
+    });
+
+    it('verifies a correct code and returns a verificationToken', async () => {
+      const code = '123456';
+      const codeHash = await bcrypt.hash(code, 10);
+      phoneVerificationRepo.findOne.mockResolvedValue({
+        id: 'verify-1',
+        phone: '01700000000',
+        codeHash,
+        isConsumed: false,
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      phoneVerificationRepo.save.mockImplementation(async (v: any) => v);
+
+      const result = await service.verifyPhoneCode('verify-1', '01700000000', code);
+
+      expect(result.verificationToken).toBeDefined();
+    });
+
+    it('rejects an incorrect code', async () => {
+      const codeHash = await bcrypt.hash('123456', 10);
+      phoneVerificationRepo.findOne.mockResolvedValue({
+        id: 'verify-1',
+        phone: '01700000000',
+        codeHash,
+        isConsumed: false,
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+
+      await expect(
+        service.verifyPhoneCode('verify-1', '01700000000', '000000'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects an expired code', async () => {
+      const codeHash = await bcrypt.hash('123456', 10);
+      phoneVerificationRepo.findOne.mockResolvedValue({
+        id: 'verify-1',
+        phone: '01700000000',
+        codeHash,
+        isConsumed: false,
+        expiresAt: new Date(Date.now() - 1000),
+      });
+
+      await expect(
+        service.verifyPhoneCode('verify-1', '01700000000', '123456'),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
   describe('registerProvider', () => {
     const dto: any = {
       providerName: 'Test Provider',
+      username: 'PRTEST01',
       email: 'provider@example.com',
       password: 'Password@123',
       abn: '12345678901',
@@ -140,6 +295,15 @@ describe('AuthService', () => {
 
       await expect(service.registerProvider(dto)).rejects.toThrow(ConflictException);
     });
+
+    it('throws ConflictException for a duplicate provider username', async () => {
+      providerRepo.findOne.mockImplementation(async ({ where }: any) =>
+        where.username ? { providerId: 'existing' } : null,
+      );
+
+      await expect(service.registerProvider(dto)).rejects.toThrow(ConflictException);
+      expect(providerRepo.save).not.toHaveBeenCalled();
+    });
   });
 
   describe('login', () => {
@@ -154,7 +318,7 @@ describe('AuthService', () => {
       });
 
       const result = await service.login({
-        email: 'test@example.com',
+        identifier: 'test@example.com',
         password: 'Password@123',
         userType: UserTypeDto.CUSTOMER,
       } as any);
@@ -167,7 +331,7 @@ describe('AuthService', () => {
       customerRepo.findOne.mockResolvedValue(null);
 
       await expect(
-        service.login({ email: 'nobody@example.com', password: 'x', userType: UserTypeDto.CUSTOMER } as any),
+        service.login({ identifier: 'nobody@example.com', password: 'x', userType: UserTypeDto.CUSTOMER } as any),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -182,7 +346,7 @@ describe('AuthService', () => {
       });
 
       await expect(
-        service.login({ email: 'test@example.com', password: 'WrongPassword@1', userType: UserTypeDto.CUSTOMER } as any),
+        service.login({ identifier: 'test@example.com', password: 'WrongPassword@1', userType: UserTypeDto.CUSTOMER } as any),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -196,7 +360,7 @@ describe('AuthService', () => {
       });
 
       await expect(
-        service.login({ email: 'test@example.com', password: 'x', userType: UserTypeDto.CUSTOMER } as any),
+        service.login({ identifier: 'test@example.com', password: 'x', userType: UserTypeDto.CUSTOMER } as any),
       ).rejects.toThrow('Your account has been blocked');
     });
 
@@ -210,7 +374,7 @@ describe('AuthService', () => {
       });
 
       await expect(
-        service.login({ email: 'provider@example.com', password: 'x', userType: UserTypeDto.PROVIDER } as any),
+        service.login({ identifier: 'provider@example.com', password: 'x', userType: UserTypeDto.PROVIDER } as any),
       ).rejects.toThrow('Your account is not active');
     });
 
@@ -228,7 +392,7 @@ describe('AuthService', () => {
       });
 
       const result = await service.login({
-        email: 'admin@servicehub.local',
+        identifier: 'admin@servicehub.local',
         password: 'Password@123',
         userType: UserTypeDto.ADMIN,
       } as any);
@@ -250,7 +414,7 @@ describe('AuthService', () => {
       });
 
       await service.login({
-        email: 'admin@servicehub.local',
+        identifier: 'admin@servicehub.local',
         password: 'Password@123',
         userType: UserTypeDto.ADMIN,
       } as any);
@@ -273,7 +437,7 @@ describe('AuthService', () => {
 
       await expect(
         service.login({
-          email: 'admin@servicehub.local',
+          identifier: 'admin@servicehub.local',
           password: 'WrongPassword@1',
           userType: UserTypeDto.ADMIN,
         } as any),
@@ -285,7 +449,7 @@ describe('AuthService', () => {
 
       await expect(
         service.login({
-          email: 'nobody@servicehub.local',
+          identifier: 'nobody@servicehub.local',
           password: 'Password@123',
           userType: UserTypeDto.ADMIN,
         } as any),
@@ -302,7 +466,7 @@ describe('AuthService', () => {
 
       await expect(
         service.login({
-          email: 'admin@servicehub.local',
+          identifier: 'admin@servicehub.local',
           password: 'Password@123',
           userType: UserTypeDto.ADMIN,
         } as any),
@@ -317,7 +481,7 @@ describe('AuthService', () => {
 
       await expect(
         service.login({
-          email: 'test@example.com',
+          identifier: 'test@example.com',
           password: 'Password@123',
           userType: UserTypeDto.ADMIN,
         } as any),
@@ -326,7 +490,7 @@ describe('AuthService', () => {
 
     it('throws BadRequestException for an unknown user type', async () => {
       await expect(
-        service.login({ email: 'a@b.com', password: 'x', userType: 'alien' } as any),
+        service.login({ identifier: 'a@b.com', password: 'x', userType: 'alien' } as any),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -347,7 +511,7 @@ describe('AuthService', () => {
       });
 
       const result = await service.login({
-        email: 'provider@example.com',
+        identifier: 'provider@example.com',
         password: 'Password@123',
       } as any);
 
@@ -368,7 +532,7 @@ describe('AuthService', () => {
       });
 
       await expect(
-        service.login({ email: 'new.provider@example.com', password: 'Password@123' } as any),
+        service.login({ identifier: 'new.provider@example.com', password: 'Password@123' } as any),
       ).rejects.toThrow('waiting for admin approval');
     });
 
@@ -384,7 +548,7 @@ describe('AuthService', () => {
       });
 
       const result = await service.login({
-        email: 'admin@example.com',
+        identifier: 'admin@example.com',
         password: 'Password@123',
       } as any);
 
@@ -397,7 +561,7 @@ describe('AuthService', () => {
       adminRepo.findOne.mockResolvedValue(null);
 
       await expect(
-        service.login({ email: 'nobody@example.com', password: 'x' } as any),
+        service.login({ identifier: 'nobody@example.com', password: 'x' } as any),
       ).rejects.toThrow(UnauthorizedException);
     });
   });

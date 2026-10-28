@@ -24,6 +24,7 @@ describe('AuthService account recovery and role sign-in', () => {
   let providerRepo: any;
   let adminRepo: any;
   let refreshRepo: any;
+  let phoneVerificationRepo: any;
   let jwtService: any;
   let mailService: any;
 
@@ -32,6 +33,7 @@ describe('AuthService account recovery and role sign-in', () => {
     providerRepo = mockRepo();
     adminRepo = mockRepo();
     refreshRepo = mockRepo();
+    phoneVerificationRepo = mockRepo();
     jwtService = { sign: jest.fn(() => 'signed-token'), verify: jest.fn() };
     mailService = { sendPasswordResetEmail: jest.fn() };
     const configService = { get: jest.fn((key: string, fallback?: string) => fallback || 'test-secret') };
@@ -41,6 +43,7 @@ describe('AuthService account recovery and role sign-in', () => {
       providerRepo,
       adminRepo,
       refreshRepo,
+      phoneVerificationRepo,
       jwtService,
       configService as any,
       mailService,
@@ -149,7 +152,7 @@ describe('AuthService account recovery and role sign-in', () => {
       providerRepo.findOne.mockResolvedValue({ providerId: 'p', email: 'p@x.com', passwordHash: await hash(), isBlocked: true, isActive: true });
 
       await expect(
-        service.login({ email: 'p@x.com', password: 'Password@123', userType: UserTypeDto.PROVIDER } as any),
+        service.login({ identifier: 'p@x.com', password: 'Password@123', userType: UserTypeDto.PROVIDER } as any),
       ).rejects.toThrow('Your account has been blocked');
     });
 
@@ -157,7 +160,7 @@ describe('AuthService account recovery and role sign-in', () => {
       providerRepo.findOne.mockResolvedValue({ providerId: 'p', email: 'p@x.com', passwordHash: await hash(), isBlocked: false, isActive: false });
 
       await expect(
-        service.login({ email: 'p@x.com', password: 'Password@123', userType: UserTypeDto.PROVIDER } as any),
+        service.login({ identifier: 'p@x.com', password: 'Password@123', userType: UserTypeDto.PROVIDER } as any),
       ).rejects.toThrow('Your account is not active');
     });
 
@@ -165,7 +168,7 @@ describe('AuthService account recovery and role sign-in', () => {
       adminRepo.findOne.mockResolvedValue({ id: 'a', email: 'a@x.com', passwordHash: await hash(), isActive: false });
 
       await expect(
-        service.login({ email: 'a@x.com', password: 'Password@123', userType: UserTypeDto.ADMIN } as any),
+        service.login({ identifier: 'a@x.com', password: 'Password@123', userType: UserTypeDto.ADMIN } as any),
       ).rejects.toThrow('Your account is not active');
     });
 
@@ -174,7 +177,7 @@ describe('AuthService account recovery and role sign-in', () => {
         .mockResolvedValueOnce({ customerId: 'c-1' }) // role lookup
         .mockResolvedValueOnce({ customerId: 'c-1', email: 'c@x.com', name: 'C', passwordHash: await hash(), isActive: true, isBlocked: false });
 
-      const result = await service.login({ email: 'c@x.com', password: 'Password@123' } as any);
+      const result = await service.login({ identifier: 'c@x.com', password: 'Password@123' } as any);
 
       expect(result.userType).toBe('customer');
       // a customer match means the provider and admin tables are never checked

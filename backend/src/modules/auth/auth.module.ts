@@ -12,12 +12,13 @@ import { Customer } from '../customers/entities/customer.entity';
 import { ServiceProvider } from '../providers/entities/service-provider.entity';
 import { Admin } from '../admins/entities/admin.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { PhoneVerification } from './entities/phone-verification.entity';
 
 import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Customer, ServiceProvider, Admin, RefreshToken]),
+    TypeOrmModule.forFeature([Customer, ServiceProvider, Admin, RefreshToken, PhoneVerification]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

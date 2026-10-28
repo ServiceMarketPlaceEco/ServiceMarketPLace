@@ -1,6 +1,9 @@
 import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength, Matches, IsNumber } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+const USERNAME_PATTERN = /^[A-Za-z0-9_.-]{3,30}$/;
+const USERNAME_MESSAGE = 'Username must be 3-30 characters (letters, numbers, . _ or -)';
+
 export enum UserTypeDto {
   CUSTOMER = 'customer',
   PROVIDER = 'provider',
@@ -12,6 +15,11 @@ export class RegisterCustomerDto {
   @IsNotEmpty()
   @IsString()
   name: string;
+
+  @ApiProperty({ example: 'sam24', description: 'Used to sign in later, alongside email and phone' })
+  @IsNotEmpty()
+  @Matches(USERNAME_PATTERN, { message: USERNAME_MESSAGE })
+  username: string;
 
   @ApiProperty({ example: 'john@example.com' })
   @IsEmail()
@@ -39,6 +47,16 @@ export class RegisterCustomerDto {
   @IsOptional()
   @IsString()
   address?: string;
+
+  @ApiPropertyOptional({ description: 'Token returned by POST /auth/phone-verification/verify. If supplied, must match phone.' })
+  @IsOptional()
+  @IsString()
+  phoneVerificationToken?: string;
+
+  @ApiPropertyOptional({ example: 'phone' })
+  @IsOptional()
+  @IsString()
+  authProvider?: string;
 }
 
 export class RegisterProviderDto {
@@ -46,6 +64,11 @@ export class RegisterProviderDto {
   @IsNotEmpty()
   @IsString()
   providerName: string;
+
+  @ApiProperty({ example: 'PRRAJSHAHI01', description: 'Used to sign in later, alongside email and phone' })
+  @IsNotEmpty()
+  @Matches(USERNAME_PATTERN, { message: USERNAME_MESSAGE })
+  username: string;
 
   @ApiProperty({ example: 'provider@example.com' })
   @IsEmail()
@@ -86,9 +109,10 @@ export class RegisterProviderDto {
 }
 
 export class LoginDto {
-  @ApiProperty({ example: 'user@example.com' })
-  @IsEmail()
-  email: string;
+  @ApiProperty({ example: 'user@example.com', description: 'Username, phone number or email' })
+  @IsNotEmpty()
+  @IsString()
+  identifier: string;
 
   @ApiProperty({ example: 'Password123!' })
   @IsNotEmpty()
@@ -142,6 +166,30 @@ export class ResetPasswordDto {
     message: 'Password must contain uppercase, lowercase, and number/special character',
   })
   newPassword: string;
+}
+
+export class RequestPhoneVerificationDto {
+  @ApiProperty({ example: '0412345678' })
+  @IsNotEmpty()
+  @IsString()
+  phone: string;
+}
+
+export class VerifyPhoneCodeDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  verificationId: string;
+
+  @ApiProperty({ example: '0412345678' })
+  @IsNotEmpty()
+  @IsString()
+  phone: string;
+
+  @ApiProperty({ example: '123456' })
+  @IsNotEmpty()
+  @IsString()
+  code: string;
 }
 
 export class AuthResponseDto {
