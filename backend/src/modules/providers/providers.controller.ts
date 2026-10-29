@@ -18,6 +18,7 @@ import {
   AddProviderServiceDto,
   UpdateProviderServiceDto,
   UpdateBookingStatusDto,
+  UpdateBookingLocationDto,
   ProviderResponseDto,
   ProviderListQueryDto,
 } from './dto';
@@ -157,5 +158,18 @@ export class ProvidersController {
     @Body() dto: UpdateBookingStatusDto,
   ) {
     return this.bookingsService.updateStatusByProvider(user.userId, bookingId, dto.status);
+  }
+
+  @Put('me/bookings/:bookingId/location')
+  @UseGuards(JwtAuthGuard, ProviderGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: "Share the provider's current position for the customer's tracking map" })
+  @ApiResponse({ status: 200, description: 'Location updated' })
+  async updateBookingLocation(
+    @CurrentUser() user: CurrentUserData,
+    @Param('bookingId') bookingId: string,
+    @Body() dto: UpdateBookingLocationDto,
+  ) {
+    return this.bookingsService.updateProviderLocation(user.userId, bookingId, dto.lat, dto.lng);
   }
 }

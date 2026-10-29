@@ -17,6 +17,7 @@ import { Customer } from '../customers/entities/customer.entity';
 import { ServiceProvider } from '../providers/entities/service-provider.entity';
 import { Admin } from '../admins/entities/admin.entity';
 import { RefreshToken, UserType } from './entities/refresh-token.entity';
+import { PhoneVerification } from './entities/phone-verification.entity';
 import {
   RegisterCustomerDto,
   RegisterProviderDto,
@@ -25,6 +26,8 @@ import {
   AuthResponseDto,
 } from './dto';
 import { MailService } from '../mail/mail.service';
+
+const PHONE_VERIFICATION_TTL_MS = 10 * 60 * 1000;
 
 @Injectable()
 export class AuthService {
@@ -40,6 +43,8 @@ export class AuthService {
     private adminRepository: Repository<Admin>,
     @InjectRepository(RefreshToken)
     private refreshTokenRepository: Repository<RefreshToken>,
+    @InjectRepository(PhoneVerification)
+    private phoneVerificationRepository: Repository<PhoneVerification>,
     private jwtService: JwtService,
     private configService: ConfigService,
     private mailService: MailService,
@@ -55,10 +60,23 @@ export class AuthService {
       throw new ConflictException('Email already registered');
     }
 
+    const existingUsername = await this.customerRepository.findOne({
+      where: { username: dto.username },
+    });
+
+    if (existingUsername) {
+      throw new ConflictException('Username already taken');
+    }
+
+    if (dto.phoneVerificationToken) {
+      await this.consumePhoneVerification(dto.phone, dto.phoneVerificationToken);
+    }
+
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
     const customer = this.customerRepository.create({
       name: dto.name,
+      username: dto.username,
       email: dto.email,
       passwordHash,
       age: dto.age,
@@ -84,10 +102,19 @@ export class AuthService {
       throw new ConflictException('Email already registered');
     }
 
+    const existingUsername = await this.providerRepository.findOne({
+      where: { username: dto.username },
+    });
+
+    if (existingUsername) {
+      throw new ConflictException('Username already taken');
+    }
+
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
     const provider = this.providerRepository.create({
       providerName: dto.providerName,
+      username: dto.username,
       email: dto.email,
       passwordHash,
       abn: dto.abn,
@@ -105,16 +132,89 @@ export class AuthService {
     return this.generateTokens(provider.providerId, provider.email, 'provider', provider);
   }
 
+  // Sends (for now: generates and logs/returns, since no SMS provider is
+  // configured yet) a 6-digit code for a phone number, ahead of customer
+  // signup. Swapping in a real SMS provider later only touches this method.
+  async requestPhoneVerification(phone: string): Promise<{ verificationId: string; devCode?: string }> {
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const codeHash = await bcrypt.hash(code, 10);
+    const expiresAt = new Date(Date.now() + PHONE_VERIFICATION_TTL_MS);
+
+    const verification = this.phoneVerificationRepository.create({
+      phone,
+      codeHash,
+      expiresAt,
+    });
+    await this.phoneVerificationRepository.save(verification);
+
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+    // eslint-disable-next-line no-console
+    console.log(`[phone-verification] code for ${phone}: ${code}`);
+
+    return {
+      verificationId: verification.id,
+      ...(isProduction ? {} : { devCode: code }),
+    };
+  }
+
+  // Confirms a code sent by requestPhoneVerification and issues a short-lived
+  // token that registerCustomer accepts as proof the phone was verified.
+  async verifyPhoneCode(verificationId: string, phone: string, code: string): Promise<{ verificationToken: string }> {
+    const verification = await this.phoneVerificationRepository.findOne({
+      where: { id: verificationId },
+    });
+
+    if (!verification || verification.phone !== phone || verification.isConsumed) {
+      throw new BadRequestException('Invalid verification request');
+    }
+
+    if (verification.expiresAt < new Date()) {
+      throw new BadRequestException('This verification code has expired. Please request a new one.');
+    }
+
+    const isCodeValid = await bcrypt.compare(code, verification.codeHash);
+    if (!isCodeValid) {
+      throw new BadRequestException('Incorrect verification code');
+    }
+
+    verification.isVerified = true;
+    verification.verificationToken = uuidv4();
+    await this.phoneVerificationRepository.save(verification);
+
+    return { verificationToken: verification.verificationToken };
+  }
+
+  // Helper: validates and one-time-consumes a phoneVerificationToken passed
+  // to registerCustomer, so the same verified code can't back two accounts.
+  private async consumePhoneVerification(phone: string | undefined, token: string): Promise<void> {
+    const verification = await this.phoneVerificationRepository.findOne({
+      where: { verificationToken: token },
+    });
+
+    if (
+      !verification ||
+      verification.phone !== phone ||
+      !verification.isVerified ||
+      verification.isConsumed ||
+      verification.expiresAt < new Date()
+    ) {
+      throw new BadRequestException('Phone verification is invalid or has expired. Please verify your phone number again.');
+    }
+
+    verification.isConsumed = true;
+    await this.phoneVerificationRepository.save(verification);
+  }
+
   // Login
   async login(dto: LoginDto): Promise<AuthResponseDto> {
     let user: Customer | ServiceProvider | Admin | null = null;
     let userId: string;
     let userType: UserType;
 
-    // When the caller doesn't know which account type this email belongs to
-    // (e.g. a single "email + password" sign-in form), look it up the same
-    // way loginWithGoogle() does: customer, then provider, then admin.
-    const resolvedType = dto.userType ?? (await this.resolveUserTypeByEmail(dto.email));
+    // When the caller doesn't know which account type this identifier belongs
+    // to (e.g. a single sign-in form), look it up the same way
+    // loginWithGoogle() does: customer, then provider, then admin.
+    const resolvedType = dto.userType ?? (await this.resolveUserTypeByIdentifier(dto.identifier));
 
     if (!resolvedType) {
       throw new UnauthorizedException('Invalid credentials');
@@ -123,7 +223,7 @@ export class AuthService {
     switch (resolvedType) {
       case UserTypeDto.CUSTOMER:
         user = await this.customerRepository.findOne({
-          where: { email: dto.email },
+          where: this.customerIdentifierWhere(dto.identifier),
         });
         if (user) {
           userId = user.customerId;
@@ -139,7 +239,7 @@ export class AuthService {
 
       case UserTypeDto.PROVIDER:
         user = await this.providerRepository.findOne({
-          where: { email: dto.email },
+          where: this.providerIdentifierWhere(dto.identifier),
         });
         if (user) {
           userId = user.providerId;
@@ -160,7 +260,7 @@ export class AuthService {
 
       case UserTypeDto.ADMIN:
         user = await this.adminRepository.findOne({
-          where: { email: dto.email },
+          where: { email: dto.identifier },
         });
         if (user) {
           userId = user.id;
@@ -187,23 +287,39 @@ export class AuthService {
     return this.generateTokens(userId!, user.email, userType!, user);
   }
 
-  // Finds which account type (if any) a login email belongs to, by checking
-  // each table in turn. Used when the caller doesn't already know the type.
-  private async resolveUserTypeByEmail(email: string): Promise<UserTypeDto | undefined> {
+  // Builds a TypeORM "OR" where clause matching a sign-in identifier against
+  // email, username or phone. Customer phone is stored as a string; provider
+  // phone is numeric, so a non-numeric identifier can't match it.
+  private customerIdentifierWhere(identifier: string) {
+    return [{ email: identifier }, { username: identifier }, { phone: identifier }];
+  }
+
+  private providerIdentifierWhere(identifier: string) {
+    const where: Record<string, string | number>[] = [{ email: identifier }, { username: identifier }];
+    if (/^\d+$/.test(identifier)) {
+      where.push({ phone: Number(identifier) });
+    }
+    return where;
+  }
+
+  // Finds which account type (if any) a sign-in identifier (username, phone
+  // or email) belongs to, by checking each table in turn. Used when the
+  // caller doesn't already know the type.
+  private async resolveUserTypeByIdentifier(identifier: string): Promise<UserTypeDto | undefined> {
     const customer = await this.customerRepository.findOne({
-      where: { email },
+      where: this.customerIdentifierWhere(identifier),
       select: ['customerId'],
     });
     if (customer) return UserTypeDto.CUSTOMER;
 
     const provider = await this.providerRepository.findOne({
-      where: { email },
+      where: this.providerIdentifierWhere(identifier),
       select: ['providerId'],
     });
     if (provider) return UserTypeDto.PROVIDER;
 
     const admin = await this.adminRepository.findOne({
-      where: { email },
+      where: { email: identifier },
       select: ['id'],
     });
     if (admin) return UserTypeDto.ADMIN;

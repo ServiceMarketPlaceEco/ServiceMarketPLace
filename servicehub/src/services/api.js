@@ -356,6 +356,10 @@ export async function getMyBookings() {
   return resultArray(result)
 }
 
+export function getBookingById(bookingId) {
+  return request(`/bookings/${bookingId}`, { auth: true })
+}
+
 // Public booking-management endpoints
 export async function getAllBookingsPublic() {
   const result = await request('/bookings/all')
@@ -469,6 +473,23 @@ export function updateProviderBookingStatus(
     {
       method: 'PUT',
       body: { status },
+      auth: true
+    }
+  )
+}
+
+export function updateProviderLocation(
+  bookingId,
+  lat,
+  lng
+) {
+  return request(
+    `/providers/me/bookings/${encodeURIComponent(
+      bookingId
+    )}/location`,
+    {
+      method: 'PUT',
+      body: { lat, lng },
       auth: true
     }
   )

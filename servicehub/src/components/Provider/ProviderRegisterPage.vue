@@ -15,11 +15,17 @@ const form = reactive({
   experience: ''
 })
 
+const USERNAME_PATTERN = /^[A-Za-z0-9_.-]{3,30}$/
+
 function submitProvider() {
   error.value = ''
   const username = form.username.trim().toUpperCase()
   if (!username.startsWith('PR') || username.length < 3) {
     error.value = 'Provider usernames must begin with PR.'
+    return
+  }
+  if (!USERNAME_PATTERN.test(username)) {
+    error.value = 'Usernames can only contain letters, numbers, . _ or -, no spaces.'
     return
   }
 

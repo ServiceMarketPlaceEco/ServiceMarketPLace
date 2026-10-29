@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsNumber, IsBoolean, IsUUID, Min, Max } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsBoolean, IsUUID, Min, Max, IsLatitude, IsLongitude } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateProviderProfileDto {
@@ -77,6 +77,16 @@ export class UpdateBookingStatusDto {
   @ApiProperty({ enum: ['confirmed', 'in_progress', 'completed', 'cancelled'] })
   @IsString()
   status: 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+}
+
+export class UpdateBookingLocationDto {
+  @ApiProperty({ example: 24.3745 })
+  @IsLatitude()
+  lat: number;
+
+  @ApiProperty({ example: 88.6042 })
+  @IsLongitude()
+  lng: number;
 }
 
 export class ProviderResponseDto {

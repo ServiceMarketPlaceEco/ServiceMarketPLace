@@ -14,11 +14,16 @@ const form = reactive({
   email: ''
 })
 
+const USERNAME_PATTERN = /^[A-Za-z0-9_.-]{3,30}$/
+
 function submitForm() {
   error.value = ''
 
   if (!form.name.trim()) return error.value = 'Name is required.'
   if (!form.username.trim()) return error.value = 'Username is required.'
+  if (!USERNAME_PATTERN.test(form.username.trim())) {
+    return error.value = 'Username must be 3-30 characters (letters, numbers, . _ or -), no spaces.'
+  }
   if (!form.phone.trim()) return error.value = 'Phone number is required.'
   if (!form.password.trim()) return error.value = 'Password is required.'
   if (!form.location) return error.value = 'Please select your Rajshahi location.'

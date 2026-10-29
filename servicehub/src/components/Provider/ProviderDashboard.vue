@@ -1,6 +1,7 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, onBeforeUnmount } from 'vue'
 import { formatStatus } from '../../data/services'
+import * as api from '../../services/api'
 
 const props = defineProps({
   currentUser: { type: Object, default: null },
@@ -65,6 +66,46 @@ function acceptRequest(request) { emit('accept-request', { requestId: request.id
 function startJob(request) { emit('status-change', { requestId: request.id, status: 'in-progress' }) }
 function completeJob(request) { emit('status-change', { requestId: request.id, status: 'completed' }) }
 function undoComplete(request) { emit('status-change', { requestId: request.id, status: 'in-progress' }) }
+
+// ---------- Live location sharing ----------
+// Only one job's position is shared at a time: a provider is realistically
+// only travelling to one customer at once. Position updates are throttled
+// client-side so a fast GPS watch doesn't flood the backend.
+const sharingRequestId = ref(null)
+const locationError = ref('')
+let watchId = null
+let lastSentAt = 0
+
+function startSharingLocation(request) {
+  if (!navigator.geolocation) {
+    locationError.value = 'Location sharing is not supported in this browser.'
+    return
+  }
+  stopSharingLocation()
+  locationError.value = ''
+  sharingRequestId.value = request.id
+  lastSentAt = 0
+  watchId = navigator.geolocation.watchPosition(
+    position => {
+      const now = Date.now()
+      if (now - lastSentAt < 5000) return
+      lastSentAt = now
+      api.updateProviderLocation(request.id, position.coords.latitude, position.coords.longitude)
+        .catch(() => { locationError.value = 'Could not update your location right now.' })
+    },
+    () => { locationError.value = 'Could not access your location. Check your browser permissions and try again.' },
+    { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+  )
+}
+
+function stopSharingLocation() {
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId)
+  watchId = null
+  sharingRequestId.value = null
+}
+
+onBeforeUnmount(stopSharingLocation)
+
 function openDeclineModal(request) { declineTarget.value = request; declineReason.value = '' }
 function confirmDecline() {
   if (!declineReason.value.trim()) return
@@ -244,7 +285,11 @@ function savePassword() {
                 class="primary small" @click="startJob(request)">Start job</button><button
                 v-if="request.providerStatus === 'in-progress'" class="success small"
                 @click="completeJob(request)">Complete</button><button v-if="request.providerStatus === 'completed'"
-                class="secondary small" @click="undoComplete(request)">Undo complete</button></div>
+                class="secondary small" @click="undoComplete(request)">Undo complete</button><button
+                v-if="['accepted', 'in-progress'].includes(request.providerStatus)" class="secondary small"
+                @click="sharingRequestId === request.id ? stopSharingLocation() : startSharingLocation(request)">{{
+                  sharingRequestId === request.id ? 'Stop sharing location' : 'Share location' }}</button></div>
+            <small v-if="sharingRequestId === request.id && locationError" class="error-text">{{ locationError }}</small>
           </article>
         </section>
       </template>

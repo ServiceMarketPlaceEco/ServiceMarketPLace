@@ -225,6 +225,33 @@ export class BookingsService {
     return updatedBooking;
   }
 
+  // Records the provider's current position for the customer's tracking map.
+  // Only meaningful while the job is actually active - a provider shouldn't
+  // be able to broadcast location against a pending, completed or cancelled
+  // booking.
+  async updateProviderLocation(
+    providerId: string,
+    bookingId: string,
+    lat: number,
+    lng: number,
+  ): Promise<Booking> {
+    const booking = await this.findById(bookingId);
+
+    if (booking.providerService.providerId !== providerId) {
+      throw new ForbiddenException('You can only update your own bookings');
+    }
+
+    if (![BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS].includes(booking.status)) {
+      throw new BadRequestException('Location can only be shared while the job is confirmed or in progress');
+    }
+
+    booking.providerLat = lat;
+    booking.providerLng = lng;
+    booking.locationUpdatedAt = new Date();
+
+    return this.bookingRepository.save(booking);
+  }
+
   // Admin methods
   async findAll(query?: BookingQueryDto): Promise<Booking[]> {
     const where: any = {};

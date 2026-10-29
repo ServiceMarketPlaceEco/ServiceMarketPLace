@@ -15,6 +15,8 @@ import {
   RefreshTokenDto,
   ForgotPasswordDto,
   ResetPasswordDto,
+  RequestPhoneVerificationDto,
+  VerifyPhoneCodeDto,
   AuthResponseDto,
 } from './dto';
 
@@ -37,6 +39,23 @@ export class AuthController {
   @ApiResponse({ status: 409, description: 'Email already registered' })
   async registerProvider(@Body() dto: RegisterProviderDto): Promise<AuthResponseDto> {
     return this.authService.registerProvider(dto);
+  }
+
+  @Post('phone-verification/request')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send a verification code to a phone number ahead of customer signup' })
+  @ApiResponse({ status: 200, description: 'Verification code sent' })
+  async requestPhoneVerification(@Body() dto: RequestPhoneVerificationDto) {
+    return this.authService.requestPhoneVerification(dto.phone);
+  }
+
+  @Post('phone-verification/verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify a phone confirmation code and get a short-lived registration token' })
+  @ApiResponse({ status: 200, description: 'Phone verified' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired code' })
+  async verifyPhoneCode(@Body() dto: VerifyPhoneCodeDto) {
+    return this.authService.verifyPhoneCode(dto.verificationId, dto.phone, dto.code);
   }
 
   @Post('login')
