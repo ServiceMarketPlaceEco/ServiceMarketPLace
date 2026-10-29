@@ -22,6 +22,9 @@ export class Service {
   @Column({ nullable: true, length: 100 })
   icon: string;
 
+  @Column({ name: 'image_url', nullable: true, length: 500 })
+  imageUrl: string;
+
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 

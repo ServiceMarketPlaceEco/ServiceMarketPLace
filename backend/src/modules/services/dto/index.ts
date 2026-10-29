@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, IsBoolean, IsIn, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsBoolean, IsIn, IsUrl, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 
 export class CreateServiceDto {
@@ -16,6 +16,12 @@ export class CreateServiceDto {
   @IsOptional()
   @IsString()
   icon?: string;
+
+  @ApiPropertyOptional({ example: 'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39' })
+  @IsOptional()
+  @IsUrl({ protocols: ['https'], require_protocol: true })
+  @MaxLength(500)
+  imageUrl?: string;
 }
 
 export class UpdateServiceDto extends PartialType(CreateServiceDto) {
@@ -37,6 +43,9 @@ export class ServiceResponseDto {
 
   @ApiProperty()
   icon: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  imageUrl: string | null;
 
   @ApiProperty()
   isActive: boolean;
