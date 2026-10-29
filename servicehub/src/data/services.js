@@ -119,6 +119,34 @@ export const services = [
   }
 ]
 
+// The backend catalogue has no image column, only an icon key, so photos come
+// from the local catalogue above, matched by service name and then by icon.
+const ICON_IMAGE_MAP = {
+  home: 'cleaning',
+  truck: 'moving',
+  package: 'delivery',
+  laptop: 'tech',
+  thermometer: 'ac-repair',
+  zap: 'electrician',
+  wrench: 'plumbing',
+  book: 'tutoring',
+  heart: 'elder-care'
+}
+
+export const serviceImageFor = service => {
+  const name = String(service?.serviceName || service?.title || '').trim().toLowerCase()
+  const byName = services.find(item => item.title.toLowerCase() === name)
+  const byIcon = services.find(item => item.id === ICON_IMAGE_MAP[service?.icon])
+  return (byName || byIcon)?.image || ''
+}
+
+// Adds Unsplash sizing parameters; other image URLs are used as they are.
+export const serviceImageSrc = (image, width = 900) => {
+  if (!image) return ''
+  if (!image.startsWith('https://images.unsplash.com/') || image.includes('?')) return image
+  return `${image}?auto=format&fit=crop&w=${width}&q=80`
+}
+
 export const locations = [
   { id: 'boalia', name: 'Boalia', area: 'Central Rajshahi' },
   { id: 'motihar', name: 'Motihar', area: 'University area' },

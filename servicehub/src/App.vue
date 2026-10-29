@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as api from './services/api'
+import { serviceImageFor } from './data/services'
 
 import NavBar from './components/User/NavBar.vue'
 import HeroSection from './components/User/HeroSection.vue'
@@ -342,7 +343,7 @@ async function loadServices() {
         category: service.category || ICON_CATEGORY_MAP[service.icon] || 'General',
         price: bestOffer?.price ?? 0,
         currency: service.currency || 'BDT',
-        image: service.imageUrl || service.image || '',
+        image: service.imageUrl || service.image || serviceImageFor(service),
         description: service.description || '',
         upfrontPayment: service.upfrontPayment || null
       }
