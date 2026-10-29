@@ -55,6 +55,12 @@ function digitsOnly(value) {
 // The current user and theme are cached only for browser-session continuity.
 const savedUser = JSON.parse(localStorage.getItem('servicehub-user') || 'null')
 
+// The visible page is mirrored into the URL hash (e.g. #reviews) so a browser
+// reload, bookmark or back/forward keeps the user on the same page.
+function pageFromHash() {
+  return decodeURIComponent(window.location.hash.replace(/^#\/?/, ''))
+}
+
 const currentPage = ref(savedUser ? 'dashboard' : 'home')
 const theme = ref(localStorage.getItem('servicehub-theme') || 'light')
 const signedInUser = ref(savedUser)
@@ -217,6 +223,17 @@ watch(currentPage, async () => {
   appMain.value?.focus({ preventScroll: true })
 })
 
+watch(currentPage, page => {
+  if (pageFromHash() !== page) window.history.pushState(null, '', `#${page}`)
+})
+
+function syncPageFromHash() {
+  const page = pageFromHash()
+  if (page && page !== currentPage.value) goTo(page)
+}
+window.addEventListener('popstate', syncPageFromHash)
+onBeforeUnmount(() => window.removeEventListener('popstate', syncPageFromHash))
+
 const isOpsDashboard = computed(() => currentPage.value === 'dashboard' && ['admin', 'provider'].includes(signedInUser.value?.role))
 
 function goTo(page) {
@@ -270,8 +287,25 @@ function goTo(page) {
     return
   }
 
+  // The dashboard only exists for a signed-in user.
+  if (targetPage === 'dashboard' && !signedInUser.value) {
+    currentPage.value = 'signin'
+    return
+  }
+
+  // The request form needs a chosen service, which is not kept across reloads.
+  if (targetPage === 'request' && !selectedService.value) {
+    goTo('services')
+    return
+  }
+
   currentPage.value = targetPage
 }
+
+// Restore the page named in the URL after a reload, and record the starting
+// page without adding an extra history entry.
+if (pageFromHash()) goTo(pageFromHash())
+window.history.replaceState(null, '', `#${currentPage.value}`)
 
 function openTracking(request = null) {
   selectedTrackingRequest.value = request
