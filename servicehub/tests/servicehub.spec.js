@@ -408,3 +408,17 @@ test('28. sign in sends only the identifier and password; the backend decides th
   // The role in the response, not anything typed, decides which workspace opens.
   await expect(page.locator('.ops-role-pill')).toContainText(/provider/i)
 })
+
+// ---------- Navigation survives reloads ----------
+
+test('29. reloading keeps the user on the page they were viewing', async ({ page }) => {
+  await page.locator('.nav-links').getByRole('button', { name: 'How it works' }).click()
+  await expect(page).toHaveURL(/#how$/)
+  await page.reload()
+  await expect(
+    page.getByRole('heading', { name: /one workflow for rajshahi/i })
+  ).toBeVisible()
+  // the browser back button returns to the homepage
+  await page.goBack()
+  await expect(page).toHaveURL(/#home$/)
+})
