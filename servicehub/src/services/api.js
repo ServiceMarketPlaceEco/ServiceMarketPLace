@@ -321,6 +321,23 @@ export async function getServiceProviders(
   return resultArray(result)
 }
 
+// Admin only: changes a catalogue service, e.g. its imageUrl photo
+export function updateService(
+  serviceId,
+  payload
+) {
+  return request(
+    `/services/${encodeURIComponent(
+      serviceId
+    )}`,
+    {
+      method: 'PUT',
+      body: payload,
+      auth: true
+    }
+  )
+}
+
 // Sends English or Bengali transcripts to the backend
 export function matchTranscript(
   transcript,

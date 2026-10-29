@@ -17,11 +17,16 @@ export class CreateServiceDto {
   @IsString()
   icon?: string;
 
-  @ApiPropertyOptional({ example: 'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'https://images.unsplash.com/photo-1607472586893-edb57bdc0e39',
+    description: 'https photo for the catalog card; null clears it',
+  })
   @IsOptional()
   @IsUrl({ protocols: ['https'], require_protocol: true })
   @MaxLength(500)
-  imageUrl?: string;
+  imageUrl?: string | null;
 }
 
 export class UpdateServiceDto extends PartialType(CreateServiceDto) {
@@ -44,7 +49,7 @@ export class ServiceResponseDto {
   @ApiProperty()
   icon: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   imageUrl: string | null;
 
   @ApiProperty()

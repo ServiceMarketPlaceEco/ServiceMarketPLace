@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { formatStatus } from '../../data/services'
+import { formatStatus, serviceImageSrc } from '../../data/services'
 import * as api from '../../services/api'
 
 const props = defineProps({
@@ -11,7 +11,7 @@ const props = defineProps({
   theme: { type: String, default: 'light' }
 })
 
-const emit = defineEmits(['approve-provider', 'reject-provider', 'activate-provider', 'block-customer', 'activate-customer', 'assign-request', 'approve-chat', 'reject-chat', 'block-status-change', 'sign-out', 'go-home', 'toggle-theme'])
+const emit = defineEmits(['approve-provider', 'reject-provider', 'activate-provider', 'block-customer', 'activate-customer', 'assign-request', 'approve-chat', 'reject-chat', 'block-status-change', 'services-changed', 'sign-out', 'go-home', 'toggle-theme'])
 
 const activeView = ref('dashboard')
 const searchTerm = ref('')
@@ -34,6 +34,53 @@ async function loadProvidersForService(serviceId) {
 watch(() => props.requests, (requests) => {
   new Set(requests.map(r => r.serviceId).filter(Boolean)).forEach(loadProvidersForService)
 }, { immediate: true })
+
+// Service catalogue photos. The list is loaded from the API (not the
+// customer-facing catalogue) so the admin sees the image_url actually stored.
+const catalogServices = ref([])
+const catalogLoading = ref(false)
+const catalogError = ref('')
+const imageDrafts = ref({})
+const imageSaving = ref({})
+const imageErrors = ref({})
+// serviceId -> the link whose preview failed to load, so a typo is visible before saving
+const previewFailed = ref({})
+
+async function loadCatalogServices() {
+  catalogLoading.value = true
+  catalogError.value = ''
+  try {
+    catalogServices.value = await api.getServices()
+    imageDrafts.value = Object.fromEntries(catalogServices.value.map(s => [s.serviceId, s.imageUrl || '']))
+  } catch (err) {
+    catalogError.value = err.message || 'Could not load the service catalogue'
+  } finally {
+    catalogLoading.value = false
+  }
+}
+
+watch(activeView, view => { if (view === 'services') loadCatalogServices() })
+
+async function saveServiceImage(service) {
+  const imageUrl = String(imageDrafts.value[service.serviceId] || '').trim()
+  if (imageUrl && !/^https:\/\/\S+$/.test(imageUrl)) {
+    imageErrors.value[service.serviceId] = 'Use a full https:// image link.'
+    return
+  }
+  imageErrors.value[service.serviceId] = ''
+  imageSaving.value[service.serviceId] = true
+  try {
+    // An empty field clears the photo so the catalogue falls back to its default.
+    const updated = await api.updateService(service.serviceId, { imageUrl: imageUrl || null })
+    service.imageUrl = updated?.imageUrl ?? (imageUrl || null)
+    imageDrafts.value[service.serviceId] = service.imageUrl || ''
+    emit('services-changed')
+  } catch (err) {
+    imageErrors.value[service.serviceId] = err.message || 'Could not save the image.'
+  } finally {
+    imageSaving.value[service.serviceId] = false
+  }
+}
 
 // Review moderation state
 const flaggedReviews = ref([])
@@ -210,6 +257,7 @@ function assignProvider(request) {
         <button :class="{ active: activeView === 'users' }" @click="activeView = 'users'">Users</button>
         <button :class="{ active: activeView === 'providers' }" @click="activeView = 'providers'">Service
           providers</button>
+        <button :class="{ active: activeView === 'services' }" @click="activeView = 'services'">Services</button>
         <button :class="{ active: activeView === 'requests' }" @click="activeView = 'requests'">Requests</button>
         <button :class="{ active: activeView === 'chat' }" @click="activeView = 'chat'">Chat approvals</button>
         <button :class="{ active: activeView === 'blocks' }" @click="activeView = 'blocks'">Block requests</button>
@@ -339,6 +387,51 @@ function assignProvider(request) {
                       v-else-if="provider.status === 'blocked'" class="primary small"
                       @click="$emit('activate-provider', provider.id)">Unblock</button><button v-else
                       class="secondary small" @click="$emit('reject-provider', provider.id)">Block</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </template>
+
+      <template v-if="activeView === 'services'">
+        <section class="ops-panel">
+          <div class="panel-heading">
+            <h2>Service catalogue photos</h2><span>Showing {{ catalogServices.length }} services</span>
+          </div>
+          <p class="muted">Paste an https image link for each service. Leave it empty to use the default photo.</p>
+          <div v-if="catalogLoading" class="empty-state">Loading services...</div>
+          <div v-else-if="catalogError" class="empty-state">{{ catalogError }}</div>
+          <div v-else-if="catalogServices.length === 0" class="empty-state">No services in the catalogue yet.</div>
+          <div v-else class="responsive-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th>Preview</th>
+                  <th>Image link</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="service in catalogServices" :key="service.serviceId">
+                  <td><strong>{{ service.serviceName }}</strong><small>{{ service.icon }}</small></td>
+                  <td>
+                    <small v-if="!imageDrafts[service.serviceId]">Default photo</small>
+                    <small v-else-if="previewFailed[service.serviceId] === imageDrafts[service.serviceId]"
+                      class="error-text">Can't load this image</small>
+                    <img v-else class="admin-service-thumb" :src="serviceImageSrc(imageDrafts[service.serviceId], 160)"
+                      :alt="service.serviceName" @error="previewFailed[service.serviceId] = imageDrafts[service.serviceId]" />
+                  </td>
+                  <td>
+                    <input v-model="imageDrafts[service.serviceId]" type="url" maxlength="500"
+                      :aria-label="`Image link for ${service.serviceName}`" placeholder="https://..." />
+                    <small v-if="imageErrors[service.serviceId]" class="error-text">{{ imageErrors[service.serviceId]
+                    }}</small>
+                  </td>
+                  <td><button class="primary small" :disabled="imageSaving[service.serviceId]"
+                      @click="saveServiceImage(service)">{{ imageSaving[service.serviceId] ? 'Saving...' : 'Save'
+                      }}</button></td>
                 </tr>
               </tbody>
             </table>

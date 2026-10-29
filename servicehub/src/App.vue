@@ -1024,7 +1024,7 @@ async function updateBlockRequest({ id, status }) {
         @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @approve-provider="approveProvider"
         @reject-provider="rejectProvider" @activate-provider="activateProvider" @block-customer="blockCustomer"
         @activate-customer="activateCustomer" @assign-request="assignRequest" @approve-chat="approveChat"
-        @reject-chat="rejectChat" @block-status-change="updateBlockRequest" />
+        @reject-chat="rejectChat" @block-status-change="updateBlockRequest" @services-changed="loadServices" />
 
       <TrackingPage v-else-if="currentPage === 'tracking'" :requests="requests"
         :selected-request="selectedTrackingRequest" @back="goTo(signedInUser ? 'dashboard' : 'home')" />

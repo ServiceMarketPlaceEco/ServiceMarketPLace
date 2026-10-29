@@ -22,8 +22,9 @@ export class Service {
   @Column({ nullable: true, length: 100 })
   icon: string;
 
-  @Column({ name: 'image_url', nullable: true, length: 500 })
-  imageUrl: string;
+  // null means no photo; the frontend then shows its default image
+  @Column({ name: 'image_url', type: 'varchar', nullable: true, length: 500 })
+  imageUrl: string | null;
 
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
