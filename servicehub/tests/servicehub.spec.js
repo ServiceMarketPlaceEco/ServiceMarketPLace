@@ -422,3 +422,46 @@ test('29. reloading keeps the user on the page they were viewing', async ({ page
   await page.goBack()
   await expect(page).toHaveURL(/#home$/)
 })
+
+// ---------- Admin service photos ----------
+
+test('30. admin can set a service photo from the dashboard', async ({ page }) => {
+  await mockAdminApi(page)
+  await page.route('**/api/auth/login', route => route.fulfill({ json: MOCK_ADMIN_LOGIN }))
+  // the preview should not depend on reaching Unsplash: a 1x1 png, and a 404 for the broken link
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
+  await page.route('https://images.unsplash.com/**', route => route.request().url().includes('missing')
+    ? route.fulfill({ status: 404 })
+    : route.fulfill({ contentType: 'image/png', body: png }))
+  let sent = null
+  await page.route('**/api/services/s-2', route => {
+    sent = { method: route.request().method(), body: JSON.parse(route.request().postData() || '{}') }
+    return route.fulfill({ json: { ...MOCK_SERVICES[1], ...sent.body } })
+  })
+
+  await signInAs(page, 'admin@servicehub.local')
+  await page.getByRole('button', { name: 'Services', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Service catalogue photos' })).toBeVisible()
+
+  const field = page.getByLabel('Image link for AC Repair')
+  // a non-https link is caught before anything is sent
+  await field.fill('http://example.com/ac.jpg')
+  await page.getByRole('row', { name: /AC Repair/ }).getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByText('Use a full https:// image link.')).toBeVisible()
+  expect(sent).toBeNull()
+
+  await field.fill('https://images.unsplash.com/photo-123')
+  await page.getByRole('row', { name: /AC Repair/ }).getByRole('button', { name: 'Save' }).click()
+  await expect.poll(() => sent?.body.imageUrl).toBe('https://images.unsplash.com/photo-123')
+  expect(sent.method).toBe('PUT')
+  await expect(page.getByRole('img', { name: 'AC Repair' })).toHaveAttribute('src', /photo-123\?auto=format/)
+
+  // a link that does not load is flagged in the preview
+  await field.fill('https://images.unsplash.com/missing')
+  await expect(page.getByText("Can't load this image")).toBeVisible()
+
+  // clearing the field removes the photo
+  await field.fill('')
+  await page.getByRole('row', { name: /AC Repair/ }).getByRole('button', { name: 'Save' }).click()
+  await expect.poll(() => sent?.body.imageUrl).toBeNull()
+})

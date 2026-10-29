@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as api from './services/api'
+import { serviceImageFor } from './data/services'
 
 import NavBar from './components/User/NavBar.vue'
 import HeroSection from './components/User/HeroSection.vue'
@@ -342,7 +343,7 @@ async function loadServices() {
         category: service.category || ICON_CATEGORY_MAP[service.icon] || 'General',
         price: bestOffer?.price ?? 0,
         currency: service.currency || 'BDT',
-        image: service.imageUrl || service.image || '',
+        image: service.imageUrl || service.image || serviceImageFor(service),
         description: service.description || '',
         upfrontPayment: service.upfrontPayment || null
       }
@@ -1023,7 +1024,7 @@ async function updateBlockRequest({ id, status }) {
         @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @approve-provider="approveProvider"
         @reject-provider="rejectProvider" @activate-provider="activateProvider" @block-customer="blockCustomer"
         @activate-customer="activateCustomer" @assign-request="assignRequest" @approve-chat="approveChat"
-        @reject-chat="rejectChat" @block-status-change="updateBlockRequest" />
+        @reject-chat="rejectChat" @block-status-change="updateBlockRequest" @services-changed="loadServices" />
 
       <TrackingPage v-else-if="currentPage === 'tracking'" :requests="requests"
         :selected-request="selectedTrackingRequest" @back="goTo(signedInUser ? 'dashboard' : 'home')" />

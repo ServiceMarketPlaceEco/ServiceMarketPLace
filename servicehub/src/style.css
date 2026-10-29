@@ -3246,3 +3246,11 @@ td small {
 .moderation-tabs button:not(.active):hover {
   color: var(--text, #333);
 }
+/* admin service catalogue photo preview */
+.admin-service-thumb {
+  width: 96px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 10px;
+  background: var(--brand-soft);
+}
