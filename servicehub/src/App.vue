@@ -122,6 +122,20 @@ function resolveCustomerEmail(user) {
   return clean(user.email) || `${clean(user.name).toLowerCase().replace(/\s+/g, '.')}@servicehub.local`
 }
 
+// "Email already registered" is accurate but confusing when the user never
+// typed an email - it's the name-based fallback that collided with an
+// earlier account under the same name. Say that plainly in that case.
+function describePhoneVerificationError(err, user) {
+  const emailWasTyped = !!clean(user.email)
+  const message = err.message || ''
+
+  if (!emailWasTyped && /email/i.test(message)) {
+    return `An account already exists for "${clean(user.name)}". Sign in instead, or use a different name (or enter a specific email) to create a new one.`
+  }
+
+  return message || 'We could not send a confirmation code. Please try again.'
+}
+
 async function sendCustomerVerificationCode(user) {
   customerVerificationBusy.value = true
   customerVerificationError.value = ''
@@ -141,7 +155,7 @@ async function sendCustomerVerificationCode(user) {
     showCustomerVerification.value = true
     startCustomerResendTimer()
   } catch (err) {
-    alert(err.message || 'We could not send a confirmation code. Please try again.')
+    alert(describePhoneVerificationError(err, user))
   } finally {
     customerVerificationBusy.value = false
   }
@@ -164,7 +178,7 @@ async function resendCustomerVerificationCode() {
     customerVerificationInput.value = ''
     startCustomerResendTimer()
   } catch (err) {
-    customerVerificationError.value = err.message || 'We could not resend the code.'
+    customerVerificationError.value = describePhoneVerificationError(err, user)
   } finally {
     customerVerificationBusy.value = false
   }
