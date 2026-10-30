@@ -135,7 +135,29 @@ export class AuthService {
   // Sends (for now: generates and logs/returns, since no SMS provider is
   // configured yet) a 6-digit code for a phone number, ahead of customer
   // signup. Swapping in a real SMS provider later only touches this method.
-  async requestPhoneVerification(phone: string): Promise<{ verificationId: string; devCode?: string }> {
+  //
+  // username/email are optional and, when passed, are checked for conflicts
+  // up front - so a taken username or email fails before the SMS round trip
+  // instead of after the customer has already typed in the code.
+  async requestPhoneVerification(
+    phone: string,
+    username?: string,
+    email?: string,
+  ): Promise<{ verificationId: string; devCode?: string }> {
+    if (email) {
+      const existingEmail = await this.customerRepository.findOne({ where: { email } });
+      if (existingEmail) {
+        throw new ConflictException('Email already registered');
+      }
+    }
+
+    if (username) {
+      const existingUsername = await this.customerRepository.findOne({ where: { username } });
+      if (existingUsername) {
+        throw new ConflictException('Username already taken');
+      }
+    }
+
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const codeHash = await bcrypt.hash(code, 10);
     const expiresAt = new Date(Date.now() + PHONE_VERIFICATION_TTL_MS);

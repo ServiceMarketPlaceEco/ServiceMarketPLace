@@ -218,13 +218,15 @@ function resultArray(result) {
 // ---------- Authentication ----------
 
 export function requestCustomerPhoneVerification({
-  phone
+  phone,
+  username,
+  email
 }) {
   return request(
     '/auth/phone-verification/request',
     {
       method: 'POST',
-      body: { phone }
+      body: { phone, username, email }
     }
   )
 }

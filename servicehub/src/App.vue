@@ -108,13 +108,26 @@ function startCustomerResendTimer() {
   }, 1000)
 }
 
+// Same fallback the backend will end up storing if the user leaves the
+// optional email field blank. Computed once here so the availability check
+// below (and the final registerCustomer call) agree on the same address.
+function resolveCustomerEmail(user) {
+  return clean(user.email) || `${clean(user.name).toLowerCase().replace(/\s+/g, '.')}@servicehub.local`
+}
+
 async function sendCustomerVerificationCode(user) {
   customerVerificationBusy.value = true
   customerVerificationError.value = ''
 
   try {
-    // The backend creates the code, sends the SMS and returns an opaque request ID.
-    const result = await api.requestCustomerPhoneVerification({ phone: user.phone })
+    // Checks the username/email are free and, if so, creates the code and
+    // sends the SMS. A taken username or email fails here, before the SMS
+    // round trip, instead of after the code is confirmed.
+    const result = await api.requestCustomerPhoneVerification({
+      phone: user.phone,
+      username: user.username,
+      email: resolveCustomerEmail(user)
+    })
     customerVerificationRequestId.value = result.verificationId
     pendingCustomerRegistration.value = { ...user }
     customerVerificationInput.value = ''
@@ -135,7 +148,11 @@ async function resendCustomerVerificationCode() {
   customerVerificationBusy.value = true
   customerVerificationError.value = ''
   try {
-    const result = await api.requestCustomerPhoneVerification({ phone: user.phone })
+    const result = await api.requestCustomerPhoneVerification({
+      phone: user.phone,
+      username: user.username,
+      email: resolveCustomerEmail(user)
+    })
     customerVerificationRequestId.value = result.verificationId
     customerVerificationInput.value = ''
     startCustomerResendTimer()
@@ -584,7 +601,7 @@ async function verifyAndCreateCustomer() {
 
   customerVerificationBusy.value = true
   try {
-    const email = clean(user.email) || `${clean(user.name).toLowerCase().replace(/\s+/g, '.')}@servicehub.local`
+    const email = resolveCustomerEmail(user)
 
     // The backend validates the SMS code and returns a short-lived token.
     const verification = await api.verifyCustomerPhoneCode({
