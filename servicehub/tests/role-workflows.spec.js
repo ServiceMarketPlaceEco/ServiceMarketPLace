@@ -56,3 +56,20 @@ test('admin signs in and opens user and provider management', async ({ page }) =
   await page.getByRole('button', { name: 'Service providers', exact: true }).click()
   await expect(page.locator('.ops-topbar h1')).toContainText('providers')
 })
+
+test('service cards show a photo for known services and a placeholder otherwise', async ({ page }) => {
+  // the backend catalogue has no image field, so photos come from the local catalogue
+  services.push({ serviceId: 's2', serviceName: 'Pet Sitting', description: 'Pet help', icon: 'unknown', isActive: true })
+  // a 1x1 png so the test does not depend on reaching Unsplash
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
+  await page.route('https://images.unsplash.com/**', route => route.fulfill({ contentType: 'image/png', body: png }))
+
+  await signIn(page, 'customer', 'customer@test.com')
+  await page.getByRole('button', { name: 'Request another service' }).click()
+
+  const photo = page.locator('.service-card img.service-image')
+  await expect(photo).toHaveCount(1)
+  await expect(photo).toHaveAttribute('src', /^https:\/\/images\.unsplash\.com\/photo-1581578731548-c64695cc6952\?auto=format/)
+  await expect(page.getByRole('img', { name: 'Pet Sitting' })).toHaveClass(/service-image-placeholder/)
+  services.pop()
+})

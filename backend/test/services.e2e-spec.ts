@@ -183,6 +183,58 @@ describe('Services endpoints (integration)', () => {
     });
   });
 
+  describe('PUT /api/services/:id image (admin only)', () => {
+    const adminToken = () => signTestToken({ sub: 'admin-1', email: 'a@x.com', userType: 'admin' });
+
+    beforeEach(() => {
+      adminRepo.findOne.mockResolvedValue({ id: 'admin-1', isActive: true });
+      serviceRepo.findOne.mockResolvedValue({ serviceId: 's-1', serviceName: 'AC Repair', imageUrl: null });
+    });
+
+    it('lets an admin set the photo', async () => {
+      const res = await request(app.getHttpServer())
+        .put('/api/services/s-1')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ imageUrl: 'https://images.unsplash.com/photo-1' })
+        .expect(200);
+
+      expect(res.body.imageUrl).toBe('https://images.unsplash.com/photo-1');
+      expect(res.body.serviceName).toBe('AC Repair');
+    });
+
+    it('lets an admin clear the photo with null', async () => {
+      serviceRepo.findOne.mockResolvedValue({ serviceId: 's-1', imageUrl: 'https://images.unsplash.com/photo-1' });
+
+      const res = await request(app.getHttpServer())
+        .put('/api/services/s-1')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ imageUrl: null })
+        .expect(200);
+
+      expect(res.body.imageUrl).toBeNull();
+    });
+
+    it('returns 400 for a photo link that is not https', async () => {
+      await request(app.getHttpServer())
+        .put('/api/services/s-1')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ imageUrl: 'javascript:alert(1)' })
+        .expect(400);
+      expect(serviceRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 when a customer tries to change the photo', async () => {
+      customerRepo.findOne.mockResolvedValue({ customerId: 'cust-1', isActive: true, isBlocked: false });
+      const token = signTestToken({ sub: 'cust-1', email: 'c@x.com', userType: 'customer' });
+
+      await request(app.getHttpServer())
+        .put('/api/services/s-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ imageUrl: 'https://images.unsplash.com/photo-1' })
+        .expect(403);
+    });
+  });
+
   // testConfigService has no OPENAI_API_KEY, so these exercise the rule
   // based matcher end to end. keep this block last: it uses up the rate limit.
   describe('POST /api/services/match-transcript (public, rate limited)', () => {

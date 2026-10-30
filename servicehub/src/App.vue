@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as api from './services/api'
+import { serviceImageFor } from './data/services'
 
 import NavBar from './components/User/NavBar.vue'
 import HeroSection from './components/User/HeroSection.vue'
@@ -54,6 +55,12 @@ function digitsOnly(value) {
 
 // The current user and theme are cached only for browser-session continuity.
 const savedUser = JSON.parse(localStorage.getItem('servicehub-user') || 'null')
+
+// The visible page is mirrored into the URL hash (e.g. #reviews) so a browser
+// reload, bookmark or back/forward keeps the user on the same page.
+function pageFromHash() {
+  return decodeURIComponent(window.location.hash.replace(/^#\/?/, ''))
+}
 
 const currentPage = ref(savedUser ? 'dashboard' : 'home')
 const theme = ref(localStorage.getItem('servicehub-theme') || 'light')
@@ -234,6 +241,17 @@ watch(currentPage, async () => {
   appMain.value?.focus({ preventScroll: true })
 })
 
+watch(currentPage, page => {
+  if (pageFromHash() !== page) window.history.pushState(null, '', `#${page}`)
+})
+
+function syncPageFromHash() {
+  const page = pageFromHash()
+  if (page && page !== currentPage.value) goTo(page)
+}
+window.addEventListener('popstate', syncPageFromHash)
+onBeforeUnmount(() => window.removeEventListener('popstate', syncPageFromHash))
+
 const isOpsDashboard = computed(() => currentPage.value === 'dashboard' && ['admin', 'provider'].includes(signedInUser.value?.role))
 
 function goTo(page) {
@@ -287,8 +305,25 @@ function goTo(page) {
     return
   }
 
+  // The dashboard only exists for a signed-in user.
+  if (targetPage === 'dashboard' && !signedInUser.value) {
+    currentPage.value = 'signin'
+    return
+  }
+
+  // The request form needs a chosen service, which is not kept across reloads.
+  if (targetPage === 'request' && !selectedService.value) {
+    goTo('services')
+    return
+  }
+
   currentPage.value = targetPage
 }
+
+// Restore the page named in the URL after a reload, and record the starting
+// page without adding an extra history entry.
+if (pageFromHash()) goTo(pageFromHash())
+window.history.replaceState(null, '', `#${currentPage.value}`)
 
 function openTracking(request = null) {
   selectedTrackingRequest.value = request
@@ -325,7 +360,7 @@ async function loadServices() {
         category: service.category || ICON_CATEGORY_MAP[service.icon] || 'General',
         price: bestOffer?.price ?? 0,
         currency: service.currency || 'BDT',
-        image: service.imageUrl || service.image || '',
+        image: service.imageUrl || service.image || serviceImageFor(service),
         description: service.description || '',
         upfrontPayment: service.upfrontPayment || null
       }
@@ -1006,7 +1041,7 @@ async function updateBlockRequest({ id, status }) {
         @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @approve-provider="approveProvider"
         @reject-provider="rejectProvider" @activate-provider="activateProvider" @block-customer="blockCustomer"
         @activate-customer="activateCustomer" @assign-request="assignRequest" @approve-chat="approveChat"
-        @reject-chat="rejectChat" @block-status-change="updateBlockRequest" />
+        @reject-chat="rejectChat" @block-status-change="updateBlockRequest" @services-changed="loadServices" />
 
       <TrackingPage v-else-if="currentPage === 'tracking'" :requests="requests"
         :selected-request="selectedTrackingRequest" @back="goTo(signedInUser ? 'dashboard' : 'home')" />

@@ -1,7 +1,8 @@
 <script setup>
-import { formatBDT } from '../../data/services'
+import { computed, ref, watch } from 'vue'
+import { formatBDT, serviceImageSrc } from '../../data/services'
 
-defineProps({
+const props = defineProps({
   service: {
     type: Object,
     required: true
@@ -9,12 +10,21 @@ defineProps({
 })
 
 defineEmits(['request'])
+
+// Show a placeholder instead of a broken image when there is no photo or it fails to load.
+const imageFailed = ref(false)
+const imageSrc = computed(() => serviceImageSrc(props.service.image))
+watch(imageSrc, () => { imageFailed.value = false })
 </script>
 
 <template>
   <article class="service-card clean-card">
     <div class="service-photo-wrap">
-      <img class="service-image" :src="`${service.image}?auto=format&fit=crop&w=900&q=80`" :alt="service.title" />
+      <img v-if="imageSrc && !imageFailed" class="service-image" :src="imageSrc" :alt="service.title"
+        loading="lazy" @error="imageFailed = true" />
+      <div v-else class="service-image-placeholder" role="img" :aria-label="service.title">
+        {{ service.title?.charAt(0) || 'S' }}
+      </div>
       <span class="verified-badge">Verified local</span>
     </div>
 

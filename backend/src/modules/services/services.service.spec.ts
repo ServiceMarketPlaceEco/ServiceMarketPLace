@@ -3,7 +3,10 @@
 // run with: npm test
 
 import { NotFoundException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { ServicesService } from './services.service';
+import { CreateServiceDto } from './dto';
 
 const mockRepo = () => ({
   find: jest.fn(),
@@ -100,6 +103,29 @@ describe('ServicesService', () => {
       expect(result.serviceName).toBe('New Name');
       // untouched fields should stay the same
       expect(result.icon).toBe('home');
+    });
+
+    it('stores a new photo url for the service', async () => {
+      repo.findOne.mockResolvedValue({ serviceId: 's-1', serviceName: 'AC Repair', imageUrl: null });
+
+      const result = await service.update('s-1', { imageUrl: 'https://images.unsplash.com/photo-1' });
+
+      expect(result.imageUrl).toBe('https://images.unsplash.com/photo-1');
+      expect(result.serviceName).toBe('AC Repair');
+    });
+  });
+
+  describe('CreateServiceDto imageUrl', () => {
+    const check = (imageUrl: string) =>
+      validate(plainToInstance(CreateServiceDto, { serviceName: 'AC Repair', imageUrl }));
+
+    it('accepts an https photo url', async () => {
+      expect(await check('https://images.unsplash.com/photo-1')).toHaveLength(0);
+    });
+
+    it('rejects a value that is not an https url', async () => {
+      expect(await check('javascript:alert(1)')).not.toHaveLength(0);
+      expect(await check('http://example.com/a.jpg')).not.toHaveLength(0);
     });
   });
 
