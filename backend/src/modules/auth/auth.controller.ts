@@ -46,7 +46,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Send a verification code to a phone number ahead of customer signup' })
   @ApiResponse({ status: 200, description: 'Verification code sent' })
   async requestPhoneVerification(@Body() dto: RequestPhoneVerificationDto) {
-    return this.authService.requestPhoneVerification(dto.phone);
+    return this.authService.requestPhoneVerification(dto.phone, dto.username, dto.email);
   }
 
   @Post('phone-verification/verify')
