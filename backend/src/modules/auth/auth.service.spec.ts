@@ -188,6 +188,26 @@ describe('AuthService', () => {
   });
 
   describe('requestPhoneVerification / verifyPhoneCode', () => {
+    it('rejects an email that is already registered, before creating a code', async () => {
+      customerRepo.findOne.mockResolvedValue({ customerId: 'existing' });
+
+      await expect(
+        service.requestPhoneVerification('01700000000', undefined, 'taken@example.com'),
+      ).rejects.toThrow(ConflictException);
+      expect(phoneVerificationRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects a username that is already taken, before creating a code', async () => {
+      customerRepo.findOne.mockImplementation(async ({ where }: any) =>
+        where.username ? { customerId: 'existing' } : null,
+      );
+
+      await expect(
+        service.requestPhoneVerification('01700000000', 'takenuser', 'new@example.com'),
+      ).rejects.toThrow(ConflictException);
+      expect(phoneVerificationRepo.save).not.toHaveBeenCalled();
+    });
+
     it('creates a verification row and returns a devCode outside production', async () => {
       configService.get.mockImplementation((key: string, fallback?: string) => {
         if (key === 'NODE_ENV') return 'test';

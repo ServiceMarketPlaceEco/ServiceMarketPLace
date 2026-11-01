@@ -173,6 +173,18 @@ export class RequestPhoneVerificationDto {
   @IsNotEmpty()
   @IsString()
   phone: string;
+
+  // Optional: when supplied, lets the caller check these are free before the
+  // SMS goes out, instead of only finding out after the code is confirmed.
+  @ApiPropertyOptional({ example: 'sam24' })
+  @IsOptional()
+  @Matches(USERNAME_PATTERN, { message: USERNAME_MESSAGE })
+  username?: string;
+
+  @ApiPropertyOptional({ example: 'john@example.com' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 }
 
 export class VerifyPhoneCodeDto {

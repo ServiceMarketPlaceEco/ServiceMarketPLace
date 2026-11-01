@@ -115,20 +115,47 @@ function startCustomerResendTimer() {
   }, 1000)
 }
 
+// Same fallback the backend will end up storing if the user leaves the
+// optional email field blank. Computed once here so the availability check
+// below (and the final registerCustomer call) agree on the same address.
+function resolveCustomerEmail(user) {
+  return clean(user.email) || `${clean(user.name).toLowerCase().replace(/\s+/g, '.')}@servicehub.local`
+}
+
+// "Email already registered" is accurate but confusing when the user never
+// typed an email - it's the name-based fallback that collided with an
+// earlier account under the same name. Say that plainly in that case.
+function describePhoneVerificationError(err, user) {
+  const emailWasTyped = !!clean(user.email)
+  const message = err.message || ''
+
+  if (!emailWasTyped && /email/i.test(message)) {
+    return `An account already exists for "${clean(user.name)}". Sign in instead, or use a different name (or enter a specific email) to create a new one.`
+  }
+
+  return message || 'We could not send a confirmation code. Please try again.'
+}
+
 async function sendCustomerVerificationCode(user) {
   customerVerificationBusy.value = true
   customerVerificationError.value = ''
 
   try {
-    // The backend creates the code, sends the SMS and returns an opaque request ID.
-    const result = await api.requestCustomerPhoneVerification({ phone: user.phone })
+    // Checks the username/email are free and, if so, creates the code and
+    // sends the SMS. A taken username or email fails here, before the SMS
+    // round trip, instead of after the code is confirmed.
+    const result = await api.requestCustomerPhoneVerification({
+      phone: user.phone,
+      username: user.username,
+      email: resolveCustomerEmail(user)
+    })
     customerVerificationRequestId.value = result.verificationId
     pendingCustomerRegistration.value = { ...user }
     customerVerificationInput.value = ''
     showCustomerVerification.value = true
     startCustomerResendTimer()
   } catch (err) {
-    alert(err.message || 'We could not send a confirmation code. Please try again.')
+    alert(describePhoneVerificationError(err, user))
   } finally {
     customerVerificationBusy.value = false
   }
@@ -142,12 +169,16 @@ async function resendCustomerVerificationCode() {
   customerVerificationBusy.value = true
   customerVerificationError.value = ''
   try {
-    const result = await api.requestCustomerPhoneVerification({ phone: user.phone })
+    const result = await api.requestCustomerPhoneVerification({
+      phone: user.phone,
+      username: user.username,
+      email: resolveCustomerEmail(user)
+    })
     customerVerificationRequestId.value = result.verificationId
     customerVerificationInput.value = ''
     startCustomerResendTimer()
   } catch (err) {
-    customerVerificationError.value = err.message || 'We could not resend the code.'
+    customerVerificationError.value = describePhoneVerificationError(err, user)
   } finally {
     customerVerificationBusy.value = false
   }
@@ -619,7 +650,7 @@ async function verifyAndCreateCustomer() {
 
   customerVerificationBusy.value = true
   try {
-    const email = clean(user.email) || `${clean(user.name).toLowerCase().replace(/\s+/g, '.')}@servicehub.local`
+    const email = resolveCustomerEmail(user)
 
     // The backend validates the SMS code and returns a short-lived token.
     const verification = await api.verifyCustomerPhoneCode({
