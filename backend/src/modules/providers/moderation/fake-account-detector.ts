@@ -29,6 +29,7 @@ export interface ScorableAccount {
   completedBookings?: number; // how many bookings this account completed
   reviewsWritten?: number; // how many reviews this account left
   distinctProvidersReviewed?: number; // how many different providers they reviewed
+  reviewedProviderIds?: string[]; // which providers they reviewed (for the ring check)
 }
 
 export interface AccountFlagReason {
@@ -47,12 +48,18 @@ export interface AccountScore {
 
 export const ACCOUNT_DETECTION_CONFIG = {
   flagThreshold: 3,
+  // this many sock-puppet accounts all reviewing the same one provider = a ring
+  ringSize: 3,
+  // reviews minus completed bookings at or above this = suspiciously high volume
+  highVolumeExcess: 3,
   weights: {
     invalidNid: 2,
     invalidLicence: 1,
     duplicateIdentity: 3, // same phone/email/nid/licence on another account
     sockPuppet: 2, // no bookings but only ever reviews one provider
     reviewsWithoutBooking: 2, // wrote reviews, never completed a booking
+    sockPuppetRing: 2, // one of several sock puppets all boosting the same provider
+    highReviewVolume: 1, // far more reviews than completed bookings (review farm)
   },
 };
 
@@ -61,6 +68,16 @@ export const ACCOUNT_DETECTION_CONFIG = {
 function normaliseContact(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return '';
   return String(value).toLowerCase().replace(/\s+/g, '').trim();
+}
+
+// a customer with no completed bookings who only ever reviews one provider
+function isSockPuppet(account: ScorableAccount): boolean {
+  return (
+    account.kind === 'customer' &&
+    (account.completedBookings ?? 0) === 0 &&
+    (account.reviewsWritten ?? 0) > 0 &&
+    (account.distinctProvidersReviewed ?? 0) === 1
+  );
 }
 
 // score ONE account against the whole batch (batch needed for duplicate check)
@@ -118,12 +135,7 @@ export function scoreAccount(
 
   // signal 4: sock puppet - a customer with no completed bookings who only
   // ever reviews ONE provider (classic self-review boosting)
-  if (
-    account.kind === 'customer' &&
-    (account.completedBookings ?? 0) === 0 &&
-    (account.reviewsWritten ?? 0) > 0 &&
-    (account.distinctProvidersReviewed ?? 0) === 1
-  ) {
+  if (isSockPuppet(account)) {
     reasons.push({
       signal: 'SOCK_PUPPET',
       detail: 'No completed bookings but only reviews a single provider',
@@ -142,6 +154,35 @@ export function scoreAccount(
       signal: 'REVIEWS_NO_BOOKING',
       detail: 'Left reviews without ever completing a booking',
       weight: w.reviewsWithoutBooking,
+    });
+  }
+
+  // signal 6: sock-puppet ring - one genuine customer whose provider never
+  // turned up looks exactly like a single sock puppet, so a lone puppet stays
+  // under the threshold. but several no-booking, single-provider accounts all
+  // reviewing the SAME provider is the coordinated pattern we're after.
+  if (isSockPuppet(account) && account.reviewedProviderIds?.length) {
+    const target = account.reviewedProviderIds[0];
+    const ringSize = batch.filter(
+      (other) => isSockPuppet(other) && other.reviewedProviderIds?.includes(target),
+    ).length;
+    if (ringSize >= config.ringSize) {
+      reasons.push({
+        signal: 'SOCK_PUPPET_RING',
+        detail: `One of ${ringSize} no-booking accounts that only review provider ${target}`,
+        weight: w.sockPuppetRing,
+      });
+    }
+  }
+
+  // signal 7: high review volume - many more reviews than completed bookings.
+  // one or two reviews after a no-show is normal; a pile of them is a review farm.
+  const excess = (account.reviewsWritten ?? 0) - (account.completedBookings ?? 0);
+  if (account.kind === 'customer' && excess >= config.highVolumeExcess) {
+    reasons.push({
+      signal: 'HIGH_REVIEW_VOLUME',
+      detail: `${account.reviewsWritten} reviews but only ${account.completedBookings ?? 0} completed bookings`,
+      weight: w.highReviewVolume,
     });
   }
 

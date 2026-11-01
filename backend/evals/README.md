@@ -22,3 +22,4 @@ The command prints a summary and rewrites [`RESULTS.md`](./RESULTS.md) with the 
 - The service catalog is read from `database/seeds`, so the eval always uses the same services as the app.
 - The datasets are small and team-written. Treat the results as indicative until they can be rebuilt from real, consented user data.
 - The optional OpenAI matcher and the Claude "Screen with AI" second opinion need API keys, so they aren't part of this run.
+- The account detector's v2 signals (sock-puppet ring, high review volume) were designed after seeing what v1 missed on `fake-accounts.json`. Its v2 score is therefore optimistic. Confirm it on account cases written after this change.

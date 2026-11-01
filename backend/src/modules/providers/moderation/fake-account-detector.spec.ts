@@ -159,6 +159,95 @@ describe('scoreAccount - threshold', () => {
   });
 });
 
+describe('scoreAccount - sock-puppet rings', () => {
+  // a no-booking customer who only ever reviewed one provider
+  function puppet(id: string, target: string): ScorableAccount {
+    return legitAccount({
+      accountId: id,
+      email: `${id}@example.com`,
+      phone: null,
+      completedBookings: 0,
+      reviewsWritten: 1,
+      distinctProvidersReviewed: 1,
+      reviewedProviderIds: [target],
+    });
+  }
+
+  it('flags each account in a ring of sock puppets boosting one provider', () => {
+    const ring = [puppet('a', 'prov-x'), puppet('b', 'prov-x'), puppet('c', 'prov-x')];
+    for (const acc of ring) {
+      const result = scoreAccount(acc, ring);
+      expect(result.reasons.some((r) => r.signal === 'SOCK_PUPPET_RING')).toBe(true);
+      expect(result.flagged).toBe(true);
+    }
+  });
+
+  it('leaves a lone no-booking reviewer under the threshold (e.g. a provider no-show)', () => {
+    const lone = puppet('lone', 'prov-x');
+    const others = [puppet('o1', 'prov-y'), puppet('o2', 'prov-z')];
+    const result = scoreAccount(lone, [lone, ...others]);
+    expect(result.reasons.some((r) => r.signal === 'SOCK_PUPPET_RING')).toBe(false);
+    expect(result.flagged).toBe(false);
+  });
+
+  it('needs ringSize accounts on the same provider', () => {
+    const pair = [puppet('a', 'prov-x'), puppet('b', 'prov-x')];
+    expect(ACCOUNT_DETECTION_CONFIG.ringSize).toBe(3);
+    expect(scoreAccount(pair[0], pair).flagged).toBe(false);
+  });
+
+  it('does not count customers who actually booked towards a ring', () => {
+    const booked = legitAccount({
+      accountId: 'real',
+      email: 'real@example.com',
+      completedBookings: 1,
+      reviewsWritten: 1,
+      distinctProvidersReviewed: 1,
+      reviewedProviderIds: ['prov-x'],
+    });
+    const batch = [puppet('a', 'prov-x'), puppet('b', 'prov-x'), booked];
+    expect(scoreAccount(batch[0], batch).reasons.some((r) => r.signal === 'SOCK_PUPPET_RING')).toBe(false);
+  });
+});
+
+describe('scoreAccount - high review volume', () => {
+  it('flags a review-farm account with many reviews and no bookings', () => {
+    const farm = legitAccount({
+      completedBookings: 0,
+      reviewsWritten: 4,
+      distinctProvidersReviewed: 4,
+    });
+    const result = scoreAccount(farm, [farm]);
+    expect(result.reasons.map((r) => r.signal)).toEqual(
+      expect.arrayContaining(['REVIEWS_NO_BOOKING', 'HIGH_REVIEW_VOLUME']),
+    );
+    expect(result.flagged).toBe(true);
+  });
+
+  it('does not flag a customer whose two reviews followed two no-shows', () => {
+    const unlucky = legitAccount({
+      completedBookings: 0,
+      reviewsWritten: 2,
+      distinctProvidersReviewed: 2,
+    });
+    const result = scoreAccount(unlucky, [unlucky]);
+    expect(result.reasons.some((r) => r.signal === 'HIGH_REVIEW_VOLUME')).toBe(false);
+    expect(result.flagged).toBe(false);
+  });
+
+  it('treats extra reviews from a customer who also books as a weak signal only', () => {
+    const keen = legitAccount({ completedBookings: 1, reviewsWritten: 4, distinctProvidersReviewed: 4 });
+    const result = scoreAccount(keen, [keen]);
+    expect(result.reasons.some((r) => r.signal === 'HIGH_REVIEW_VOLUME')).toBe(true);
+    expect(result.flagged).toBe(false);
+  });
+
+  it('ignores providers', () => {
+    const provider = legitAccount({ kind: 'provider', completedBookings: 0, reviewsWritten: 10 });
+    expect(scoreAccount(provider, [provider]).reasons).toHaveLength(0);
+  });
+});
+
 describe('scanAccounts - the admin queue', () => {
   it('returns only flagged accounts, worst first', () => {
     const sockPuppet = legitAccount({

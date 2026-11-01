@@ -70,6 +70,7 @@ export class AccountModerationService {
         completedBookings,
         reviewsWritten: reviews.length,
         distinctProvidersReviewed: distinctProviders,
+        reviewedProviderIds: Array.from(new Set(reviews.map(r => r.providerId))),
       });
     }
 

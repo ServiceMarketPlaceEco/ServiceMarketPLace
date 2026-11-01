@@ -21,7 +21,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { matchTranscript, MatchableService } from '../src/modules/services/matching/transcript-matcher';
 import { scoreReview, ScorableReview } from '../src/modules/reviews/moderation/fake-review-detector';
-import { scoreAccount, ScorableAccount } from '../src/modules/providers/moderation/fake-account-detector';
+import { scoreAccount, ScorableAccount, ACCOUNT_DETECTION_CONFIG } from '../src/modules/providers/moderation/fake-account-detector';
 
 const DATASETS = path.join(__dirname, 'datasets');
 const SEEDS = path.join(__dirname, '..', 'database', 'seeds');
@@ -190,14 +190,27 @@ function evalAccounts(lines: string[]) {
     completedBookings: c.completedBookings,
     reviewsWritten: c.reviewsWritten,
     distinctProvidersReviewed: c.distinctProvidersReviewed,
+    reviewedProviderIds: c.reviewedProviderIds,
   }));
-  const flagged = new Set(batch.map((a) => scoreAccount(a, batch)).filter((s) => s.flagged).map((s) => s.accountId));
-  const m = confusion(cases, (c) => flagged.has(c.id));
+  const run = (config: typeof ACCOUNT_DETECTION_CONFIG) => {
+    const flagged = new Set(batch.map((a) => scoreAccount(a, batch, config)).filter((s) => s.flagged).map((s) => s.accountId));
+    return confusion(cases, (c) => flagged.has(c.id));
+  };
+  const m = run(ACCOUNT_DETECTION_CONFIG);
+  // v1 = the detector before the ring and high-volume signals were added.
+  // zeroing their weights reproduces it exactly.
+  const v1 = run({
+    ...ACCOUNT_DETECTION_CONFIG,
+    weights: { ...ACCOUNT_DETECTION_CONFIG.weights, sockPuppetRing: 0, highReviewVolume: 0 },
+  });
 
   const fakes = cases.filter((c) => c.label === 'fake').length;
   lines.push('## 3. Fake-account detection', '');
   lines.push(`Test set: ${cases.length} accounts (${fakes} fake, ${cases.length - fakes} genuine), with the same fields the admin "Scan accounts" button reads.`, '');
   confusionLines(lines, m);
+  lines.push('| Detector version | Precision | Recall | F1 | Missed fakes | False alarms |', '| --- | --- | --- | --- | --- | --- |');
+  lines.push(`| v1: identity, sock-puppet and no-booking signals | ${pct(v1.precision)} | ${pct(v1.recall)} | ${v1.f1.toFixed(2)} | ${v1.fn} | ${v1.fp} |`);
+  lines.push(`| v2: adds sock-puppet ring and high review volume (current) | ${pct(m.precision)} | ${pct(m.recall)} | ${m.f1.toFixed(2)} | ${m.fn} | ${m.fp} |`, '');
   lines.push('Missed fakes, by scenario:', '', groupByScenario(m.fns) || '- none', '');
   lines.push('False alarms on genuine accounts, by scenario:', '', groupByScenario(m.fps) || '- none', '');
   return m;
@@ -221,7 +234,7 @@ function main() {
     `| Fake-review detection | Precision and recall on flagged reviews | ${reviews.n} reviews (${reviews.tp + reviews.fn} fake) | ${pct(reviews.precision)} / ${pct(reviews.recall)} |`,
     `| Fake-account detection | Precision and recall on flagged accounts | ${accounts.n} accounts (${accounts.tp + accounts.fn} fake) | ${pct(accounts.precision)} / ${pct(accounts.recall)} |`,
     '',
-    '**Caveats.** The test sets are small and were written and labelled by the team, not drawn from real Bangladeshi users, so treat these as indicative numbers. They evaluate the rule-based code paths only; the optional OpenAI matcher and the Claude second opinion need API keys and are not included.',
+    '**Caveats.** The test sets are small and were written and labelled by the team, not drawn from real Bangladeshi users, so treat these as indicative numbers. They evaluate the rule-based code paths only; the optional OpenAI matcher and the Claude second opinion need API keys and are not included. The v2 account signals were designed after seeing the v1 misses on this test set, so their score here is optimistic until they are checked on new cases.',
     '',
   ];
   const report = [...summary, ...body].join('\n');

@@ -73,6 +73,7 @@ describe('AccountModerationService', () => {
           completedBookings: 1,
           reviewsWritten: 3,
           distinctProvidersReviewed: 2,
+          reviewedProviderIds: ['p-1', 'p-2'],
         },
       ]);
     });
