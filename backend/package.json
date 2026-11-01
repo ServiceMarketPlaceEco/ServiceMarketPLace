@@ -19,6 +19,7 @@
     "test:cov:all": "jest -c jest.coverage.config.js --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "eval": "ts-node evals/run-evals.ts",
     "db:setup": "node database/setup.js",
     "db:reset": "node database/setup.js --reset"
   },
