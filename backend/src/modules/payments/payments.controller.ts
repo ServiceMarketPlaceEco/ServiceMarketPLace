@@ -6,6 +6,7 @@ import {
   Param,
   Query,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { PaymentsService } from './payments.service';
@@ -43,19 +44,25 @@ export class PaymentsController {
   ) {
     const payment = await this.paymentsService.findById(id);
 
-    // Verify access
+    // customers can only see their own payments. this used to answer 200
+    // with { error: 'Access denied' }, now it's a proper 403
     if (user.userType === 'customer' && payment.customerId !== user.userId) {
-      return { error: 'Access denied' };
+      throw new ForbiddenException('You do not have access to this payment');
     }
 
     return payment;
   }
 
   @Get('booking/:bookingId')
-  @ApiOperation({ summary: 'Get payment for a specific booking' })
+  @ApiOperation({ summary: 'Get payment for a specific booking (its customer, provider or an admin)' })
   @ApiResponse({ status: 200, description: 'Payment details', type: PaymentResponseDto })
-  async findByBooking(@Param('bookingId') bookingId: string) {
-    return this.paymentsService.findByBooking(bookingId);
+  @ApiResponse({ status: 403, description: 'Not part of this booking' })
+  @ApiResponse({ status: 404, description: 'Booking not found' })
+  async findByBooking(
+    @CurrentUser() user: CurrentUserData,
+    @Param('bookingId') bookingId: string,
+  ) {
+    return this.paymentsService.findByBookingForUser(bookingId, user);
   }
 
   @Get()
