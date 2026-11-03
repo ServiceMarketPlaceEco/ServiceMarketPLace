@@ -5,8 +5,9 @@
 
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import * as request from 'supertest';
 
 import { ChatbotController } from '../src/modules/chatbot/chatbot.controller';
@@ -16,11 +17,15 @@ import { applyMainConfig } from './test-helpers';
 const RATE_LIMIT = 5;
 
 async function buildApp(apiKey?: string) {
+  // A small AI limit so the rate-limit test is quick. @AiThrottle reads
+  // AI_RATE_LIMIT on each request; the global default is left high, like in
+  // app.module.ts, where the limiter runs on every route as an APP_GUARD.
+  process.env.AI_RATE_LIMIT = String(RATE_LIMIT);
   const moduleRef = await Test.createTestingModule({
-    // A small limit so the rate-limit test is quick. The real limit comes from AI_RATE_LIMIT.
-    imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: RATE_LIMIT }])],
+    imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 1000 }])],
     controllers: [ChatbotController],
     providers: [
+      { provide: APP_GUARD, useClass: ThrottlerGuard },
       ChatbotService,
       {
         provide: ConfigService,
@@ -36,6 +41,10 @@ async function buildApp(apiKey?: string) {
 }
 
 describe('Chatbot endpoint (integration)', () => {
+  afterAll(() => {
+    delete process.env.AI_RATE_LIMIT;
+  });
+
   let app: INestApplication;
   let fetchMock: jest.Mock;
 

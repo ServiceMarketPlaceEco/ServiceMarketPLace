@@ -4,7 +4,8 @@ import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import * as request from 'supertest';
 
 import { ServicesController } from '../src/modules/services/services.controller';
@@ -31,10 +32,14 @@ describe('Services endpoints (integration)', () => {
     customerRepo = mockRepo();
     adminRepo = mockRepo();
 
+    // the limiter runs on every route (APP_GUARD, like app.module.ts) with a
+    // high default, and @AiThrottle on match-transcript reads AI_RATE_LIMIT
+    process.env.AI_RATE_LIMIT = String(MATCH_RATE_LIMIT);
     const moduleRef = await Test.createTestingModule({
-      imports: [PassportModule, ThrottlerModule.forRoot([{ ttl: 60_000, limit: MATCH_RATE_LIMIT }])],
+      imports: [PassportModule, ThrottlerModule.forRoot([{ ttl: 60_000, limit: 1000 }])],
       controllers: [ServicesController],
       providers: [
+        { provide: APP_GUARD, useClass: ThrottlerGuard },
         ServicesService,
         ServiceMatchingService,
         JwtStrategy,
@@ -52,6 +57,7 @@ describe('Services endpoints (integration)', () => {
   });
 
   afterAll(async () => {
+    delete process.env.AI_RATE_LIMIT;
     await app.close();
   });
 

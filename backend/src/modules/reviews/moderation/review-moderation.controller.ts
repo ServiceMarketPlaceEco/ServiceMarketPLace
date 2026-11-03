@@ -25,6 +25,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { ReviewModerationService } from './review-moderation.service';
 import { JwtAuthGuard, AdminGuard } from '../../auth/guards';
+import { AiThrottle } from '../../../common/decorators/throttle.decorator';
 import { AiScreeningService, AiScreenReviewDto } from '../../../common/ai';
 
 @ApiTags('reviews')
@@ -53,6 +54,8 @@ export class ReviewModerationController {
   // because those have two parts after /moderation and this only has one
   @Post('ai-screen')
   @HttpCode(HttpStatus.OK)
+  // each click costs claude credits, so it has the same limit as the other ai routes
+  @AiThrottle()
   @ApiOperation({ summary: 'Ask AI for a second opinion on a flagged review (admin)' })
   @ApiResponse({ status: 200, description: '{ verdict, explanation }' })
   @ApiResponse({ status: 503, description: 'ANTHROPIC_API_KEY is not set or Claude is down' })

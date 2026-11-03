@@ -1,6 +1,6 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { AiThrottle } from '../../common/decorators/throttle.decorator';
 import { ChatbotService } from './chatbot.service';
 import { SendChatMessageDto } from './dto';
 
@@ -10,7 +10,7 @@ export class ChatbotController {
   constructor(private readonly chatbotService: ChatbotService) {}
 
   @Post('message')
-  @UseGuards(ThrottlerGuard)
+  @AiThrottle()
   @ApiOperation({ summary: 'Send a message to the AI assistant and get a reply' })
   @ApiResponse({ status: 200, description: 'Assistant reply' })
   @ApiResponse({ status: 503, description: 'Assistant not configured or unavailable' })

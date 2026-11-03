@@ -9,7 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import { AuthService } from './auth.service';
+import { AuthService, PHONE_VERIFICATION_MAX_ATTEMPTS } from './auth.service';
 import { UserTypeDto } from './dto';
 
 // small helper so we dont have to retype the same mock repo everywhere
@@ -269,6 +269,66 @@ describe('AuthService', () => {
       await expect(
         service.verifyPhoneCode('verify-1', '01700000000', '000000'),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    // must-fix 3 and should-fix 4/5 from the client's code review
+    it('counts a wrong guess and says how many attempts are left', async () => {
+      const codeHash = await bcrypt.hash('123456', 10);
+      const row: any = {
+        id: 'verify-1',
+        phone: '01700000000',
+        codeHash,
+        isConsumed: false,
+        failedAttempts: 0,
+        expiresAt: new Date(Date.now() + 60_000),
+      };
+      phoneVerificationRepo.findOne.mockResolvedValue(row);
+      phoneVerificationRepo.save.mockImplementation(async (v: any) => v);
+
+      await expect(service.verifyPhoneCode('verify-1', '01700000000', '000000')).rejects.toThrow(
+        'Incorrect verification code. 4 attempts left.',
+      );
+      expect(phoneVerificationRepo.save).toHaveBeenCalledWith(expect.objectContaining({ failedAttempts: 1 }));
+    });
+
+    it('locks the code after 5 wrong guesses, even if the next guess is right', async () => {
+      const codeHash = await bcrypt.hash('123456', 10);
+      phoneVerificationRepo.findOne.mockResolvedValue({
+        id: 'verify-1',
+        phone: '01700000000',
+        codeHash,
+        isConsumed: false,
+        failedAttempts: PHONE_VERIFICATION_MAX_ATTEMPTS,
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+
+      await expect(service.verifyPhoneCode('verify-1', '01700000000', '123456')).rejects.toThrow(
+        'Too many incorrect attempts. Please request a new code.',
+      );
+    });
+
+    it('makes the code with crypto, not Math.random', async () => {
+      const mathRandom = jest.spyOn(Math, 'random');
+      phoneVerificationRepo.save.mockImplementation(async (v: any) => ({ ...v, id: 'verify-1' }));
+
+      await service.requestPhoneVerification('01700000000');
+
+      expect(mathRandom).not.toHaveBeenCalled();
+      mathRandom.mockRestore();
+    });
+
+    it('never logs the code in production', async () => {
+      configService.get.mockImplementation((key: string, fallback?: string) => {
+        if (key === 'NODE_ENV') return 'production';
+        return fallback || 'test-secret';
+      });
+      phoneVerificationRepo.save.mockImplementation(async (v: any) => ({ ...v, id: 'verify-1' }));
+      const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+      await service.requestPhoneVerification('01700000000');
+
+      expect(log).not.toHaveBeenCalled();
+      log.mockRestore();
     });
 
     it('rejects an expired code', async () => {

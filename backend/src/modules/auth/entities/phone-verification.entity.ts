@@ -28,6 +28,11 @@ export class PhoneVerification {
   @Column({ name: 'is_consumed', default: false })
   isConsumed: boolean;
 
+  // wrong codes tried so far. the code stops working after
+  // PHONE_VERIFICATION_MAX_ATTEMPTS (see auth.service.ts)
+  @Column({ name: 'failed_attempts', type: 'int', default: 0 })
+  failedAttempts: number;
+
   @Column({ name: 'expires_at', type: 'datetime' })
   expiresAt: Date;
 
