@@ -2,3 +2,7 @@ coverage/
 test-results/
 playwright-report/
 node_modules/
+
+# local settings and secrets, never commit these (use the .env.example files)
+.env
+.env.local
