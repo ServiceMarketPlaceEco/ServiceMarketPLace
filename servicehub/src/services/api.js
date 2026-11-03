@@ -379,13 +379,15 @@ export function getBookingById(bookingId) {
   return request(`/bookings/${bookingId}`, { auth: true })
 }
 
-// Public booking-management endpoints
-export async function getAllBookingsPublic() {
-  const result = await request('/bookings/all')
+// admin booking management. these used to call public endpoints
+// (/bookings/all and an unguarded PATCH) so anyone could read or change
+// bookings without signing in. both now need the admin's token.
+export async function getAllBookings() {
+  const result = await request('/bookings', { auth: true })
   return resultArray(result)
 }
 
-export function updateBookingStatusPublic(
+export function updateBookingStatus(
   bookingId,
   status,
   providerId
@@ -396,6 +398,7 @@ export function updateBookingStatusPublic(
     )}/status`,
     {
       method: 'PATCH',
+      auth: true,
       body: {
         status,
         providerId

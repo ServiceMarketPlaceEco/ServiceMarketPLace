@@ -10,6 +10,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { BookingsService } from './bookings.service';
@@ -31,16 +32,18 @@ export class BookingsController {
     return this.bookingsService.findAll(query);
   }
 
-  @Get('all')
-  @ApiOperation({ summary: 'Get all bookings (Public - for demo admin dashboard)' })
-  @ApiResponse({ status: 200, description: 'List of all bookings' })
-  async findAllPublic(@Query() query: BookingQueryDto) {
-    return this.bookingsService.findAll(query);
-  }
-
+  // there used to be a public GET /bookings/all and an unguarded PATCH here
+  // "for the demo admin dashboard". anyone could list every booking (names,
+  // addresses, phones) or change any booking's status without signing in
+  // (must-fix 1 in the client's code review). the admin dashboard now uses the
+  // guarded GET /bookings above, and status changes need an admin login.
   @Patch(':id/status')
-  @ApiOperation({ summary: 'Update booking status, optionally assigning a provider (Public - for demo admin)' })
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Update booking status, optionally assigning a provider (Admin only)' })
   @ApiResponse({ status: 200, description: 'Booking status updated' })
+  @ApiResponse({ status: 401, description: 'Not signed in' })
+  @ApiResponse({ status: 403, description: 'Not an admin' })
   async updateStatus(
     @Param('id') id: string,
     @Body() body: { status: string; providerId?: string },
@@ -85,12 +88,14 @@ export class BookingsController {
   ) {
     const booking = await this.bookingsService.findById(id);
     
-    // Verify access - customer can see their own, provider can see theirs
+    // customers can see their own bookings, providers can see theirs.
+    // this used to return 200 with { error: 'Access denied' }, which looks
+    // like a success to the frontend, so now it's a proper 403
     if (user.userType === 'customer' && booking.customerId !== user.userId) {
-      return { error: 'Access denied' };
+      throw new ForbiddenException('You do not have access to this booking');
     }
     if (user.userType === 'provider' && booking.providerService?.providerId !== user.userId) {
-      return { error: 'Access denied' };
+      throw new ForbiddenException('You do not have access to this booking');
     }
 
     return booking;

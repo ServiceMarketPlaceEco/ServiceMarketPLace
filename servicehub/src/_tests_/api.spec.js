@@ -50,4 +50,24 @@ describe('API service', () => {
     fetch.mockResolvedValue(response(null))
     await expect(api.activateUser('customer', 'c1')).resolves.toBeNull()
   })
+  // the admin dashboard used to call public booking endpoints, so these
+  // check the admin's token now goes with both requests
+  it('sends the admin token when loading every booking', async () => {
+    localStorage.setItem('servicehub-access-token', 'admin-token')
+    fetch.mockResolvedValue(response([]))
+    await api.getAllBookings()
+    expect(fetch.mock.calls[0][0]).toMatch(/\/bookings$/)
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBe('Bearer admin-token')
+  })
+
+  it('sends the admin token when assigning a provider to a booking', async () => {
+    localStorage.setItem('servicehub-access-token', 'admin-token')
+    fetch.mockResolvedValue(response({ bookingId: 'b1' }))
+    await api.updateBookingStatus('b1', 'confirmed', 'p1')
+    const [url, options] = fetch.mock.calls[0]
+    expect(url).toContain('/bookings/b1/status')
+    expect(options.method).toBe('PATCH')
+    expect(options.headers.Authorization).toBe('Bearer admin-token')
+    expect(JSON.parse(options.body)).toEqual({ status: 'confirmed', providerId: 'p1' })
+  })
 })
