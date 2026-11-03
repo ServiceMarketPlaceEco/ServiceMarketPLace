@@ -113,10 +113,11 @@ it does not exist, and runs these scripts in order:
 | 2 | `backend/database/migrations/001_add_provider_location.sql` | Live provider-location columns on bookings |
 | 3 | `backend/database/migrations/002_add_username_login.sql` | Username sign-in + the phone_verifications table |
 | 4 | `backend/database/migrations/003_add_service_image.sql` | `image_url` photo column on services |
-| 5 | `backend/database/seeds/001_seed_data.sql` | Default admin account + general service categories |
-| 6 | `backend/database/seeds/002_rajshahi_services_seed.sql` | Rajshahi service catalog + a demo provider with prices |
-| 7 | `backend/database/seeds/003_moderation_test_seed.sql` | Test accounts for the moderation workflow |
-| 8 | `backend/database/seeds/004_service_images_seed.sql` | Photos for the seeded services |
+| 5 | `backend/database/migrations/004_add_phone_verification_attempts.sql` | `failed_attempts` on phone_verifications, so a code locks after 5 wrong guesses |
+| 6 | `backend/database/seeds/001_seed_data.sql` | Default admin account + general service categories |
+| 7 | `backend/database/seeds/002_rajshahi_services_seed.sql` | Rajshahi service catalog + a demo provider with prices |
+| 8 | `backend/database/seeds/003_moderation_test_seed.sql` | Test accounts for the moderation workflow |
+| 9 | `backend/database/seeds/004_service_images_seed.sql` | Photos for the seeded services |
 
 Expected output:
 
@@ -125,6 +126,7 @@ Running database/migrations/000_initial_schema.sql
 Running database/migrations/001_add_provider_location.sql
 Running database/migrations/002_add_username_login.sql
 Running database/migrations/003_add_service_image.sql
+Running database/migrations/004_add_phone_verification_attempts.sql
 Running database/seeds/001_seed_data.sql
 Running database/seeds/002_rajshahi_services_seed.sql
 Running database/seeds/003_moderation_test_seed.sql
@@ -150,6 +152,7 @@ mysql -u root -p servicehub < database/migrations/000_initial_schema.sql
 mysql -u root -p servicehub < database/migrations/001_add_provider_location.sql
 mysql -u root -p servicehub < database/migrations/002_add_username_login.sql
 mysql -u root -p servicehub < database/migrations/003_add_service_image.sql
+mysql -u root -p servicehub < database/migrations/004_add_phone_verification_attempts.sql
 mysql -u root -p servicehub < database/seeds/001_seed_data.sql
 mysql -u root -p servicehub < database/seeds/002_rajshahi_services_seed.sql
 mysql -u root -p servicehub < database/seeds/003_moderation_test_seed.sql
@@ -169,10 +172,11 @@ mysql -u root -p servicehub < database/seeds/004_service_images_seed.sql
    2. `backend/database/migrations/001_add_provider_location.sql`
    3. `backend/database/migrations/002_add_username_login.sql`
    4. `backend/database/migrations/003_add_service_image.sql`
-   5. `backend/database/seeds/001_seed_data.sql`
-   6. `backend/database/seeds/002_rajshahi_services_seed.sql`
-   7. `backend/database/seeds/003_moderation_test_seed.sql`
-   8. `backend/database/seeds/004_service_images_seed.sql`
+   5. `backend/database/migrations/004_add_phone_verification_attempts.sql`
+   6. `backend/database/seeds/001_seed_data.sql`
+   7. `backend/database/seeds/002_rajshahi_services_seed.sql`
+   8. `backend/database/seeds/003_moderation_test_seed.sql`
+   9. `backend/database/seeds/004_service_images_seed.sql`
 
 </details>
 
@@ -264,6 +268,10 @@ OpenAI calls are mocked.
 
 `npm run test:cov:all` prints a summary and writes an HTML report to `backend/coverage-all/index.html`.
 The first time you run the Playwright tests on a machine, install the browser with `npx playwright install chromium` (in `servicehub`).
+
+All of these also run automatically on GitHub for every push and pull request
+(`.github/workflows/ci.yml`), so a change that breaks a test shows up as a red
+cross on the pull request before it is merged.
 
 ---
 
