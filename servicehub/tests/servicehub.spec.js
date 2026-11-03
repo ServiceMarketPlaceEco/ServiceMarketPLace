@@ -428,10 +428,13 @@ test('29. reloading keeps the user on the page they were viewing', async ({ page
 test('30. admin can set a service photo from the dashboard', async ({ page }) => {
   await mockAdminApi(page)
   await page.route('**/api/auth/login', route => route.fulfill({ json: MOCK_ADMIN_LOGIN }))
-  // the preview should not depend on reaching Unsplash: a 1x1 png, and a 404 for the broken link
+  // the preview should not depend on reaching Unsplash: a 1x1 png for a good
+  // link, and bytes that aren't a picture for the broken one. a bad picture
+  // fails to load the same way in every chrome version, an empty 404 didn't
+  // (it passed on some machines and failed on others, including github)
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
   await page.route('https://images.unsplash.com/**', route => route.request().url().includes('missing')
-    ? route.fulfill({ status: 404 })
+    ? route.fulfill({ contentType: 'image/png', body: Buffer.from('this is not an image') })
     : route.fulfill({ contentType: 'image/png', body: png }))
   let sent = null
   await page.route('**/api/services/s-2', route => {
@@ -456,10 +459,8 @@ test('30. admin can set a service photo from the dashboard', async ({ page }) =>
   expect(sent.method).toBe('PUT')
   await expect(page.getByRole('img', { name: 'AC Repair' })).toHaveAttribute('src', /photo-123\?auto=format/)
 
-  // a link that does not load is flagged in the preview. .invalid is a
-  // reserved domain that never resolves, so this fails the same way on every
-  // network (the old unsplash link sometimes came back with a placeholder)
-  await field.fill('https://invalid.invalid/missing.png')
+  // a link that does not load is flagged in the preview
+  await field.fill('https://images.unsplash.com/missing')
   await expect(page.getByText("Can't load this image")).toBeVisible()
 
   // clearing the field removes the photo
