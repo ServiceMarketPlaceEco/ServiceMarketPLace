@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 
 // Modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -42,14 +43,18 @@ import { ChatbotModule } from './modules/chatbot/chatbot.module';
       inject: [ConfigService],
     }),
 
-    // Rate limiting. Not applied globally: only routes that opt in with
-    // @UseGuards(ThrottlerGuard) are limited (the endpoints that call OpenAI).
+    // Rate limiting, applied to every route through the APP_GUARD below.
+    // this is the default limit for each client (RATE_LIMIT requests every
+    // RATE_LIMIT_WINDOW_MS). routes that need a tighter one use @AiThrottle()
+    // or @AuthThrottle() from common/decorators/throttle.decorator.ts.
+    // before, only the AI routes were limited, so login, password reset and
+    // the phone codes could be guessed without limit (code review must-fix 3)
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => [
         {
-          ttl: Number(configService.get('AI_RATE_LIMIT_WINDOW_MS', 60_000)),
-          limit: Number(configService.get('AI_RATE_LIMIT', 20)),
+          ttl: Number(configService.get('RATE_LIMIT_WINDOW_MS', 60_000)),
+          limit: Number(configService.get('RATE_LIMIT', 120)),
         },
       ],
       inject: [ConfigService],
@@ -67,6 +72,10 @@ import { ChatbotModule } from './modules/chatbot/chatbot.module';
     ReportsModule,
     MailModule,
     ChatbotModule,
+  ],
+  providers: [
+    // every route goes through the rate limiter (see ThrottlerModule above)
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

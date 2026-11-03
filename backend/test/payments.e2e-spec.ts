@@ -306,4 +306,81 @@ describe('Payment endpoints (integration)', () => {
         .expect(404);
     });
   });
+  // should-fix 7 in the client's code review: this used to hand any signed in
+  // user the payment for any booking
+  describe('GET /api/payments/booking/:bookingId', () => {
+    it('returns the payment to the customer who made the booking', async () => {
+      bookingRepo.findOne.mockResolvedValue({ bookingId: 'b-1', customerId: 'cust-1' });
+      paymentRepo.findOne.mockResolvedValue({ paymentId: 'pay-1', bookingId: 'b-1' });
+      const token = customerToken();
+
+      const res = await request(app.getHttpServer())
+        .get('/api/payments/booking/b-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(res.body.paymentId).toBe('pay-1');
+    });
+
+    it('returns 403 to a customer who is not part of the booking', async () => {
+      bookingRepo.findOne.mockResolvedValue({ bookingId: 'b-1', customerId: 'cust-OTHER' });
+      const token = customerToken();
+
+      await request(app.getHttpServer())
+        .get('/api/payments/booking/b-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+      expect(paymentRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('returns the payment to the provider doing the job', async () => {
+      bookingRepo.findOne.mockResolvedValue({
+        bookingId: 'b-1',
+        customerId: 'cust-1',
+        providerService: { providerId: 'prov-1' },
+      });
+      paymentRepo.findOne.mockResolvedValue({ paymentId: 'pay-1', bookingId: 'b-1' });
+      const token = providerTokenValue();
+
+      await request(app.getHttpServer())
+        .get('/api/payments/booking/b-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+    });
+
+    it('returns 403 to a provider who is not doing the job', async () => {
+      bookingRepo.findOne.mockResolvedValue({
+        bookingId: 'b-1',
+        customerId: 'cust-1',
+        providerService: { providerId: 'prov-OTHER' },
+      });
+      const token = providerTokenValue();
+
+      await request(app.getHttpServer())
+        .get('/api/payments/booking/b-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('returns 404 for a booking that doesnt exist', async () => {
+      bookingRepo.findOne.mockResolvedValue(null);
+      const token = customerToken();
+
+      await request(app.getHttpServer())
+        .get('/api/payments/booking/ghost')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+  });
+
+  describe('GET /api/payments/:id for someone elses payment', () => {
+    it('returns 403 instead of 200 with an error message', async () => {
+      paymentRepo.findOne.mockResolvedValue({ paymentId: 'pay-2', customerId: 'cust-OTHER' });
+      const token = customerToken();
+
+      await request(app.getHttpServer())
+        .get('/api/payments/pay-2')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+  });
 });

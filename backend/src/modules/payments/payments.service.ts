@@ -87,6 +87,32 @@ export class PaymentsService {
     });
   }
 
+  // the payment for a booking, but only for someone who is part of that
+  // booking: the customer who booked it, the provider doing the job, or an
+  // admin. before this, any signed in user could read the payment for any
+  // booking id (should-fix 7 in the client's code review)
+  async findByBookingForUser(
+    bookingId: string,
+    user: { userId: string; userType: string },
+  ): Promise<Payment | null> {
+    const booking = await this.bookingRepository.findOne({
+      where: { bookingId },
+      relations: ['providerService'],
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    const isCustomer = user.userType === 'customer' && booking.customerId === user.userId;
+    const isProvider = user.userType === 'provider' && booking.providerService?.providerId === user.userId;
+    if (!isCustomer && !isProvider && user.userType !== 'admin') {
+      throw new ForbiddenException('You do not have access to this booking');
+    }
+
+    return this.findByBooking(bookingId);
+  }
+
   async findByCustomer(customerId: string, query?: PaymentQueryDto): Promise<Payment[]> {
     const where: any = { customerId };
 

@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { randomInt } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { OAuth2Client, TokenPayload } from 'google-auth-library';
 
@@ -28,6 +29,10 @@ import {
 import { MailService } from '../mail/mail.service';
 
 const PHONE_VERIFICATION_TTL_MS = 10 * 60 * 1000;
+// wrong guesses allowed on one code before it stops working and the customer
+// has to request a new one. a 6 digit code has 900k options, so without a cap
+// it could just be guessed (must-fix 3 in the client's code review)
+export const PHONE_VERIFICATION_MAX_ATTEMPTS = 5;
 
 @Injectable()
 export class AuthService {
@@ -158,7 +163,9 @@ export class AuthService {
       }
     }
 
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    // crypto.randomInt instead of Math.random, which is predictable and
+    // shouldn't be used for anything security related (should-fix 4)
+    const code = randomInt(100000, 1000000).toString();
     const codeHash = await bcrypt.hash(code, 10);
     const expiresAt = new Date(Date.now() + PHONE_VERIFICATION_TTL_MS);
 
@@ -170,8 +177,13 @@ export class AuthService {
     await this.phoneVerificationRepository.save(verification);
 
     const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
-    // eslint-disable-next-line no-console
-    console.log(`[phone-verification] code for ${phone}: ${code}`);
+    // the code is only printed in development so we can test signup without
+    // an sms provider. it used to be logged in every environment, production
+    // included, which would leak codes and phone numbers into the server logs
+    if (!isProduction) {
+      // eslint-disable-next-line no-console
+      console.log(`[phone-verification] code for ${phone}: ${code}`);
+    }
 
     return {
       verificationId: verification.id,
@@ -194,9 +206,22 @@ export class AuthService {
       throw new BadRequestException('This verification code has expired. Please request a new one.');
     }
 
+    // too many wrong guesses on this code already, so it's locked
+    if ((verification.failedAttempts ?? 0) >= PHONE_VERIFICATION_MAX_ATTEMPTS) {
+      throw new BadRequestException('Too many incorrect attempts. Please request a new code.');
+    }
+
     const isCodeValid = await bcrypt.compare(code, verification.codeHash);
     if (!isCodeValid) {
-      throw new BadRequestException('Incorrect verification code');
+      // count the wrong guess so the code locks after the limit
+      verification.failedAttempts = (verification.failedAttempts ?? 0) + 1;
+      await this.phoneVerificationRepository.save(verification);
+      const left = PHONE_VERIFICATION_MAX_ATTEMPTS - verification.failedAttempts;
+      throw new BadRequestException(
+        left > 0
+          ? `Incorrect verification code. ${left} attempt${left === 1 ? '' : 's'} left.`
+          : 'Too many incorrect attempts. Please request a new code.',
+      );
     }
 
     verification.isVerified = true;

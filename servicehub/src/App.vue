@@ -479,7 +479,7 @@ async function refreshBookings() {
       reviewedBookingIds.value = await api.getMyReviewedBookingIds().catch(() => [])
     }
     else if (signedInUser.value.role === 'provider') raw = await api.getProviderBookings()
-    else raw = await api.getAllBookingsPublic()
+    else raw = await api.getAllBookings()
     requests.value = raw.map(normalizeBooking)
   } catch (err) {
     console.warn('Could not load bookings:', err.message)
@@ -841,7 +841,7 @@ async function rejectProvider(providerId) {
 }
 async function assignRequest({ requestId, providerId }) {
   try {
-    await api.updateBookingStatusPublic(requestId, 'confirmed', providerId)
+    await api.updateBookingStatus(requestId, 'confirmed', providerId)
     await refreshBookings()
   } catch (err) {
     alert(err.message || 'Could not assign request.')

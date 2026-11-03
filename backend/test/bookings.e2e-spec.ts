@@ -23,6 +23,7 @@ describe('Bookings endpoints (integration)', () => {
   let providerServiceRepo: any;
   let customerRepo: any;
   let providerRepo: any;
+  let adminRepo: any;
 
   function customerToken() {
     customerRepo.findOne.mockResolvedValue({
@@ -33,11 +34,18 @@ describe('Bookings endpoints (integration)', () => {
     return signTestToken({ sub: 'cust-1', email: 'c@x.com', userType: 'customer' });
   }
 
+  // a signed in admin. the jwt strategy looks the admin up by id
+  function adminToken() {
+    adminRepo.findOne.mockResolvedValue({ id: 'admin-1', isActive: true });
+    return signTestToken({ sub: 'admin-1', email: 'admin@servicehub.local', userType: 'admin' });
+  }
+
   beforeAll(async () => {
     bookingRepo = mockRepo();
     providerServiceRepo = mockRepo();
     customerRepo = mockRepo();
     providerRepo = mockRepo();
+    adminRepo = mockRepo();
 
     const moduleRef = await Test.createTestingModule({
       imports: [PassportModule],
@@ -50,7 +58,7 @@ describe('Bookings endpoints (integration)', () => {
         { provide: getRepositoryToken(ProviderService), useValue: providerServiceRepo },
         { provide: getRepositoryToken(Customer), useValue: customerRepo },
         { provide: getRepositoryToken(ServiceProvider), useValue: providerRepo },
-        { provide: getRepositoryToken(Admin), useValue: mockRepo() },
+        { provide: getRepositoryToken(Admin), useValue: adminRepo },
         {
           provide: MailService,
           useValue: {
@@ -170,21 +178,66 @@ describe('Bookings endpoints (integration)', () => {
     });
   });
 
-  describe('GET /api/bookings/all (public demo endpoint)', () => {
-    it('returns bookings without any auth, this is the demo admin dashboard route', async () => {
-      bookingRepo.find.mockResolvedValue([{ bookingId: 'b-1' }]);
+  // these two used to be public "for the demo admin dashboard" (must-fix 1 in
+  // the client's code review). now the list is the guarded GET /bookings and
+  // status changes need an admin, so nobody can read or change bookings
+  // without signing in.
+  describe('booking management is admin only', () => {
+    it('GET /api/bookings/all is no longer public', async () => {
+      await request(app.getHttpServer()).get('/api/bookings/all').expect(401);
+    });
 
-      const res = await request(app.getHttpServer()).get('/api/bookings/all').expect(200);
+    it('GET /api/bookings returns 401 without a token', async () => {
+      await request(app.getHttpServer()).get('/api/bookings').expect(401);
+      expect(bookingRepo.find).not.toHaveBeenCalled();
+    });
+
+    it('GET /api/bookings returns 403 for a customer', async () => {
+      const token = customerToken();
+      await request(app.getHttpServer())
+        .get('/api/bookings')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('GET /api/bookings lists every booking for an admin', async () => {
+      bookingRepo.find.mockResolvedValue([{ bookingId: 'b-1' }]);
+      const token = adminToken();
+
+      const res = await request(app.getHttpServer())
+        .get('/api/bookings')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
       expect(res.body).toHaveLength(1);
+    });
+
+    it('PATCH /api/bookings/:id/status returns 401 without a token and changes nothing', async () => {
+      await request(app.getHttpServer())
+        .patch('/api/bookings/b-1/status')
+        .send({ status: 'completed', providerId: 'p-9' })
+        .expect(401);
+      expect(bookingRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('PATCH /api/bookings/:id/status returns 403 for a customer', async () => {
+      const token = customerToken();
+      await request(app.getHttpServer())
+        .patch('/api/bookings/b-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: 'cancelled' })
+        .expect(403);
+      expect(bookingRepo.save).not.toHaveBeenCalled();
     });
   });
 
-  describe('PATCH /api/bookings/:id/status (public demo endpoint)', () => {
+  describe('PATCH /api/bookings/:id/status (admin)', () => {
     it('maps a frontend status label onto the enum and saves it', async () => {
       bookingRepo.findOne.mockResolvedValue({ bookingId: 'b-1', status: BookingStatus.PENDING });
+      const token = adminToken();
 
       const res = await request(app.getHttpServer())
         .patch('/api/bookings/b-1/status')
+        .set('Authorization', `Bearer ${token}`)
         .send({ status: 'Accepted' })
         .expect(200);
 
@@ -193,20 +246,48 @@ describe('Bookings endpoints (integration)', () => {
 
     it('returns 400 for a status label it doesnt know', async () => {
       bookingRepo.findOne.mockResolvedValue({ bookingId: 'b-1', status: BookingStatus.PENDING });
+      const token = adminToken();
 
       await request(app.getHttpServer())
         .patch('/api/bookings/b-1/status')
+        .set('Authorization', `Bearer ${token}`)
         .send({ status: 'teleported' })
         .expect(400);
     });
 
     it('returns 404 for a booking that doesnt exist', async () => {
       bookingRepo.findOne.mockResolvedValue(null);
+      const token = adminToken();
 
       await request(app.getHttpServer())
         .patch('/api/bookings/ghost/status')
+        .set('Authorization', `Bearer ${token}`)
         .send({ status: 'Accepted' })
         .expect(404);
+    });
+  });
+
+  // used to answer 200 { error: 'Access denied' } (should-fix 6)
+  describe('GET /api/bookings/:id', () => {
+    it('returns 403 when a customer opens someone elses booking', async () => {
+      bookingRepo.findOne.mockResolvedValue({ bookingId: 'b-2', customerId: 'cust-OTHER' });
+      const token = customerToken();
+
+      await request(app.getHttpServer())
+        .get('/api/bookings/b-2')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('returns the booking to the customer who owns it', async () => {
+      bookingRepo.findOne.mockResolvedValue({ bookingId: 'b-1', customerId: 'cust-1' });
+      const token = customerToken();
+
+      const res = await request(app.getHttpServer())
+        .get('/api/bookings/b-1')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(res.body.bookingId).toBe('b-1');
     });
   });
 });

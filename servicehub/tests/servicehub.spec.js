@@ -456,8 +456,10 @@ test('30. admin can set a service photo from the dashboard', async ({ page }) =>
   expect(sent.method).toBe('PUT')
   await expect(page.getByRole('img', { name: 'AC Repair' })).toHaveAttribute('src', /photo-123\?auto=format/)
 
-  // a link that does not load is flagged in the preview
-  await field.fill('https://images.unsplash.com/missing')
+  // a link that does not load is flagged in the preview. .invalid is a
+  // reserved domain that never resolves, so this fails the same way on every
+  // network (the old unsplash link sometimes came back with a placeholder)
+  await field.fill('https://invalid.invalid/missing.png')
   await expect(page.getByText("Can't load this image")).toBeVisible()
 
   // clearing the field removes the photo

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
+import { AuthThrottle } from '../../common/decorators/throttle.decorator';
 import {
   RegisterCustomerDto,
   RegisterProviderDto,
@@ -20,6 +21,9 @@ import {
   AuthResponseDto,
 } from './dto';
 
+// login, google, password reset and the phone code routes have a tight rate
+// limit (@AuthThrottle, 5 a minute by default) so passwords and codes can't
+// be guessed over and over
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
@@ -42,6 +46,7 @@ export class AuthController {
   }
 
   @Post('phone-verification/request')
+  @AuthThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Send a verification code to a phone number ahead of customer signup' })
   @ApiResponse({ status: 200, description: 'Verification code sent' })
@@ -50,6 +55,7 @@ export class AuthController {
   }
 
   @Post('phone-verification/verify')
+  @AuthThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify a phone confirmation code and get a short-lived registration token' })
   @ApiResponse({ status: 200, description: 'Phone verified' })
@@ -59,6 +65,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @AuthThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login user (customer, provider, or admin)' })
   @ApiResponse({ status: 200, description: 'Login successful', type: AuthResponseDto })
@@ -68,6 +75,7 @@ export class AuthController {
   }
 
   @Post('google')
+  @AuthThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Sign in with a Google account that matches a registered email' })
   @ApiResponse({ status: 200, description: 'Login successful', type: AuthResponseDto })
@@ -96,6 +104,7 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @AuthThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request password reset email' })
   @ApiResponse({ status: 200, description: 'Password reset email sent if account exists' })
@@ -105,6 +114,7 @@ export class AuthController {
   }
 
   @Post('reset-password')
+  @AuthThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password with token' })
   @ApiResponse({ status: 200, description: 'Password reset successfully' })
