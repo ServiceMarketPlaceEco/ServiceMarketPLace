@@ -71,7 +71,6 @@ const services = ref([])
 const requests = ref([])
 const accounts = ref([])
 const chatApprovals = ref([])
-const messages = ref([])
 const blockRequests = ref([])
 const reviews = ref([])
 const appMain = ref(null)
@@ -347,6 +346,7 @@ function toggleTheme() { theme.value = theme.value === 'dark' ? 'light' : 'dark'
 function signOut() {
   api.clearTokens()
   signedInUser.value = null
+  chatApprovals.value = []
   currentPage.value = 'home'
 }
 
@@ -573,20 +573,30 @@ async function refreshProviderReviews() {
   }
 }
 
+// Chat approvals for the signed-in user (every one for admins). The messages
+// themselves are loaded by ChatPanel for the conversation that is open.
+function normalizeChatApproval(approval) {
+  return {
+    id: approval.id,
+    requestId: approval.bookingId,
+    requestedBy: approval.requestedBy,
+    status: approval.status,
+    serviceTitle: approval.serviceName || 'Service request',
+    customerName: approval.customerName || '',
+    providerName: approval.providerName || '',
+    createdAt: approval.createdAt
+  }
+}
+
 async function refreshChatData() {
   if (!signedInUser.value) {
     chatApprovals.value = []
-    messages.value = []
     return
   }
 
   try {
-    const [approvals, chatMessages] = await Promise.all([
-      api.getChatApprovals(),
-      api.getChatMessages()
-    ])
-    chatApprovals.value = approvals
-    messages.value = chatMessages
+    const approvals = await api.getChatApprovals()
+    chatApprovals.value = approvals.map(normalizeChatApproval)
   } catch (err) {
     console.warn('Could not load chat data:', err.message)
   }
@@ -940,9 +950,9 @@ async function changeProviderPassword(payload) {
 
 // ---------- Chat ----------
 
-async function requestChat(payload) {
+async function requestChat({ requestId }) {
   try {
-    await api.requestChatApproval(payload)
+    await api.requestChatApproval({ bookingId: requestId })
     await refreshChatData()
   } catch (err) {
     alert(err.message || 'Could not request chat approval.')
@@ -962,14 +972,6 @@ async function rejectChat(id) {
     await refreshChatData()
   } catch (err) {
     alert(err.message || 'Could not reject chat access.')
-  }
-}
-async function sendMessage(payload) {
-  try {
-    await api.sendChatMessage(payload)
-    await refreshChatData()
-  } catch (err) {
-    alert(err.message || 'Could not send message.')
   }
 }
 
@@ -1038,15 +1040,16 @@ async function updateBlockRequest({ id, status }) {
         @submit-request="submitRequest" @back="goTo('services')" />
 
       <CustomerDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'customer'"
-        :customer="signedInUser" :requests="requests" @request-another="goTo('services')"
-        @view-tracking="openTracking" />
+        :customer="signedInUser" :requests="requests" :chat-approvals="chatApprovals"
+        @request-another="goTo('services')" @view-tracking="openTracking" @request-chat="requestChat"
+        @refresh-chat="refreshChatData" />
 
       <ProviderDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'provider'"
-        :current-user="signedInUser" :requests="requests" :chat-approvals="chatApprovals" :messages="messages"
+        :current-user="signedInUser" :requests="requests" :chat-approvals="chatApprovals"
         :theme="theme" :provider-services="providerServices" :available-services="services" :reviews="providerReviews"
         @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @accept-request="acceptProviderRequest"
         @decline-request="declineProviderRequest" @status-change="changeRequestStatus" @request-chat="requestChat"
-        @send-message="sendMessage" @block-request="createBlockRequest" @add-service="addProviderServiceOffering"
+        @refresh-chat="refreshChatData" @block-request="createBlockRequest" @add-service="addProviderServiceOffering"
         @toggle-service="toggleProviderService" @update-profile="updateProviderProfile"
         @change-password="changeProviderPassword" />
 

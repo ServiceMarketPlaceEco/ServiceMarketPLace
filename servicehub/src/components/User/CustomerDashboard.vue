@@ -1,15 +1,36 @@
 <script setup>
+import { computed, nextTick, ref } from 'vue'
 import { formatStatus } from '../../data/services'
+import ChatPanel from '../Chat/ChatPanel.vue'
 
-defineProps({
+const props = defineProps({
   customer: Object,
   requests: {
+    type: Array,
+    default: () => []
+  },
+  chatApprovals: {
     type: Array,
     default: () => []
   }
 })
 
-defineEmits(['request-another', 'view-tracking'])
+defineEmits(['request-another', 'view-tracking', 'request-chat', 'refresh-chat'])
+
+const chatRequestId = ref(null)
+const chatSection = ref(null)
+const chatRequest = computed(() => props.requests.find(r => r.id === chatRequestId.value) || null)
+const chatApproval = computed(() => props.chatApprovals.find(a => a.requestId === chatRequestId.value) || null)
+
+function approvalFor(request) {
+  return props.chatApprovals.find(a => a.requestId === request.id)
+}
+
+async function openChat(request) {
+  chatRequestId.value = request.id
+  await nextTick()
+  chatSection.value?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+}
 </script>
 
 <template>
@@ -45,6 +66,7 @@ defineEmits(['request-another', 'view-tracking'])
               <th>Provider</th>
               <th>Status</th>
               <th>Tracking</th>
+              <th>Chat</th>
             </tr>
           </thead>
 
@@ -67,10 +89,34 @@ defineEmits(['request-another', 'view-tracking'])
               <td>
                 <button class="secondary small" @click="$emit('view-tracking', request)">Track</button>
               </td>
+              <td>
+                <button class="secondary small chat-open" :disabled="!request.providerName"
+                  :title="request.providerName ? '' : 'Chat opens once a provider is assigned'"
+                  @click="openChat(request)">
+                  {{ approvalFor(request)?.status === 'approved' ? 'Open chat' : 'Chat' }}
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
+
+    <div v-if="chatRequest" ref="chatSection" class="table-card clean-card customer-chat">
+      <div class="panel-heading">
+        <h3>Messages</h3>
+        <button class="secondary small" type="button" @click="chatRequestId = null">Close</button>
+      </div>
+      <ChatPanel :request="chatRequest" role="customer" :approval="chatApproval"
+        @request-chat="$emit('request-chat', $event)" @refresh-chat="$emit('refresh-chat')" />
+    </div>
   </section>
 </template>
+
+<style scoped>
+.customer-chat {
+  margin-top: 20px;
+  /* room so the floating AI Help button doesn't sit on top of Send */
+  margin-bottom: 88px;
+}
+</style>
