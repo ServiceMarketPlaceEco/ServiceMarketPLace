@@ -58,17 +58,20 @@ export class BookingsService {
 
     const savedBooking = await this.bookingRepository.save(booking);
 
-    // Send confirmation emails if provider service exists
-    if (providerService) {
-      try {
-        await this.mailService.sendBookingConfirmation(
-          savedBooking,
-          providerService.provider,
-          providerService.service,
-        );
-      } catch (error) {
-        console.error('Failed to send booking confirmation email:', error);
-      }
+    // tell the customer we got the request. the email needs their address,
+    // so load the booking again with the customer attached
+    try {
+      const withCustomer = await this.bookingRepository.findOne({
+        where: { bookingId: savedBooking.bookingId },
+        relations: ['customer'],
+      });
+      await this.mailService.sendBookingConfirmation(
+        withCustomer ?? savedBooking,
+        providerService?.provider ?? null,
+        providerService?.service ?? null,
+      );
+    } catch (error) {
+      console.error('Failed to send booking confirmation email:', error);
     }
 
     return savedBooking;
@@ -320,8 +323,21 @@ export class BookingsService {
       throw new BadRequestException(`Invalid status: ${status}`);
     }
 
+    const statusChanged = booking.status !== newStatus || Boolean(providerId);
     booking.status = newStatus;
-    return this.bookingRepository.save(booking);
+    const saved = await this.bookingRepository.save(booking);
+
+    // let the customer know, for example that a provider has been assigned.
+    // an email problem never stops the admin's change
+    if (statusChanged) {
+      try {
+        await this.mailService.sendBookingStatusUpdate(await this.findById(bookingId), newStatus);
+      } catch (error) {
+        console.error('Failed to send booking status email:', error);
+      }
+    }
+
+    return saved;
   }
 
   async getStats(): Promise<any> {

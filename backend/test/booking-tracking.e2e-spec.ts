@@ -166,8 +166,8 @@ describe('Booking status tracking journey (integration)', () => {
       .expect(200);
     expect(await statusSeenByCustomer(id)).toBe('completed'); // "Service completed"
 
-    // Each provider step sent a status update notification.
-    expect(mail.sendBookingStatusUpdate).toHaveBeenCalledTimes(2);
+    // the admin assigning the provider and each provider step all emailed the customer
+    expect(mail.sendBookingStatusUpdate).toHaveBeenCalledTimes(3);
   });
 
   it('does not let the provider skip a stage', async () => {
