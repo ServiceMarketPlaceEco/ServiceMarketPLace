@@ -20,7 +20,11 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "db:setup": "node database/setup.js",
-    "db:reset": "node database/setup.js --reset"
+    "db:reset": "node database/setup.js --reset",
+    "db:disable-demo-accounts": "node database/disable-demo-accounts.js",
+    "admin:create": "node database/create-admin.js",
+    "admin:reset-password": "node database/create-admin.js --reset-password",
+    "admin:deactivate": "node database/create-admin.js --deactivate"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",
