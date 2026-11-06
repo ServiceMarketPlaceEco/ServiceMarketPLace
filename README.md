@@ -1,43 +1,34 @@
+# ServiceHub
 
-# ServiceHub Frontend
+ServiceHub is a local services marketplace for Rajshahi. Customers book
+services (cleaning, repairs, tutoring...), providers manage their jobs and
+prices, and admins verify providers and moderate accounts and reviews.
 
----
+| Part | Folder | Stack |
+|---|---|---|
+| Frontend | [`servicehub/`](servicehub/) | Vue 3 + Vite |
+| Backend API | [`backend/`](backend/) | NestJS 10 + TypeORM, JWT auth ([API reference](backend/README.md)) |
+| Database | [`backend/database/`](backend/database/) | MySQL 8: numbered SQL migrations and seeds |
 
-## Tech Stack
+The `package.json` at the repository root isn't an app and nothing needs it.
+It only lists ESLint and Prettier packages for editor plugins; no script or lint
+config uses them. Run `npm install` and the app commands inside `backend/` and
+`servicehub/`.
 
-- Vue 3 (Composition API)
-- Vite (build tool)
-- JavaScript (ES6+)
-- CSS (custom styling)
-- Node.js & npm
+**Documentation**
 
----
----
-
-## How to Run the Frontend
-
-### 1. Install Node.js
-
-Make sure Node.js is installed:
-
-```bash
-node -v
-npm -v 
-```
-### 2. cd servicehub
-### 3. npm install
-### 4. npm run dev
-
-Run Vite URL into your web browser
+- This README: a working copy on your own computer (below).
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): production deployment, the first admin account, backups and restore.
+- [backend/README.md](backend/README.md): API endpoints and schema.
+- [docs/HANDOVER.md](docs/HANDOVER.md): handover status against the client's reviews, and open questions.
 
 ---
-
 
 # Local Setup From Scratch (Database + Backend + Frontend)
 
 These steps build a complete, working copy of ServiceHub on your own computer:
 a new MySQL database (schema + seed data), the NestJS backend and the Vue frontend.
-Nothing depends on the team's shared database or on ngrok.
+It doesn't depend on any shared or remote database.
 
 ## 1. Install the prerequisites
 
@@ -114,10 +105,11 @@ it does not exist, and runs these scripts in order:
 | 3 | `backend/database/migrations/002_add_username_login.sql` | Username sign-in + the phone_verifications table |
 | 4 | `backend/database/migrations/003_add_service_image.sql` | `image_url` photo column on services |
 | 5 | `backend/database/migrations/004_add_phone_verification_attempts.sql` | `failed_attempts` on phone_verifications, so a code locks after 5 wrong guesses |
-| 6 | `backend/database/seeds/001_seed_data.sql` | Default admin account + general service categories |
-| 7 | `backend/database/seeds/002_rajshahi_services_seed.sql` | Rajshahi service catalog + a demo provider with prices |
-| 8 | `backend/database/seeds/003_moderation_test_seed.sql` | Test accounts for the moderation workflow |
+| 6 | `backend/database/seeds/001_seed_data.sql` | General service categories |
+| 7 | `backend/database/seeds/002_rajshahi_services_seed.sql` | Rajshahi service catalog |
+| 8 | `backend/database/seeds/003_moderation_test_seed.sql` | Test accounts and reviews for the moderation workflow *(development only)* |
 | 9 | `backend/database/seeds/004_service_images_seed.sql` | Photos for the seeded services |
+| 10 | `backend/database/seeds/005_demo_accounts_seed.sql` | Default admin + a demo provider with prices *(development only)* |
 
 Expected output:
 
@@ -131,9 +123,14 @@ Running database/seeds/001_seed_data.sql
 Running database/seeds/002_rajshahi_services_seed.sql
 Running database/seeds/003_moderation_test_seed.sql
 Running database/seeds/004_service_images_seed.sql
+Running database/seeds/005_demo_accounts_seed.sql
 
 Done. Database `servicehub` has 11 tables.
 ```
+
+Seeds marked *development only* create accounts whose passwords are listed in
+this README. A production server uses `npm run db:setup -- --production`,
+which skips them (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
 
 All scripts are safe to re-run. To wipe everything and start over:
 
@@ -157,6 +154,7 @@ mysql -u root -p servicehub < database/seeds/001_seed_data.sql
 mysql -u root -p servicehub < database/seeds/002_rajshahi_services_seed.sql
 mysql -u root -p servicehub < database/seeds/003_moderation_test_seed.sql
 mysql -u root -p servicehub < database/seeds/004_service_images_seed.sql
+mysql -u root -p servicehub < database/seeds/005_demo_accounts_seed.sql
 ```
 
 **DBeaver:**
@@ -177,6 +175,7 @@ mysql -u root -p servicehub < database/seeds/004_service_images_seed.sql
    7. `backend/database/seeds/002_rajshahi_services_seed.sql`
    8. `backend/database/seeds/003_moderation_test_seed.sql`
    9. `backend/database/seeds/004_service_images_seed.sql`
+   10. `backend/database/seeds/005_demo_accounts_seed.sql`
 
 </details>
 
@@ -209,6 +208,11 @@ npm run dev
 (usually **http://localhost:5173**).
 
 ## 7. Log in with the seeded accounts
+
+> ⚠️ **Local development only.** These accounts come from
+> `005_demo_accounts_seed.sql` and their passwords are public. They are never
+> created on a production server: there, the first admin is made with
+> `npm run admin:create` (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
 
 | Role | Email | Password |
 |---|---|---|
@@ -272,35 +276,3 @@ The first time you run the Playwright tests on a machine, install the browser wi
 All of these also run automatically on GitHub for every push and pull request
 (`.github/workflows/ci.yml`), so a change that breaks a test shows up as a red
 cross on the pull request before it is merged.
-
----
-
-# Connecting to the Team's Shared Database (optional)
-
-Only needed if you want to use the host's live database instead of a local one.
-
-1. Open DBeaver
-2. Click **New Database Connection** (plug icon in top left)
-3. Select **MySQL** → click **Next**
-4. Fill in the fields:
-
-| Field | Value |
-|---|---|
-| Host | provided by host |
-| Port | provided by host |
-| Database | `service_marketplace` |
-| Username | database username (sent by the host) |
-| Password | database password (sent by the host) |
-
-5. Click **Test Connection** — if it says OK, click **Finish**
-
-### Every Time the Host Restarts Ngrok
-
-The host and port change on every restart. To update your connection:
-
-1. Right click your existing connection in DBeaver
-2. Click **Edit Connection**
-3. Update **Host** and **Port** with the new values from the group chat
-4. Click **Finish**
-
----
