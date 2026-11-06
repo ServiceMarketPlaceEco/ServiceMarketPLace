@@ -53,10 +53,24 @@ Twilio or email are not set up.
 
 ## 3. Replace the seeded admin
 
-Sign in once as `admin@servicehub.com` / `Admin@123`, create your own admin
-(POST /api/admins with name, email and password), then deactivate the seeded
-one (POST /api/admins/<id>/deactivate). Also deactivate the demo provider
-"Rajshahi Demo Provider". Do this before you tell anyone the address.
+The seeded admin's password is in the README, so replace it before you tell
+anyone the address:
+
+1. Sign in as `admin@servicehub.com` / `Admin@123` and open **Admin accounts**.
+2. Add your own admin with **Super admin** ticked.
+3. Log out, sign in with the new account, and choose **Switch off** next to
+   `admin@servicehub.com`. The yellow warning disappears once it is off.
+
+Also switch off the demo provider "Rajshahi Demo Provider" under **Service
+providers**.
+
+## 4. Before you announce it
+
+- Fill in the [square brackets] on the Privacy Policy and Terms of Use pages
+  (`servicehub/src/components/User/LegalPage.vue`), have them checked, then set
+  `DRAFT` to `false` in that file and run `docker compose up -d --build` again.
+- Sign up as a customer with a real phone number to check the text arrives.
+- Request a password reset to check the email arrives.
 
 ## Updating to a new version
 

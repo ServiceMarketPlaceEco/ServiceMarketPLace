@@ -1488,7 +1488,7 @@ td small {
   margin-top: auto;
   padding: 54px max(24px, calc((100vw - var(--max))/2));
   display: grid;
-  grid-template-columns: 1.4fr repeat(3, 1fr);
+  grid-template-columns: 1.4fr repeat(4, 1fr);
   gap: 34px;
   background: #111219;
   color: white;
@@ -1502,6 +1502,12 @@ td small {
 
 .footer p {
   color: #a9adba;
+}
+
+.footer a {
+  color: #d9dbe4;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* dark mode refinements */
@@ -3321,4 +3327,15 @@ td small {
 .review-approval-note {
   margin: 0;
   font-size: .85rem;
+}
+
+/* "By creating an account you agree to..." under the sign-up forms */
+.legal-consent {
+  margin: 4px 0 0;
+  font-size: .85rem;
+  color: var(--muted);
+}
+
+.legal-consent a {
+  color: var(--brand);
 }

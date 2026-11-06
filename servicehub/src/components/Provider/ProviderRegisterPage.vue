@@ -78,6 +78,9 @@ function submitProvider() {
           placeholder="Briefly explain your skills, tools, availability and service experience"></textarea>
       </label>
 
+      <p class="legal-consent">By applying you agree to the <a href="#terms">Terms of Use</a> and
+        <a href="#privacy">Privacy Policy</a>.</p>
+
       <button class="primary" type="submit">Submit provider application</button>
       <button class="link-btn" type="button" @click="emit('go', 'signin')">
         Back to sign in

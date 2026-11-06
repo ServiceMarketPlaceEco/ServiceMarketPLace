@@ -19,5 +19,10 @@
       <p>Rajshahi, Bangladesh</p>
       <p>Support when you need it</p>
     </div>
+    <div>
+      <h4>Legal</h4>
+      <p><a href="#privacy">Privacy Policy</a></p>
+      <p><a href="#terms">Terms of Use</a></p>
+    </div>
   </footer>
 </template>
