@@ -468,3 +468,88 @@ test('30. admin can set a service photo from the dashboard', async ({ page }) =>
   await page.getByRole('row', { name: /AC Repair/ }).getByRole('button', { name: 'Save' }).click()
   await expect.poll(() => sent?.body.imageUrl).toBeNull()
 })
+
+// ---------- chat and review approval ----------
+
+const CHAT_WITH_PROVIDER = {
+  conversationId: 'conv-1',
+  type: 'booking',
+  title: 'Rajshahi Cleaners',
+  subtitle: 'Home Cleaning on 2026-10-30',
+  bookingId: 'BK-1001',
+  lastMessage: { body: 'I will bring my own supplies', senderType: 'provider', senderName: 'Rajshahi Cleaners', createdAt: '2026-10-29T03:00:00.000Z' },
+  lastMessageAt: '2026-10-29T03:00:00.000Z',
+  unread: 1
+}
+
+test('31. a customer can message their provider from the dashboard', async ({ page }) => {
+  const sent = []
+  await page.route('**/api/bookings/my-bookings**', route => route.fulfill({ json: [TRACKED_BOOKING] }))
+  await page.route('**/api/chat/conversations', route => route.fulfill({ json: [CHAT_WITH_PROVIDER] }))
+  await page.route('**/api/chat/conversations/conv-1/messages**', route => {
+    if (route.request().method() === 'POST') {
+      const { body } = route.request().postDataJSON()
+      sent.push(body)
+      return route.fulfill({
+        status: 201,
+        json: { messageId: 'm-2', senderType: 'customer', senderName: 'Test Customer', body, createdAt: new Date().toISOString() }
+      })
+    }
+    return route.fulfill({
+      json: route.request().url().includes('after=')
+        ? []
+        : [{ messageId: 'm-1', senderType: 'provider', senderName: 'Rajshahi Cleaners', body: 'I will bring my own supplies', createdAt: '2026-10-29T03:00:00.000Z' }]
+    })
+  })
+
+  await signInAs(page, 'test@servicehub.local')
+  // the Messages tab shows the unread count before it is opened
+  await expect(page.locator('.moderation-tabs .tab-badge')).toHaveText('1')
+  await page.getByRole('button', { name: 'Message', exact: true }).click()
+
+  await expect(page.locator('.chat-thread-head')).toContainText('Rajshahi Cleaners')
+  await expect(page.locator('.chat-messages')).toContainText('I will bring my own supplies')
+
+  await page.getByLabel('Message', { exact: true }).fill('Great, see you at 10')
+  await page.getByRole('button', { name: 'Send' }).click()
+
+  await expect(page.locator('.chat-bubble.mine')).toContainText('Great, see you at 10')
+  expect(sent).toEqual(['Great, see you at 10'])
+})
+
+test('32. the admin has Messages instead of chat approvals, and can approve a review', async ({ page }) => {
+  await mockAdminApi(page)
+  await page.route('**/api/auth/login', route => route.fulfill({ json: MOCK_ADMIN_LOGIN }))
+  await page.route('**/api/chat/conversations', route => route.fulfill({ json: [] }))
+  let approved = ''
+  await page.route('**/api/reviews/moderation/pending', route => route.fulfill({
+    json: approved ? [] : [{
+      reviewId: 'rev-1',
+      rating: 2,
+      comment: 'Arrived an hour late',
+      createdAt: '2026-10-29T03:00:00.000Z',
+      customer: { name: 'Test Customer' },
+      provider: { providerName: 'Rajshahi Cleaners' },
+      booking: { serviceName: 'Home Cleaning', status: 'confirmed' }
+    }]
+  }))
+  await page.route('**/api/reviews/moderation/rev-1/approve', route => {
+    approved = 'rev-1'
+    return route.fulfill({ json: { reviewId: 'rev-1', status: 'approved' } })
+  })
+
+  await signInAs(page, 'admin@servicehub.local')
+  await expect(page.getByRole('button', { name: /Chat approvals/ })).toHaveCount(0)
+
+  await page.getByRole('button', { name: /^Messages/ }).click()
+  await expect(page.locator('.chat-start select')).toBeVisible()
+
+  await page.getByRole('button', { name: /Review\s+approvals/ }).click()
+  const row = page.locator('.review-row', { hasText: 'Arrived an hour late' })
+  // shows the job was never finished, so the admin can judge the review
+  await expect(row).toContainText('Not started')
+  await row.getByRole('button', { name: 'Approve' }).click()
+
+  await expect(page.locator('.review-row', { hasText: 'Arrived an hour late' })).toHaveCount(0)
+  expect(approved).toBe('rev-1')
+})

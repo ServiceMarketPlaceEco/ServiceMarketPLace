@@ -524,7 +524,8 @@ export async function getPublicReviews() {
   return resultArray(result)
 }
 
-// only signed in customers can review, and only a completed booking.
+// only signed in customers can review, any of their bookings once a provider
+// is assigned. it is saved as pending until an admin approves it.
 // payload is { bookingId, rating, comment }. auth: true was missing before,
 // so even signed in customers got "Unauthorized" (H6 in the qa report)
 export function createReview(payload) {
@@ -668,6 +669,25 @@ export function updateReportStatus(
   )
 }
 
+// the signed in customer's reviews with pending / approved / rejected status
+export async function getMyReviews() {
+  return resultArray(await request('/reviews/mine', { auth: true }))
+}
+
+// ---------- Review approval (admin) ----------
+
+export async function getPendingReviews() {
+  return resultArray(await request('/reviews/moderation/pending', { auth: true }))
+}
+
+export function approveReview(reviewId) {
+  return request(`/reviews/moderation/${encodeURIComponent(reviewId)}/approve`, { method: 'POST', auth: true })
+}
+
+export function rejectReview(reviewId) {
+  return request(`/reviews/moderation/${encodeURIComponent(reviewId)}/reject`, { method: 'POST', auth: true })
+}
+
 // ---------- Review moderation ----------
 
 export function scanReviews() {
@@ -769,70 +789,35 @@ export function aiScreenAccount(account) {
   )
 }
 
-// ---------- Chat approval ----------
+// ---------- Chat ----------
+// Customer <-> provider (per booking, once an admin assigns the provider),
+// admin <-> customer and admin <-> provider. The chat screen refreshes every
+// 5 seconds, passing the newest message time so only new messages come back.
 
-export async function getChatApprovals() {
-  const result = await request(
-    '/chat/approvals',
-    {
-      auth: true
-    }
-  )
-
-  return resultArray(result)
+export async function getChats() {
+  return resultArray(await request('/chat/conversations', { auth: true }))
 }
 
-export function requestChatApproval(
-  payload
-) {
-  return request('/chat/approvals', {
+export async function getChatMessages(conversationId, after) {
+  const query = after ? `?${new URLSearchParams({ after }).toString()}` : ''
+  return resultArray(
+    await request(`/chat/conversations/${encodeURIComponent(conversationId)}/messages${query}`, { auth: true })
+  )
+}
+
+export function sendChatMessage(conversationId, body) {
+  return request(`/chat/conversations/${encodeURIComponent(conversationId)}/messages`, {
     method: 'POST',
-    body: payload,
+    body: { body },
     auth: true
   })
 }
 
-export function updateChatApproval(
-  approvalId,
-  status
-) {
-  return request(
-    `/chat/approvals/${encodeURIComponent(
-      approvalId
-    )}`,
-    {
-      method: 'PATCH',
-      body: { status },
-      auth: true
-    }
-  )
-}
-
-// ---------- Chat messages ----------
-
-export async function getChatMessages(
-  bookingId
-) {
-  const query = bookingId
-    ? `?${new URLSearchParams({
-      bookingId: String(bookingId)
-    }).toString()}`
-    : ''
-
-  const result = await request(
-    `/chat/messages${query}`,
-    {
-      auth: true
-    }
-  )
-
-  return resultArray(result)
-}
-
-export function sendChatMessage(payload) {
-  return request('/chat/messages', {
+// admin only: open (or reopen) a chat with a customer or provider
+export function startSupportChat(userType, userId) {
+  return request('/chat/conversations/support', {
     method: 'POST',
-    body: payload,
+    body: { userType, userId },
     auth: true
   })
 }

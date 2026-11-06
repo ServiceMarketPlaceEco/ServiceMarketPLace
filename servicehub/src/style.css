@@ -3254,3 +3254,71 @@ td small {
   border-radius: 10px;
   background: var(--brand-soft);
 }
+
+/* unread count on a "Messages" tab */
+.tab-badge {
+  display: inline-block;
+  min-width: 20px;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* "Your reviews" on the reviews page, with each review's approval status */
+.my-reviews {
+  display: grid;
+  gap: 10px;
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.my-reviews h3 {
+  margin: 0 0 4px;
+}
+
+.my-review-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.my-review-row div {
+  display: grid;
+  min-width: 0;
+}
+
+.my-review-row small {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-pill.review-pending {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.status-pill.review-approved {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.status-pill.review-rejected {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.review-approval-note {
+  margin: 0;
+  font-size: .85rem;
+}

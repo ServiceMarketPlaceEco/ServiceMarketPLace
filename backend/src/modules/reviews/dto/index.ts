@@ -51,6 +51,9 @@ export class ReviewResponseDto {
   @ApiProperty()
   comment: string;
 
+  @ApiProperty({ enum: ['pending', 'approved', 'rejected'] })
+  status: string;
+
   @ApiProperty()
   createdAt: Date;
 

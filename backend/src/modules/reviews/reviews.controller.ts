@@ -24,9 +24,9 @@ export class ReviewsController {
   @Post()
   @UseGuards(JwtAuthGuard, CustomerGuard)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Create a review for a completed booking' })
-  @ApiResponse({ status: 201, description: 'Review created', type: ReviewResponseDto })
-  @ApiResponse({ status: 400, description: 'Can only review completed bookings' })
+  @ApiOperation({ summary: 'Review one of your bookings. It waits for admin approval before it shows' })
+  @ApiResponse({ status: 201, description: 'Review saved as pending', type: ReviewResponseDto })
+  @ApiResponse({ status: 400, description: 'No provider has been assigned to the booking yet' })
   @ApiResponse({ status: 409, description: 'Already reviewed this booking' })
   async create(
     @CurrentUser() user: CurrentUserData,
@@ -52,6 +52,15 @@ export class ReviewsController {
   @ApiResponse({ status: 200, description: 'Array of booking ids' })
   async findMyReviewedBookingIds(@CurrentUser() user: CurrentUserData) {
     return this.reviewsService.findReviewedBookingIds(user.userId);
+  }
+
+  // the signed in customer's reviews with their approval status
+  @Get('mine')
+  @UseGuards(JwtAuthGuard, CustomerGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Your reviews, with pending, approved or rejected status' })
+  async findMine(@CurrentUser() user: CurrentUserData) {
+    return this.reviewsService.findMine(user.userId);
   }
 
   @Get('provider/:providerId')

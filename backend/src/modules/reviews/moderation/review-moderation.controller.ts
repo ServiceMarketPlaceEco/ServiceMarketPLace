@@ -21,9 +21,11 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { ReviewModerationService } from './review-moderation.service';
+import { ReviewsService } from '../reviews.service';
 import { JwtAuthGuard, AdminGuard } from '../../auth/guards';
 import { AiThrottle } from '../../../common/decorators/throttle.decorator';
 import { AiScreeningService, AiScreenReviewDto } from '../../../common/ai';
@@ -36,6 +38,7 @@ export class ReviewModerationController {
   constructor(
     private readonly moderationService: ReviewModerationService,
     private readonly aiScreening: AiScreeningService,
+    private readonly reviewsService: ReviewsService,
   ) {}
 
   @Get('scan')
@@ -69,6 +72,31 @@ export class ReviewModerationController {
       detectorScore: score,
       detectorReasons: Array.isArray(reasons) ? reasons.map((r: any) => r?.detail) : [],
     });
+  }
+
+  // reviews waiting for approval. every new review starts here
+  @Get('pending')
+  @ApiOperation({ summary: 'Reviews waiting for admin approval, oldest first (admin)' })
+  async pending() {
+    return this.reviewsService.findPending();
+  }
+
+  @Post(':id/approve')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Approve a review so it shows publicly and counts in the rating (admin)' })
+  @ApiResponse({ status: 404, description: 'Review not found' })
+  async approve(@Param('id', new ParseUUIDPipe()) id: string) {
+    const review = await this.reviewsService.approve(id);
+    return { reviewId: review.reviewId, status: review.status };
+  }
+
+  @Post(':id/reject')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reject a review so it never shows (admin)' })
+  @ApiResponse({ status: 404, description: 'Review not found' })
+  async reject(@Param('id', new ParseUUIDPipe()) id: string) {
+    const review = await this.reviewsService.reject(id);
+    return { reviewId: review.reviewId, status: review.status };
   }
 
   @Post(':id/keep')

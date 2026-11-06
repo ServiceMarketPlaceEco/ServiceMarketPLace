@@ -52,6 +52,7 @@ describe('Review endpoints (integration)', () => {
   function stubRatingQuery(avgRating: string | null = '4.5', totalReviews = 2) {
     reviewRepo.createQueryBuilder.mockReturnValue({
       where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
       getRawOne: jest.fn().mockResolvedValue({ avgRating, totalReviews }),
@@ -146,10 +147,28 @@ describe('Review endpoints (integration)', () => {
       expect(res.body.customerId).toBe('cust-1');
     });
 
-    it('returns 400 when the booking isnt completed yet', async () => {
+    it('accepts a review on a booking that isnt completed (saved as pending)', async () => {
       const token = customerToken();
       const booking = completedBooking();
       booking.status = BookingStatus.CONFIRMED;
+      bookingRepo.findOne.mockResolvedValue(booking);
+      reviewRepo.findOne.mockResolvedValue(null);
+      reviewRepo.save.mockImplementation(async (r: any) => ({ ...r, reviewId: 'rev-1' }));
+
+      const res = await request(app.getHttpServer())
+        .post('/api/reviews')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ bookingId: BOOKING_ID, rating: 1, comment: 'never turned up' })
+        .expect(201);
+
+      expect(res.body.status).toBe('pending');
+    });
+
+    it('returns 400 when no provider has been assigned yet', async () => {
+      const token = customerToken();
+      const booking: any = completedBooking();
+      booking.status = BookingStatus.PENDING;
+      booking.providerService = null;
       bookingRepo.findOne.mockResolvedValue(booking);
 
       await request(app.getHttpServer())
@@ -183,7 +202,7 @@ describe('Review endpoints (integration)', () => {
         .expect(404);
     });
 
-    it('recalculates the provider average after the review saves', async () => {
+    it('waits for admin approval before the provider average changes', async () => {
       const token = customerToken();
       bookingRepo.findOne.mockResolvedValue(completedBooking());
       reviewRepo.findOne.mockResolvedValue(null);
@@ -195,10 +214,7 @@ describe('Review endpoints (integration)', () => {
         .send({ bookingId: BOOKING_ID, rating: 5 })
         .expect(201);
 
-      expect(providerRepo.update).toHaveBeenCalledWith('prov-1', {
-        rating: 4.5,
-        totalReviews: 2,
-      });
+      expect(providerRepo.update).not.toHaveBeenCalled();
     });
 
     // ---- validation ----

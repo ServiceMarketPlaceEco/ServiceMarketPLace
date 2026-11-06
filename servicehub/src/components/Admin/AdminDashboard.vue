@@ -1,17 +1,18 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { formatStatus, serviceImageSrc } from '../../data/services'
 import * as api from '../../services/api'
+import ChatPanel from '../Chat/ChatPanel.vue'
+import { useUnreadChats } from '../../composables/useUnreadChats'
 
 const props = defineProps({
   accounts: { type: Array, default: () => [] },
   requests: { type: Array, default: () => [] },
-  chatApprovals: { type: Array, default: () => [] },
   blockRequests: { type: Array, default: () => [] },
   theme: { type: String, default: 'light' }
 })
 
-const emit = defineEmits(['approve-provider', 'reject-provider', 'activate-provider', 'block-customer', 'activate-customer', 'assign-request', 'approve-chat', 'reject-chat', 'block-status-change', 'services-changed', 'sign-out', 'go-home', 'toggle-theme'])
+const emit = defineEmits(['approve-provider', 'reject-provider', 'activate-provider', 'block-customer', 'activate-customer', 'assign-request', 'block-status-change', 'services-changed', 'sign-out', 'go-home', 'toggle-theme'])
 
 const activeView = ref('dashboard')
 const searchTerm = ref('')
@@ -59,7 +60,58 @@ async function loadCatalogServices() {
   }
 }
 
-watch(activeView, view => { if (view === 'services') loadCatalogServices() })
+watch(activeView, view => {
+  if (view === 'services') loadCatalogServices()
+  if (view === 'approvals') loadPendingReviews()
+})
+
+// ---------- Messages ----------
+const { unread: unreadChats, setUnread: setUnreadChats } = useUnreadChats()
+
+// ---------- Review approvals ----------
+// every new review waits here until an admin approves or rejects it
+const pendingReviews = ref([])
+const pendingLoading = ref(false)
+const pendingError = ref('')
+const pendingBusy = ref({})
+
+async function loadPendingReviews() {
+  pendingLoading.value = true
+  pendingError.value = ''
+  try {
+    pendingReviews.value = await api.getPendingReviews()
+  } catch (err) {
+    pendingError.value = err.message || 'Could not load the reviews waiting for approval'
+  } finally {
+    pendingLoading.value = false
+  }
+}
+
+async function decideReview(review, decision) {
+  pendingBusy.value = { ...pendingBusy.value, [review.reviewId]: true }
+  pendingError.value = ''
+  try {
+    if (decision === 'approve') await api.approveReview(review.reviewId)
+    else await api.rejectReview(review.reviewId)
+    pendingReviews.value = pendingReviews.value.filter(r => r.reviewId !== review.reviewId)
+  } catch (err) {
+    pendingError.value = err.message || 'Could not save your decision. Please try again.'
+  } finally {
+    pendingBusy.value = { ...pendingBusy.value, [review.reviewId]: false }
+  }
+}
+
+function bookingStateLabel(status) {
+  return {
+    pending: 'Not assigned',
+    confirmed: 'Not started',
+    in_progress: 'In progress',
+    completed: 'Completed',
+    cancelled: 'Cancelled'
+  }[status] || status || 'Unknown'
+}
+
+onMounted(loadPendingReviews)
 
 async function saveServiceImage(service) {
   const imageUrl = String(imageDrafts.value[service.serviceId] || '').trim()
@@ -259,7 +311,10 @@ function assignProvider(request) {
           providers</button>
         <button :class="{ active: activeView === 'services' }" @click="activeView = 'services'">Services</button>
         <button :class="{ active: activeView === 'requests' }" @click="activeView = 'requests'">Requests</button>
-        <button :class="{ active: activeView === 'chat' }" @click="activeView = 'chat'">Chat approvals</button>
+        <button :class="{ active: activeView === 'messages' }" @click="activeView = 'messages'">Messages<span
+            v-if="unreadChats" class="tab-badge">{{ unreadChats }}</span></button>
+        <button :class="{ active: activeView === 'approvals' }" @click="activeView = 'approvals'">Review
+          approvals<span v-if="pendingReviews.length" class="tab-badge">{{ pendingReviews.length }}</span></button>
         <button :class="{ active: activeView === 'blocks' }" @click="activeView = 'blocks'">Block requests</button>
         <button :class="{ active: activeView === 'moderation' }" @click="activeView = 'moderation'">Review
           moderation</button>
@@ -277,7 +332,7 @@ function assignProvider(request) {
       <header class="ops-topbar">
         <div>
           <h1>{{ activeView === 'dashboard' ? 'Admin dashboard' : activeView }}</h1>
-          <p>Manage users, provider approvals, request assignment and chat approval.</p>
+          <p>Manage users, provider approvals, request assignment, messages and review approvals.</p>
         </div><input v-model="searchTerm" placeholder="Search admin workspace..." />
       </header>
 
@@ -496,37 +551,41 @@ function assignProvider(request) {
         </section>
       </template>
 
-      <template v-if="activeView === 'chat'">
+      <template v-if="activeView === 'messages'">
+        <ChatPanel role="admin" :accounts="accounts" @unread="setUnreadChats" />
+      </template>
+
+      <template v-if="activeView === 'approvals'">
         <section class="ops-panel">
           <div class="panel-heading">
-            <h2>Chat approval requests</h2><span>{{ chatApprovals.length }} submitted</span>
+            <h2>Reviews waiting for approval</h2>
+            <button class="secondary small" :disabled="pendingLoading" @click="loadPendingReviews">
+              {{ pendingLoading ? 'Loading...' : 'Refresh' }}
+            </button>
           </div>
-          <p class="muted">User/provider chat is locked until admin approves the request.</p>
-          <div v-if="chatApprovals.length === 0" class="empty-state">No chat approval requests yet.</div>
-          <div v-else class="responsive-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Request</th>
-                  <th>Requested by</th>
-                  <th>Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="approval in chatApprovals" :key="approval.id">
-                  <td><strong>{{ approval.id }}</strong></td>
-                  <td>{{ approval.requestId }}</td>
-                  <td>{{ approval.requestedBy }}</td>
-                  <td><span class="status-pill" :class="approval.status">{{ approval.status }}</span></td>
-                  <td class="row-actions"><button class="success small"
-                      @click="$emit('approve-chat', approval.id)">Approve</button><button class="secondary small"
-                      @click="$emit('reject-chat', approval.id)">Reject</button></td>
-                </tr>
-              </tbody>
-            </table>
+          <p class="muted">
+            New reviews only show on the website after you approve them. Customers can review a booking whether or
+            not the job was finished, so check the booking state before deciding.
+          </p>
+          <p v-if="pendingError" class="error-text">{{ pendingError }}</p>
+          <div v-if="!pendingLoading && pendingReviews.length === 0" class="empty-state">
+            No reviews are waiting for approval.
           </div>
+          <article v-for="review in pendingReviews" :key="review.reviewId" class="review-row expanded">
+            <div>
+              <strong>{{ review.customer?.name || 'Customer' }} about {{ review.provider?.providerName || 'provider'
+              }}</strong>
+              <small>{{ review.booking?.serviceName || 'Booking' }} · {{ bookingStateLabel(review.booking?.status) }} ·
+                {{ review.rating }}/5 · {{ new Date(review.createdAt).toLocaleDateString() }}</small>
+              <p>{{ review.comment || 'No comment' }}</p>
+            </div>
+            <div class="row-actions">
+              <button class="secondary small" :disabled="pendingBusy[review.reviewId]"
+                @click="decideReview(review, 'reject')">Reject</button>
+              <button class="success small" :disabled="pendingBusy[review.reviewId]"
+                @click="decideReview(review, 'approve')">Approve</button>
+            </div>
+          </article>
         </section>
       </template>
 

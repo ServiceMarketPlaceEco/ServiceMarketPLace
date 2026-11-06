@@ -70,8 +70,6 @@ const selectedTrackingRequest = ref(null)
 const services = ref([])
 const requests = ref([])
 const accounts = ref([])
-const chatApprovals = ref([])
-const messages = ref([])
 const blockRequests = ref([])
 const reviews = ref([])
 const appMain = ref(null)
@@ -79,6 +77,8 @@ const providerServices = ref([])
 const providerReviews = ref([])
 // booking ids the signed in customer has already reviewed (see ReviewsPage)
 const reviewedBookingIds = ref([])
+// the signed in customer's own reviews with their approval status
+const myReviews = ref([])
 
 // Customer phone verification state. The pending registration is kept only in
 // memory until the code is confirmed, so its password is never stored locally.
@@ -477,6 +477,7 @@ async function refreshBookings() {
       // if this one fails the form just offers every finished booking, and the
       // backend still stops a second review with "already reviewed"
       reviewedBookingIds.value = await api.getMyReviewedBookingIds().catch(() => [])
+      myReviews.value = await api.getMyReviews().catch(() => [])
     }
     else if (signedInUser.value.role === 'provider') raw = await api.getProviderBookings()
     else raw = await api.getAllBookings()
@@ -573,30 +574,11 @@ async function refreshProviderReviews() {
   }
 }
 
-async function refreshChatData() {
-  if (!signedInUser.value) {
-    chatApprovals.value = []
-    messages.value = []
-    return
-  }
-
-  try {
-    const [approvals, chatMessages] = await Promise.all([
-      api.getChatApprovals(),
-      api.getChatMessages()
-    ])
-    chatApprovals.value = approvals
-    messages.value = chatMessages
-  } catch (err) {
-    console.warn('Could not load chat data:', err.message)
-  }
-}
-
 async function applySession(res, userType) {
   api.setTokens(res.accessToken, res.refreshToken)
   signedInUser.value = normalizeUser(res.user, userType)
   currentPage.value = 'dashboard'
-  await Promise.all([refreshBookings(), refreshChatData()])
+  await refreshBookings()
   if (userType === 'admin') {
     await refreshAdminAccounts()
     await refreshAdminReports()
@@ -610,7 +592,7 @@ async function applySession(res, userType) {
 onMounted(async () => {
   await Promise.all([loadServices(), loadPublicReviews()])
   if (signedInUser.value) {
-    await Promise.all([refreshBookings(), refreshChatData()])
+    await refreshBookings()
     if (signedInUser.value.role === 'admin') {
       await refreshAdminAccounts()
       await refreshAdminReports()
@@ -779,8 +761,9 @@ function openRequest(service) {
   currentPage.value = 'request'
 }
 
-// a review is always about one finished booking. the backend works out the
-// provider from the booking, so we only send what the customer chose
+// a review is always about one of the customer's bookings. the backend works
+// out the provider from the booking, so we only send what the customer chose.
+// it is saved as pending and only shows publicly once an admin approves it
 async function submitReview(review) {
   try {
     await api.createReview({
@@ -789,17 +772,19 @@ async function submitReview(review) {
       comment: review.comment
     })
     reviewedBookingIds.value = [...reviewedBookingIds.value, review.bookingId]
-    await loadPublicReviews()
+    myReviews.value = await api.getMyReviews().catch(() => myReviews.value)
+    alert('Thank you! Your review will appear once an admin has approved it.')
   } catch (err) {
     alert(err.message || 'Could not submit review.')
   }
 }
 
-// finished bookings the customer can still review
+// any booking with a provider assigned, finished or not (for example a
+// provider who never turned up), that the customer hasn't reviewed yet
 const reviewableBookings = computed(() =>
   signedInUser.value?.role === 'customer'
     ? requests.value.filter(request =>
-      request.status === 'completed' && !reviewedBookingIds.value.includes(request.id))
+      request.providerServiceId && !reviewedBookingIds.value.includes(request.id))
     : []
 )
 
@@ -938,41 +923,6 @@ async function changeProviderPassword(payload) {
   }
 }
 
-// ---------- Chat ----------
-
-async function requestChat(payload) {
-  try {
-    await api.requestChatApproval(payload)
-    await refreshChatData()
-  } catch (err) {
-    alert(err.message || 'Could not request chat approval.')
-  }
-}
-async function approveChat(id) {
-  try {
-    await api.updateChatApproval(id, 'approved')
-    await refreshChatData()
-  } catch (err) {
-    alert(err.message || 'Could not approve chat access.')
-  }
-}
-async function rejectChat(id) {
-  try {
-    await api.updateChatApproval(id, 'rejected')
-    await refreshChatData()
-  } catch (err) {
-    alert(err.message || 'Could not reject chat access.')
-  }
-}
-async function sendMessage(payload) {
-  try {
-    await api.sendChatMessage(payload)
-    await refreshChatData()
-  } catch (err) {
-    alert(err.message || 'Could not send message.')
-  }
-}
-
 // ---------- Reports / block requests (real backend data) ----------
 
 async function createBlockRequest(payload) {
@@ -1026,7 +976,7 @@ async function updateBlockRequest({ id, status }) {
 
       <HowItWorksPage v-else-if="currentPage === 'how'" />
       <ReviewsPage v-else-if="currentPage === 'reviews'" :reviews="reviews"
-        :reviewable-bookings="reviewableBookings" :signed-in-user="signedInUser"
+        :reviewable-bookings="reviewableBookings" :my-reviews="myReviews" :signed-in-user="signedInUser"
         @submit-review="submitReview" @sign-in="goTo('signin')" />
       <SignInPage v-else-if="currentPage === 'signin'" :google-error="googleSignInError" @sign-in="signIn"
         @google-sign-in="signInWithGoogle" @go-register="goTo('register')" @forgot-password="requestPasswordReset"
@@ -1042,20 +992,20 @@ async function updateBlockRequest({ id, status }) {
         @view-tracking="openTracking" />
 
       <ProviderDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'provider'"
-        :current-user="signedInUser" :requests="requests" :chat-approvals="chatApprovals" :messages="messages"
+        :current-user="signedInUser" :requests="requests"
         :theme="theme" :provider-services="providerServices" :available-services="services" :reviews="providerReviews"
         @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @accept-request="acceptProviderRequest"
-        @decline-request="declineProviderRequest" @status-change="changeRequestStatus" @request-chat="requestChat"
-        @send-message="sendMessage" @block-request="createBlockRequest" @add-service="addProviderServiceOffering"
+        @decline-request="declineProviderRequest" @status-change="changeRequestStatus"
+        @block-request="createBlockRequest" @add-service="addProviderServiceOffering"
         @toggle-service="toggleProviderService" @update-profile="updateProviderProfile"
         @change-password="changeProviderPassword" />
 
       <AdminDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'admin'" :accounts="accounts"
-        :requests="requests" :chat-approvals="chatApprovals" :block-requests="blockRequests" :theme="theme"
+        :requests="requests" :block-requests="blockRequests" :theme="theme"
         @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @approve-provider="approveProvider"
         @reject-provider="rejectProvider" @activate-provider="activateProvider" @block-customer="blockCustomer"
-        @activate-customer="activateCustomer" @assign-request="assignRequest" @approve-chat="approveChat"
-        @reject-chat="rejectChat" @block-status-change="updateBlockRequest" @services-changed="loadServices" />
+        @activate-customer="activateCustomer" @assign-request="assignRequest"
+        @block-status-change="updateBlockRequest" @services-changed="loadServices" />
 
       <TrackingPage v-else-if="currentPage === 'tracking'" :requests="requests"
         :selected-request="selectedTrackingRequest" @back="goTo(signedInUser ? 'dashboard' : 'home')" />

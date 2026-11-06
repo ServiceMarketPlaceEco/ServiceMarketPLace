@@ -79,27 +79,30 @@ describe('ReviewsPage', () => {
     expect(document.body.querySelector('textarea')).toBeNull()
   })
 
-  it('tells a customer with nothing finished that they have nothing to review yet', async () => {
+  it('tells a customer with no assigned bookings that they have nothing to review yet', async () => {
     const wrapper = mountPage({ signedInUser: customer, reviewableBookings: [] })
     await openForm(wrapper)
 
-    expect(modal().textContent).toContain('No finished bookings to review')
+    expect(modal().textContent).toContain('No bookings to review yet')
     expect(document.body.querySelector('textarea')).toBeNull()
   })
 
-  it('lets a customer pick one of their finished bookings and sends just the booking, rating and comment', async () => {
+  it('lets a customer pick one of their bookings and sends just the booking, rating and comment', async () => {
     const wrapper = mountPage({
       signedInUser: customer,
-      reviewableBookings: [finishedBooking(), finishedBooking({ id: 'b-2', serviceTitle: 'AC Repair', providerName: 'Cool Air' })]
+      reviewableBookings: [
+        finishedBooking(),
+        finishedBooking({ id: 'b-2', serviceTitle: 'AC Repair', providerName: 'Cool Air', status: 'assigned-to-provider' })
+      ]
     })
     await openForm(wrapper)
 
     const select = document.body.querySelector('select')
     const options = [...select.options].map(o => o.textContent.trim())
     expect(options).toEqual([
-      'Choose a finished booking',
-      'Plumbing · Rahim Plumbing Services · 2026-10-01',
-      'AC Repair · Cool Air · 2026-10-01'
+      'Choose a booking',
+      'Plumbing · Rahim Plumbing Services · 2026-10-01 · Completed',
+      'AC Repair · Cool Air · 2026-10-01 · Assigned to provider'
     ])
 
     select.value = 'b-2'
@@ -118,6 +121,29 @@ describe('ReviewsPage', () => {
     // exactly the body POST /reviews accepts - no username, userType or serviceId
     expect(wrapper.emitted('submit-review')).toEqual([[{ bookingId: 'b-2', rating: 4, comment: 'cold air again, thanks' }]])
     expect(modal()).toBeNull()
+  })
+
+  it('shows the customer their own reviews and where each one is up to', async () => {
+    const wrapper = mountPage({
+      signedInUser: customer,
+      myReviews: [
+        { reviewId: 'r-1', status: 'pending', rating: 2, comment: 'never came', booking: { serviceName: 'Plumbing' } },
+        { reviewId: 'r-2', status: 'approved', rating: 5, comment: 'great', booking: { serviceName: 'AC Repair' } },
+        { reviewId: 'r-3', status: 'rejected', rating: 1, comment: 'x', booking: { serviceName: 'Cleaning' } }
+      ]
+    })
+
+    const text = wrapper.find('.my-reviews').text()
+    expect(text).toContain('Waiting for approval')
+    expect(text).toContain('Published')
+    expect(text).toContain('Not approved')
+  })
+
+  it('tells the customer an admin checks reviews before they appear', async () => {
+    const wrapper = mountPage({ signedInUser: customer, reviewableBookings: [finishedBooking()] })
+    await openForm(wrapper)
+
+    expect(modal().textContent).toContain('An admin checks every review before it appears')
   })
 
   it('picks the booking for them when there is only one', async () => {

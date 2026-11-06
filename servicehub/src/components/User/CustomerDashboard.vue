@@ -1,5 +1,8 @@
 <script setup>
+import { ref } from 'vue'
 import { formatStatus } from '../../data/services'
+import ChatPanel from '../Chat/ChatPanel.vue'
+import { useUnreadChats } from '../../composables/useUnreadChats'
 
 defineProps({
   customer: Object,
@@ -10,6 +13,25 @@ defineProps({
 })
 
 defineEmits(['request-another', 'view-tracking'])
+
+const activeTab = ref('requests')
+const focusBookingId = ref('')
+const { unread, setUnread } = useUnreadChats()
+
+// a customer can message the provider once an admin has assigned one
+function canMessage(request) {
+  return Boolean(request.providerName) && request.status !== 'waiting-admin-approval'
+}
+
+function messageProvider(request) {
+  focusBookingId.value = request.id
+  activeTab.value = 'messages'
+}
+
+function openMessages() {
+  focusBookingId.value = ''
+  activeTab.value = 'messages'
+}
 </script>
 
 <template>
@@ -26,7 +48,17 @@ defineEmits(['request-another', 'view-tracking'])
       </button>
     </div>
 
-    <div v-if="!requests.length" class="empty-state">
+    <div class="moderation-tabs">
+      <button :class="{ active: activeTab === 'requests' }" @click="activeTab = 'requests'">My requests</button>
+      <button :class="{ active: activeTab === 'messages' }" @click="openMessages">
+        Messages <span v-if="unread" class="tab-badge">{{ unread }}</span>
+      </button>
+    </div>
+
+    <ChatPanel v-if="activeTab === 'messages'" role="customer" :focus-booking-id="focusBookingId"
+      @unread="setUnread" />
+
+    <div v-else-if="!requests.length" class="empty-state">
       No service requests yet.
     </div>
 
@@ -44,7 +76,7 @@ defineEmits(['request-another', 'view-tracking'])
               <th>Date</th>
               <th>Provider</th>
               <th>Status</th>
-              <th>Tracking</th>
+              <th>Actions</th>
             </tr>
           </thead>
 
@@ -64,8 +96,9 @@ defineEmits(['request-another', 'view-tracking'])
               <td>
                 <span class="status-pill" :class="request.status">{{ formatStatus(request.status) }}</span>
               </td>
-              <td>
+              <td class="row-actions">
                 <button class="secondary small" @click="$emit('view-tracking', request)">Track</button>
+                <button v-if="canMessage(request)" class="primary small" @click="messageProvider(request)">Message</button>
               </td>
             </tr>
           </tbody>
