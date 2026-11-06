@@ -73,7 +73,11 @@ async function saveServiceImage(service) {
     // An empty field clears the photo so the catalogue falls back to its default.
     const updated = await api.updateService(service.serviceId, { imageUrl: imageUrl || null })
     service.imageUrl = updated?.imageUrl ?? (imageUrl || null)
-    imageDrafts.value[service.serviceId] = service.imageUrl || ''
+    // only tidy the field if it still holds what was saved: anything the admin
+    // typed while the save was in flight must not be overwritten
+    if (String(imageDrafts.value[service.serviceId] || '').trim() === imageUrl) {
+      imageDrafts.value[service.serviceId] = service.imageUrl || ''
+    }
     emit('services-changed')
   } catch (err) {
     imageErrors.value[service.serviceId] = err.message || 'Could not save the image.'

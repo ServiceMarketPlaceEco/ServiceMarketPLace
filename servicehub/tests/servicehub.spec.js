@@ -437,8 +437,11 @@ test('30. admin can set a service photo from the dashboard', async ({ page }) =>
     ? route.fulfill({ contentType: 'image/png', body: Buffer.from('this is not an image') })
     : route.fulfill({ contentType: 'image/png', body: png }))
   let sent = null
-  await page.route('**/api/services/s-2', route => {
+  await page.route('**/api/services/s-2', async route => {
     sent = { method: route.request().method(), body: JSON.parse(route.request().postData() || '{}') }
+    // a slow response, like on a busy CI runner: the field must keep what the
+    // admin types meanwhile (it used to be overwritten when the save returned)
+    await new Promise(resolve => setTimeout(resolve, 300))
     return route.fulfill({ json: { ...MOCK_SERVICES[1], ...sent.body } })
   })
 
