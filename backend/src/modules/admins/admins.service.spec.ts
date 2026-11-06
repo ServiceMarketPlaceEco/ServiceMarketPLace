@@ -5,7 +5,7 @@
 // I mock all the repos so none of this needs MySQL running.
 // Run with: npm test
 
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import { NotFoundException, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { AdminsService } from './admins.service';
 import { BookingStatus } from '../bookings/entities/booking.entity';
@@ -161,6 +161,85 @@ describe('AdminsService', () => {
 
       const result = await service.activate('admin-1');
       expect(result.isActive).toBe(true);
+    });
+  });
+
+  // the rules that stop the site being left with nobody who can manage it
+  describe('admin account safety', () => {
+    it('does not let an admin switch off their own account', async () => {
+      adminRepo.findOne.mockResolvedValue({ id: 'admin-1', isActive: true, role: 'admin' });
+      adminRepo.count.mockResolvedValue(3);
+
+      await expect(service.deactivate('admin-1', 'admin-1', 'admin')).rejects.toThrow(BadRequestException);
+      expect(adminRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('keeps the last active admin on', async () => {
+      adminRepo.findOne.mockResolvedValue({ id: 'admin-2', isActive: true, role: 'admin' });
+      adminRepo.count.mockResolvedValue(1);
+
+      await expect(service.deactivate('admin-2', 'admin-1', 'super_admin')).rejects.toThrow('last active admin');
+    });
+
+    it('keeps the last active super admin on', async () => {
+      adminRepo.findOne.mockResolvedValue({ id: 'admin-2', isActive: true, role: 'super_admin' });
+      adminRepo.count.mockResolvedValueOnce(3).mockResolvedValueOnce(1);
+
+      await expect(service.deactivate('admin-2', 'admin-1', 'super_admin')).rejects.toThrow('last active super admin');
+    });
+
+    it('lets a super admin switch off the seeded admin once there is another super admin', async () => {
+      adminRepo.findOne.mockResolvedValue({ id: 'seeded', isActive: true, role: 'super_admin' });
+      adminRepo.count.mockResolvedValueOnce(2).mockResolvedValueOnce(2);
+
+      const result = await service.deactivate('seeded', 'new-admin', 'super_admin');
+
+      expect(result.isActive).toBe(false);
+    });
+
+    it('does not let a normal admin create, change or switch off a super admin', async () => {
+      adminRepo.findOne.mockResolvedValue({ id: 'boss', isActive: true, role: 'super_admin' });
+
+      await expect(
+        service.create({ name: 'X', email: 'x@x.com', password: 'Password@123', role: 'super_admin' } as any, 'admin'),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(service.update('boss', { name: 'Y' } as any, 'admin')).rejects.toThrow(ForbiddenException);
+      await expect(service.update('me', { role: 'super_admin' } as any, 'admin')).rejects.toThrow(ForbiddenException);
+      await expect(service.deactivate('boss', 'me', 'admin')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('never returns the password hash of a new admin', async () => {
+      adminRepo.findOne.mockResolvedValue(null);
+      adminRepo.save.mockImplementation(async (a: any) => ({ ...a, id: 'admin-9' }));
+
+      const result: any = await service.create({ name: 'X', email: 'x@x.com', password: 'Password@123' } as any, 'super_admin');
+
+      expect(result.passwordHash).toBeUndefined();
+    });
+
+    describe('changeOwnPassword', () => {
+      it('changes the password when the current one is right', async () => {
+        const passwordHash = await bcrypt.hash('Admin@123', 4);
+        adminRepo.findOne.mockResolvedValue({ id: 'admin-1', passwordHash });
+
+        await service.changeOwnPassword('admin-1', 'Admin@123', 'NewStrong@2026');
+
+        const saved = adminRepo.save.mock.calls[0][0];
+        expect(await bcrypt.compare('NewStrong@2026', saved.passwordHash)).toBe(true);
+      });
+
+      it('refuses when the current password is wrong', async () => {
+        adminRepo.findOne.mockResolvedValue({ id: 'admin-1', passwordHash: await bcrypt.hash('Admin@123', 4) });
+
+        await expect(service.changeOwnPassword('admin-1', 'guess', 'NewStrong@2026')).rejects.toThrow(BadRequestException);
+        expect(adminRepo.save).not.toHaveBeenCalled();
+      });
+
+      it('refuses the same password again', async () => {
+        adminRepo.findOne.mockResolvedValue({ id: 'admin-1', passwordHash: await bcrypt.hash('Admin@123', 4) });
+
+        await expect(service.changeOwnPassword('admin-1', 'Admin@123', 'Admin@123')).rejects.toThrow('different');
+      });
     });
   });
 

@@ -7,10 +7,13 @@ import {
   Body,
   Query,
   UseGuards,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AdminsService } from './admins.service';
-import { CreateAdminDto, UpdateAdminDto } from './dto';
+import { CreateAdminDto, UpdateAdminDto, ChangeAdminPasswordDto } from './dto';
+import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards';
 import { RolesGuard } from '../auth/guards';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -24,9 +27,19 @@ export class AdminsController {
 
   @Post()
   @Roles('admin')
-  @ApiOperation({ summary: 'Create a new admin (super_admin only)' })
-  create(@Body() createAdminDto: CreateAdminDto) {
-    return this.adminsService.create(createAdminDto);
+  @ApiOperation({ summary: 'Create a new admin (only a super admin can create a super admin)' })
+  create(@CurrentUser() user: CurrentUserData, @Body() createAdminDto: CreateAdminDto) {
+    return this.adminsService.create(createAdminDto, user.user?.role);
+  }
+
+  // has to sit above the :id routes
+  @Post('me/password')
+  @Roles('admin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Change your own admin password' })
+  async changeOwnPassword(@CurrentUser() user: CurrentUserData, @Body() dto: ChangeAdminPasswordDto) {
+    await this.adminsService.changeOwnPassword(user.userId, dto.currentPassword, dto.newPassword);
+    return { message: 'Password changed' };
   }
 
   @Get()
@@ -77,22 +90,22 @@ export class AdminsController {
   @Patch(':id')
   @Roles('admin')
   @ApiOperation({ summary: 'Update admin' })
-  update(@Param('id') id: string, @Body() updateAdminDto: UpdateAdminDto) {
-    return this.adminsService.update(id, updateAdminDto);
+  update(@CurrentUser() user: CurrentUserData, @Param('id') id: string, @Body() updateAdminDto: UpdateAdminDto) {
+    return this.adminsService.update(id, updateAdminDto, user.user?.role);
   }
 
   @Post(':id/deactivate')
   @Roles('admin')
   @ApiOperation({ summary: 'Deactivate admin' })
-  deactivate(@Param('id') id: string) {
-    return this.adminsService.deactivate(id);
+  deactivate(@CurrentUser() user: CurrentUserData, @Param('id') id: string) {
+    return this.adminsService.deactivate(id, user.userId, user.user?.role);
   }
 
   @Post(':id/activate')
   @Roles('admin')
   @ApiOperation({ summary: 'Activate admin' })
-  activate(@Param('id') id: string) {
-    return this.adminsService.activate(id);
+  activate(@CurrentUser() user: CurrentUserData, @Param('id') id: string) {
+    return this.adminsService.activate(id, user.user?.role);
   }
 
   @Post('providers/:id/verify')

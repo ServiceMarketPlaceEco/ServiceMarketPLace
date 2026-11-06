@@ -19,6 +19,7 @@ import FooterSection from './components/User/FooterSection.vue'
 import AIChatbot from './components/AI/AIChatbot.vue'
 import LandingHighlights from './components/User/LandingHighlights.vue'
 import ReviewsPage from './components/User/ReviewsPage.vue'
+import LegalPage from './components/User/LegalPage.vue'
 
 // Backend service icons can be converted to readable category labels when a
 // separate category field is not returned.
@@ -302,7 +303,9 @@ function goTo(page) {
     'services',
     'request',
     'dashboard',
-    'tracking'
+    'tracking',
+    'privacy',
+    'terms'
   ]
 
   if (!validPages.includes(targetPage)) {
@@ -975,6 +978,7 @@ async function updateBlockRequest({ id, status }) {
         @request-service="openRequest" />
 
       <HowItWorksPage v-else-if="currentPage === 'how'" />
+      <LegalPage v-else-if="currentPage === 'privacy' || currentPage === 'terms'" :page="currentPage" />
       <ReviewsPage v-else-if="currentPage === 'reviews'" :reviews="reviews"
         :reviewable-bookings="reviewableBookings" :my-reviews="myReviews" :signed-in-user="signedInUser"
         @submit-review="submitReview" @sign-in="goTo('signin')" />
@@ -1000,7 +1004,8 @@ async function updateBlockRequest({ id, status }) {
         @toggle-service="toggleProviderService" @update-profile="updateProviderProfile"
         @change-password="changeProviderPassword" />
 
-      <AdminDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'admin'" :accounts="accounts"
+      <AdminDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'admin'" :current-user="signedInUser"
+        :accounts="accounts"
         :requests="requests" :block-requests="blockRequests" :theme="theme"
         @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @approve-provider="approveProvider"
         @reject-provider="rejectProvider" @activate-provider="activateProvider" @block-customer="blockCustomer"

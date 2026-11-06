@@ -789,6 +789,29 @@ export function aiScreenAccount(account) {
   )
 }
 
+// ---------- Admin accounts ----------
+
+export async function getAdmins() {
+  return resultArray(await request('/admins', { auth: true }))
+}
+
+// role is 'admin' or 'super_admin' (only a super admin can make another one)
+export function createAdmin({ name, email, password, role }) {
+  return request('/admins', { method: 'POST', body: { name, email, password, role }, auth: true })
+}
+
+export function deactivateAdmin(adminId) {
+  return request(`/admins/${encodeURIComponent(adminId)}/deactivate`, { method: 'POST', auth: true })
+}
+
+export function activateAdmin(adminId) {
+  return request(`/admins/${encodeURIComponent(adminId)}/activate`, { method: 'POST', auth: true })
+}
+
+export function changeMyAdminPassword(currentPassword, newPassword) {
+  return request('/admins/me/password', { method: 'POST', body: { currentPassword, newPassword }, auth: true })
+}
+
 // ---------- Chat ----------
 // Customer <-> provider (per booking, once an admin assigns the provider),
 // admin <-> customer and admin <-> provider. The chat screen refreshes every

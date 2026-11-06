@@ -3,9 +3,11 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { formatStatus, serviceImageSrc } from '../../data/services'
 import * as api from '../../services/api'
 import ChatPanel from '../Chat/ChatPanel.vue'
+import AdminAccounts from './AdminAccounts.vue'
 import { useUnreadChats } from '../../composables/useUnreadChats'
 
 const props = defineProps({
+  currentUser: { type: Object, default: null },
   accounts: { type: Array, default: () => [] },
   requests: { type: Array, default: () => [] },
   blockRequests: { type: Array, default: () => [] },
@@ -316,6 +318,7 @@ function assignProvider(request) {
         <button :class="{ active: activeView === 'approvals' }" @click="activeView = 'approvals'">Review
           approvals<span v-if="pendingReviews.length" class="tab-badge">{{ pendingReviews.length }}</span></button>
         <button :class="{ active: activeView === 'blocks' }" @click="activeView = 'blocks'">Block requests</button>
+        <button :class="{ active: activeView === 'admins' }" @click="activeView = 'admins'">Admin accounts</button>
         <button :class="{ active: activeView === 'moderation' }" @click="activeView = 'moderation'">Review
           moderation</button>
       </nav>
@@ -587,6 +590,10 @@ function assignProvider(request) {
             </div>
           </article>
         </section>
+      </template>
+
+      <template v-if="activeView === 'admins'">
+        <AdminAccounts :current-user-id="currentUser?.id || ''" />
       </template>
 
       <template v-if="activeView === 'blocks'">
