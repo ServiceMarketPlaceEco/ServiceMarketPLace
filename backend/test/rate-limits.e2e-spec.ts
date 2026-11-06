@@ -21,6 +21,7 @@ import { Admin } from '../src/modules/admins/entities/admin.entity';
 import { RefreshToken } from '../src/modules/auth/entities/refresh-token.entity';
 import { PhoneVerification } from '../src/modules/auth/entities/phone-verification.entity';
 import { MailService } from '../src/modules/mail/mail.service';
+import { SmsService } from '../src/modules/sms/sms.service';
 import { mockRepo, testConfigService, applyMainConfig, TEST_JWT_SECRET } from './test-helpers';
 
 const AUTH_LIMIT = 3;
@@ -41,6 +42,7 @@ async function buildApp() {
       { provide: getRepositoryToken(RefreshToken), useValue: mockRepo() },
       { provide: getRepositoryToken(PhoneVerification), useValue: mockRepo() },
       { provide: MailService, useValue: { sendPasswordResetEmail: jest.fn() } },
+      { provide: SmsService, useValue: { isConfigured: () => false, send: jest.fn() } },
     ],
   }).compile();
 

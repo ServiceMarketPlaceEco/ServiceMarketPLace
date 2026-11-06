@@ -4,6 +4,7 @@ import {
   ConflictException,
   BadRequestException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -27,6 +28,7 @@ import {
   AuthResponseDto,
 } from './dto';
 import { MailService } from '../mail/mail.service';
+import { SmsService } from '../sms/sms.service';
 
 const PHONE_VERIFICATION_TTL_MS = 10 * 60 * 1000;
 // wrong guesses allowed on one code before it stops working and the customer
@@ -53,6 +55,7 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private mailService: MailService,
+    private smsService: SmsService,
   ) {}
 
   // Register Customer
@@ -137,9 +140,10 @@ export class AuthService {
     return this.generateTokens(provider.providerId, provider.email, 'provider', provider);
   }
 
-  // Sends (for now: generates and logs/returns, since no SMS provider is
-  // configured yet) a 6-digit code for a phone number, ahead of customer
-  // signup. Swapping in a real SMS provider later only touches this method.
+  // Sends a 6-digit code to a phone number by SMS, ahead of customer signup.
+  // The text goes out through SmsService (Twilio) when TWILIO_* is set in
+  // .env. Without it, development prints the code in the terminal instead,
+  // and production refuses, since the customer would never get the code.
   //
   // username/email are optional and, when passed, are checked for conflicts
   // up front - so a taken username or email fails before the SMS round trip
@@ -169,6 +173,20 @@ export class AuthService {
     const codeHash = await bcrypt.hash(code, 10);
     const expiresAt = new Date(Date.now() + PHONE_VERIFICATION_TTL_MS);
 
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+
+    // send the text before saving, so a failed send doesn't leave a code
+    // behind that nobody received
+    if (this.smsService.isConfigured()) {
+      try {
+        await this.smsService.send(phone, `Your ServiceHub verification code is ${code}. It expires in 10 minutes.`);
+      } catch {
+        throw new ServiceUnavailableException('We could not send the code to this number. Please check it and try again.');
+      }
+    } else if (isProduction) {
+      throw new ServiceUnavailableException('Phone verification is not available right now. Please try again later.');
+    }
+
     const verification = this.phoneVerificationRepository.create({
       phone,
       codeHash,
@@ -176,9 +194,8 @@ export class AuthService {
     });
     await this.phoneVerificationRepository.save(verification);
 
-    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
     // the code is only printed in development so we can test signup without
-    // an sms provider. it used to be logged in every environment, production
+    // a phone. it used to be logged in every environment, production
     // included, which would leak codes and phone numbers into the server logs
     if (!isProduction) {
       // eslint-disable-next-line no-console
