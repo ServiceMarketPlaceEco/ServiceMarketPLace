@@ -234,6 +234,25 @@ the sign-in page shows "This user has not been signed up".
 
 Without a client ID the button is shown disabled with a "not configured" note.
 
+## 9. Phone codes by SMS (Twilio)
+
+Customer signup sends a 6-digit code to the customer's phone. On your laptop you
+don't need anything: leave the `TWILIO_*` values blank and the code is printed in
+the backend terminal as `[phone-verification] code for ...: 123456`.
+
+To send real texts (needed on the live server):
+
+1. Create an account at [twilio.com](https://www.twilio.com) and get a phone number.
+2. From the Twilio Console, put these in `backend/.env` and restart the backend:
+   - `TWILIO_ACCOUNT_SID=` (starts with AC)
+   - `TWILIO_AUTH_TOKEN=`
+   - `TWILIO_FROM=` (your Twilio number, like +1...)
+3. `SMS_DEFAULT_COUNTRY_CODE` is added in front of local numbers (`+880` for
+   Bangladesh, `+61` if you are testing with an Australian number).
+
+A Twilio trial account can only text numbers you have verified in the Twilio
+Console, and the message starts with "Sent from your Twilio trial account".
+
 ## Troubleshooting
 
 | Problem | Fix |

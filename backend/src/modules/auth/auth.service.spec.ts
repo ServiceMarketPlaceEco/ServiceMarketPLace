@@ -4,6 +4,7 @@
 
 import {
   ConflictException,
+  ServiceUnavailableException,
   UnauthorizedException,
   BadRequestException,
   NotFoundException,
@@ -24,6 +25,7 @@ const mockRepo = () => ({
 
 describe('AuthService', () => {
   let service: AuthService;
+  let smsService: { isConfigured: jest.Mock; send: jest.Mock };
   let customerRepo: any;
   let providerRepo: any;
   let adminRepo: any;
@@ -54,6 +56,7 @@ describe('AuthService', () => {
     };
 
     // building the service by hand instead of the full nest testing module, keeps it simple
+    smsService = { isConfigured: jest.fn().mockReturnValue(false), send: jest.fn() };
     service = new AuthService(
       customerRepo,
       providerRepo,
@@ -63,6 +66,7 @@ describe('AuthService', () => {
       jwtService,
       configService,
       mailService,
+      smsService as any,
     );
   });
 
@@ -234,9 +238,73 @@ describe('AuthService', () => {
         return v;
       });
 
+      smsService.isConfigured.mockReturnValue(true);
+      smsService.send.mockResolvedValue(undefined);
+
       const result = await service.requestPhoneVerification('01700000000');
 
       expect(result.devCode).toBeUndefined();
+    });
+
+    it('texts the code when an SMS provider is set up', async () => {
+      configService.get.mockImplementation((key: string, fallback?: string) => {
+        if (key === 'NODE_ENV') return 'production';
+        return fallback || 'test-secret';
+      });
+      phoneVerificationRepo.save.mockImplementation(async (v: any) => {
+        v.id = 'verify-1';
+        return v;
+      });
+      smsService.isConfigured.mockReturnValue(true);
+      smsService.send.mockResolvedValue(undefined);
+
+      await service.requestPhoneVerification('01700000000');
+
+      expect(smsService.send).toHaveBeenCalledWith('01700000000', expect.stringMatching(/code is \d{6}\./));
+      // the code in the text matches the hash that was saved
+      const sentCode = smsService.send.mock.calls[0][1].match(/\d{6}/)[0];
+      const saved = phoneVerificationRepo.save.mock.calls[0][0];
+      expect(await bcrypt.compare(sentCode, saved.codeHash)).toBe(true);
+    });
+
+    it('refuses in production when no SMS provider is set up, and saves nothing', async () => {
+      configService.get.mockImplementation((key: string, fallback?: string) => {
+        if (key === 'NODE_ENV') return 'production';
+        return fallback || 'test-secret';
+      });
+
+      await expect(service.requestPhoneVerification('01700000000')).rejects.toThrow(ServiceUnavailableException);
+      expect(phoneVerificationRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('tells the customer to try again when the text fails, and saves nothing', async () => {
+      configService.get.mockImplementation((key: string, fallback?: string) => {
+        if (key === 'NODE_ENV') return 'production';
+        return fallback || 'test-secret';
+      });
+      smsService.isConfigured.mockReturnValue(true);
+      smsService.send.mockRejectedValue(new Error('SMS send failed with status 400'));
+
+      await expect(service.requestPhoneVerification('01700000000')).rejects.toThrow(ServiceUnavailableException);
+      expect(phoneVerificationRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('does not text anyone in development when no provider is set up', async () => {
+      configService.get.mockImplementation((key: string, fallback?: string) => {
+        if (key === 'NODE_ENV') return 'development';
+        return fallback || 'test-secret';
+      });
+      phoneVerificationRepo.save.mockImplementation(async (v: any) => {
+        v.id = 'verify-1';
+        return v;
+      });
+      const log = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      const result = await service.requestPhoneVerification('01700000000');
+
+      expect(smsService.send).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledWith(expect.stringContaining(result.devCode as string));
+      log.mockRestore();
     });
 
     it('verifies a correct code and returns a verificationToken', async () => {
@@ -323,6 +391,8 @@ describe('AuthService', () => {
         return fallback || 'test-secret';
       });
       phoneVerificationRepo.save.mockImplementation(async (v: any) => ({ ...v, id: 'verify-1' }));
+      smsService.isConfigured.mockReturnValue(true);
+      smsService.send.mockResolvedValue(undefined);
       const log = jest.spyOn(console, 'log').mockImplementation(() => {});
 
       await service.requestPhoneVerification('01700000000');

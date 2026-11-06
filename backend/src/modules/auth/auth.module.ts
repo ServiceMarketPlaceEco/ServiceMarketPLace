@@ -15,6 +15,7 @@ import { RefreshToken } from './entities/refresh-token.entity';
 import { PhoneVerification } from './entities/phone-verification.entity';
 
 import { MailModule } from '../mail/mail.module';
+import { SmsModule } from '../sms/sms.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { MailModule } from '../mail/mail.module';
       inject: [ConfigService],
     }),
     MailModule,
+    SmsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
