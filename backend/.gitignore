@@ -10,8 +10,9 @@ logs
 *.log
 npm-debug.log*
 
-# Env
+# Env (local settings and secrets, use .env.example instead)
 .env
+.env.local
 
 # Coverage
 coverage

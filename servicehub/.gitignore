@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Env (local settings and secrets, use .env.example instead)
+.env
+.env.local
