@@ -69,7 +69,7 @@ const priceLabel = computed(() => formatBDT(props.service?.price))
         <div class="form-grid">
           <label class="full">
             Area / address
-            <input v-model="form.location" required placeholder="Boalia, Motihar, Laxmipur..." />
+            <input v-model="form.location" placeholder="Boalia, Motihar, Laxmipur..." />
           </label>
 
           <label>
@@ -79,12 +79,12 @@ const priceLabel = computed(() => formatBDT(props.service?.price))
 
           <label>
             Preferred time
-            <input v-model="form.preferredTime" type="time" />
+            <input v-model="form.preferredTime" type="time" required />
           </label>
 
           <label>
             Budget
-            <input v-model="form.budget" type="number" min="0" required placeholder="৳" />
+            <input v-model="form.budget" type="number" min="0" placeholder="৳" />
           </label>
 
           <label>
@@ -108,7 +108,7 @@ const priceLabel = computed(() => formatBDT(props.service?.price))
         <div class="form-grid">
           <label class="full">
             Details
-            <textarea v-model="form.details" required
+            <textarea v-model="form.details"
               placeholder="Example: moving from ground floor, two boxes, one table, lift access available..."></textarea>
           </label>
         </div>
