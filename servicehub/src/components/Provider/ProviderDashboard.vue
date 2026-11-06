@@ -2,19 +2,19 @@
 import { computed, reactive, ref, onBeforeUnmount } from 'vue'
 import { formatStatus } from '../../data/services'
 import * as api from '../../services/api'
+import ChatPanel from '../Chat/ChatPanel.vue'
 
 const props = defineProps({
   currentUser: { type: Object, default: null },
   requests: { type: Array, default: () => [] },
   chatApprovals: { type: Array, default: () => [] },
-  messages: { type: Array, default: () => [] },
   theme: { type: String, default: 'light' },
   providerServices: { type: Array, default: () => [] },
   availableServices: { type: Array, default: () => [] },
   reviews: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['accept-request', 'decline-request', 'status-change', 'request-chat', 'send-message', 'block-request', 'sign-out', 'go-home', 'toggle-theme', 'add-service', 'toggle-service', 'update-profile', 'change-password'])
+const emit = defineEmits(['accept-request', 'decline-request', 'status-change', 'request-chat', 'refresh-chat', 'block-request', 'sign-out', 'go-home', 'toggle-theme', 'add-service', 'toggle-service', 'update-profile', 'change-password'])
 
 const activeView = ref('dashboard')
 const searchTerm = ref('')
@@ -23,7 +23,7 @@ const declineReason = ref('')
 const replyTarget = ref(null)
 const replyText = ref('')
 const localReplies = ref({})
-const messageByRequest = ref({})
+const chatRequestId = ref(null)
 const blockTargetName = ref('')
 const blockReason = ref('')
 const showServiceModal = ref(false)
@@ -61,7 +61,10 @@ const filteredRequests = computed(() => {
   return providerRequests.value.filter(item => `${item.serviceTitle} ${item.customerName} ${item.location} ${item.status} ${item.providerStatus}`.toLowerCase().includes(q))
 })
 
-function chatStatus(requestId) { return props.chatApprovals.find(item => item.requestId === requestId)?.status || 'not-requested' }
+function chatApprovalFor(requestId) { return props.chatApprovals.find(item => item.requestId === requestId) || null }
+const chatLabels = { 'not-requested': 'Not opened', pending: 'Awaiting admin', approved: 'Open', rejected: 'Closed' }
+function chatStatus(requestId) { return chatApprovalFor(requestId)?.status || 'not-requested' }
+const chatRequest = computed(() => providerRequests.value.find(r => r.id === chatRequestId.value) || providerRequests.value[0] || null)
 function acceptRequest(request) { emit('accept-request', { requestId: request.id, providerId: props.currentUser?.id }) }
 function startJob(request) { emit('status-change', { requestId: request.id, status: 'in-progress' }) }
 function completeJob(request) { emit('status-change', { requestId: request.id, status: 'completed' }) }
@@ -112,17 +115,10 @@ function confirmDecline() {
   emit('decline-request', { requestId: declineTarget.value.id, providerId: props.currentUser?.id, reason: declineReason.value })
   declineTarget.value = null
 }
-function requestChat(request) { emit('request-chat', { requestId: request.id, requestedBy: 'provider' }) }
-function submitMessage(requestId) {
-  const message = messageByRequest.value[requestId]
-  if (!message?.trim()) return
-  emit('send-message', { requestId, senderRole: 'provider', message })
-  messageByRequest.value[requestId] = ''
-}
 function saveReply() {
   if (!replyText.value.trim()) return
   // Not persisted: the reviews table has no reply column, so this is
-  // session-only, same as the chat feature.
+  // session-only.
   localReplies.value[replyTarget.value.id] = replyText.value
   replyTarget.value = null
   replyText.value = ''
@@ -296,20 +292,22 @@ function savePassword() {
 
       <template v-if="activeView === 'messages'">
         <section class="ops-panel">
-          <h2>Admin-approved chat rooms</h2>
+          <h2>Customer chats</h2>
+          <p class="muted">Chat with a customer opens once a ServiceHub admin approves it.</p>
           <div v-if="providerRequests.length === 0" class="empty-state">No assigned request conversations yet.</div>
-          <article v-for="request in providerRequests" :key="request.id" class="review-row"><strong>{{
-            request.customerName }} · {{ request.serviceTitle }}</strong><small>Chat status: {{ chatStatus(request.id)
-              }}</small><button v-if="chatStatus(request.id) !== 'approved'" class="secondary small"
-              @click="requestChat(request)">Request admin approval</button>
-            <div v-else>
-              <p v-for="m in messages.filter(item => item.requestId === request.id)" :key="m.id"><strong>{{ m.senderRole
-              }}:</strong> {{ m.message }}</p>
-              <div class="form-actions"><input v-model="messageByRequest[request.id]"
-                  placeholder="Message customer" /><button class="primary small"
-                  @click="submitMessage(request.id)">Send</button></div>
-            </div>
-          </article>
+          <div v-else class="provider-chat-layout">
+            <nav class="provider-chat-list" aria-label="Conversations">
+              <button v-for="request in providerRequests" :key="request.id" type="button"
+                :class="{ active: chatRequest?.id === request.id }" @click="chatRequestId = request.id">
+                <strong>{{ request.customerName || 'Customer' }}</strong>
+                <small>{{ request.serviceTitle }}</small>
+                <span class="status-pill" :class="chatStatus(request.id)">{{ chatLabels[chatStatus(request.id)] }}</span>
+              </button>
+            </nav>
+            <ChatPanel v-if="chatRequest" :request="chatRequest" role="provider"
+              :approval="chatApprovalFor(chatRequest.id)" @request-chat="emit('request-chat', $event)"
+              @refresh-chat="emit('refresh-chat')" />
+          </div>
         </section>
       </template>
 
@@ -403,3 +401,53 @@ function savePassword() {
     </section>
   </section>
 </template>
+
+<style scoped>
+.provider-chat-layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.provider-chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 460px;
+  overflow-y: auto;
+}
+
+.provider-chat-list button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.provider-chat-list button.active {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.provider-chat-list small {
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  .provider-chat-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .provider-chat-list {
+    max-height: 220px;
+  }
+}
+</style>
