@@ -1,0 +1,7 @@
+# HTTPS in front of the ServiceHub website. Caddy gets and renews a free
+# Let's Encrypt certificate for DOMAIN by itself. The domain's DNS has to
+# point at this server and ports 80 and 443 have to be open.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy web:80
+}

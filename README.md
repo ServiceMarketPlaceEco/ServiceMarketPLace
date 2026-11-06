@@ -1,5 +1,5 @@
 
-# ServiceHub Frontend
+# ServiceHub
 
 ---
 
@@ -114,10 +114,11 @@ it does not exist, and runs these scripts in order:
 | 3 | `backend/database/migrations/002_add_username_login.sql` | Username sign-in + the phone_verifications table |
 | 4 | `backend/database/migrations/003_add_service_image.sql` | `image_url` photo column on services |
 | 5 | `backend/database/migrations/004_add_phone_verification_attempts.sql` | `failed_attempts` on phone_verifications, so a code locks after 5 wrong guesses |
-| 6 | `backend/database/seeds/001_seed_data.sql` | Default admin account + general service categories |
-| 7 | `backend/database/seeds/002_rajshahi_services_seed.sql` | Rajshahi service catalog + a demo provider with prices |
-| 8 | `backend/database/seeds/003_moderation_test_seed.sql` | Test accounts for the moderation workflow |
-| 9 | `backend/database/seeds/004_service_images_seed.sql` | Photos for the seeded services |
+| 6 | `backend/database/migrations/005_add_chat_and_review_approval.sql` | Chat tables (customer, provider and admin messages) and the approval status on reviews |
+| 7 | `backend/database/seeds/001_seed_data.sql` | Default admin account + general service categories |
+| 8 | `backend/database/seeds/002_rajshahi_services_seed.sql` | Rajshahi service catalog + a demo provider with prices |
+| 9 | `backend/database/seeds/003_moderation_test_seed.sql` | Test accounts for the moderation workflow |
+| 10 | `backend/database/seeds/004_service_images_seed.sql` | Photos for the seeded services |
 
 Expected output:
 
@@ -127,12 +128,13 @@ Running database/migrations/001_add_provider_location.sql
 Running database/migrations/002_add_username_login.sql
 Running database/migrations/003_add_service_image.sql
 Running database/migrations/004_add_phone_verification_attempts.sql
+Running database/migrations/005_add_chat_and_review_approval.sql
 Running database/seeds/001_seed_data.sql
 Running database/seeds/002_rajshahi_services_seed.sql
 Running database/seeds/003_moderation_test_seed.sql
 Running database/seeds/004_service_images_seed.sql
 
-Done. Database `servicehub` has 11 tables.
+Done. Database `servicehub` has 13 tables.
 ```
 
 All scripts are safe to re-run. To wipe everything and start over:
@@ -153,6 +155,7 @@ mysql -u root -p servicehub < database/migrations/001_add_provider_location.sql
 mysql -u root -p servicehub < database/migrations/002_add_username_login.sql
 mysql -u root -p servicehub < database/migrations/003_add_service_image.sql
 mysql -u root -p servicehub < database/migrations/004_add_phone_verification_attempts.sql
+mysql -u root -p servicehub < database/migrations/005_add_chat_and_review_approval.sql
 mysql -u root -p servicehub < database/seeds/001_seed_data.sql
 mysql -u root -p servicehub < database/seeds/002_rajshahi_services_seed.sql
 mysql -u root -p servicehub < database/seeds/003_moderation_test_seed.sql
@@ -173,10 +176,11 @@ mysql -u root -p servicehub < database/seeds/004_service_images_seed.sql
    3. `backend/database/migrations/002_add_username_login.sql`
    4. `backend/database/migrations/003_add_service_image.sql`
    5. `backend/database/migrations/004_add_phone_verification_attempts.sql`
-   6. `backend/database/seeds/001_seed_data.sql`
-   7. `backend/database/seeds/002_rajshahi_services_seed.sql`
-   8. `backend/database/seeds/003_moderation_test_seed.sql`
-   9. `backend/database/seeds/004_service_images_seed.sql`
+   6. `backend/database/migrations/005_add_chat_and_review_approval.sql`
+   7. `backend/database/seeds/001_seed_data.sql`
+   8. `backend/database/seeds/002_rajshahi_services_seed.sql`
+   9. `backend/database/seeds/003_moderation_test_seed.sql`
+   10. `backend/database/seeds/004_service_images_seed.sql`
 
 </details>
 
@@ -252,6 +256,28 @@ To send real texts (needed on the live server):
 
 A Twilio trial account can only text numbers you have verified in the Twilio
 Console, and the message starts with "Sent from your Twilio trial account".
+
+## 10. Email
+
+The backend emails customers when they sign up, reset a password, send a
+request, and when their booking is confirmed, started, finished or cancelled.
+Providers get an email when a review about them is approved.
+
+On your laptop leave the Mailtrap values in `backend/.env`: Mailtrap catches the
+emails so nobody real receives them. On the live server put a real SMTP
+provider in the `MAIL_*` settings (see `backend/.env.example` for examples).
+The live server checks the email login when it starts and logs
+`Email is ready` or the reason it failed.
+
+## 11. Putting it on a server (Docker)
+
+`docker-compose.yml` runs the database, the API and the website together on one
+server, with optional HTTPS. The steps are in [deploy/DEPLOY.md](deploy/DEPLOY.md).
+
+```bash
+cp .env.docker.example .env      # fill in the values
+docker compose up -d --build
+```
 
 ## Troubleshooting
 
