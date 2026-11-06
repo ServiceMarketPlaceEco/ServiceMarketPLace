@@ -153,7 +153,21 @@ Once the server is running, visit:
 | GET | `/` | Get reports (admin) |
 | PATCH | `/:id` | Resolve a report (admin) |
 
-### Admin (`/api/admins`)
+### Chat (`/api/v1/chat`)
+
+Customer <-> provider chat, one conversation per booking. Either side asks to
+open it, an admin approves it, then both can send messages. While a chat
+panel is open the frontend polls `GET /messages` every few seconds.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/approvals` | Chat approvals (all for admins, own bookings otherwise) |
+| POST | `/approvals` | Ask to open chat on a booking (its customer or assigned provider) |
+| PATCH | `/approvals/:id` | Approve or reject / close a chat (admin) |
+| GET | `/messages?bookingId=` | A booking's messages (participants, or an admin reading a dispute) |
+| POST | `/messages` | Send a message on an approved booking chat |
+
+### Admin (`/api/v1/admins`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -213,6 +227,8 @@ backend/
 - **reviews**: Customer reviews for providers
 - **block_reports**: Block and report functionality
 - **refresh_tokens**: JWT refresh token storage
+- **chat_approvals**: Admin approval to open chat on a booking (migration 005)
+- **chat_messages**: Customer <-> provider chat messages per booking (migration 005)
 
 ## Security Features
 

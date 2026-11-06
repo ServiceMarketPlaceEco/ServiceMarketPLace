@@ -499,16 +499,19 @@ function assignProvider(request) {
       <template v-if="activeView === 'chat'">
         <section class="ops-panel">
           <div class="panel-heading">
-            <h2>Chat approval requests</h2><span>{{ chatApprovals.length }} submitted</span>
+            <h2>Chat approval requests</h2><span>{{ chatApprovals.filter(a => a.status === 'pending').length }} waiting · {{
+              chatApprovals.length }} total</span>
           </div>
-          <p class="muted">User/provider chat is locked until admin approves the request.</p>
+          <p class="muted">Customer/provider chat on a request stays locked until an admin approves it. Rejecting an
+            open chat closes it again.</p>
           <div v-if="chatApprovals.length === 0" class="empty-state">No chat approval requests yet.</div>
           <div v-else class="responsive-table">
             <table>
               <thead>
                 <tr>
-                  <th>ID</th>
                   <th>Request</th>
+                  <th>Customer</th>
+                  <th>Provider</th>
                   <th>Requested by</th>
                   <th>Status</th>
                   <th>Action</th>
@@ -516,13 +519,16 @@ function assignProvider(request) {
               </thead>
               <tbody>
                 <tr v-for="approval in chatApprovals" :key="approval.id">
-                  <td><strong>{{ approval.id }}</strong></td>
-                  <td>{{ approval.requestId }}</td>
+                  <td><strong>{{ approval.serviceTitle }}</strong><small>{{ approval.requestId }}</small></td>
+                  <td>{{ approval.customerName || '—' }}</td>
+                  <td>{{ approval.providerName || '—' }}</td>
                   <td>{{ approval.requestedBy }}</td>
                   <td><span class="status-pill" :class="approval.status">{{ approval.status }}</span></td>
-                  <td class="row-actions"><button class="success small"
-                      @click="$emit('approve-chat', approval.id)">Approve</button><button class="secondary small"
-                      @click="$emit('reject-chat', approval.id)">Reject</button></td>
+                  <td class="row-actions"><button v-if="approval.status !== 'approved'" class="success small"
+                      @click="$emit('approve-chat', approval.id)">Approve</button><button
+                      v-if="approval.status !== 'rejected'" class="secondary small"
+                      @click="$emit('reject-chat', approval.id)">{{ approval.status === 'approved' ? 'Close chat' :
+                        'Reject' }}</button></td>
                 </tr>
               </tbody>
             </table>
