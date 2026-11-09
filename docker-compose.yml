@@ -1,9 +1,13 @@
-# Production deployment on the team VPS. Run from this folder with:
+# Production deployment on the team VPS. Run from
+# /var/www/apps/servicemarketplace with:
 #   sudo project-ctl build servicemarketplace
 #   sudo project-ctl up servicemarketplace
 # Settings come from two files that are never committed:
 #   ./.env          compose settings (copy .env.example)
 #   ./backend/.env  backend settings (copy backend/.env.example)
+#
+# Public traffic: Traefik (TLS) -> web (nginx: Vue build, /api proxy) -> api.
+# No host ports are published; Traefik finds the web container by its labels.
 
 services:
   api:
@@ -14,6 +18,12 @@ services:
       API_PORT: 3001
     restart: unless-stopped
     networks: [app, db]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+          pids: 100
 
   web:
     build:
@@ -22,11 +32,22 @@ services:
         VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
     depends_on: [api]
     restart: unless-stopped
-    # only reachable from the server itself; the server's nginx forwards the
-    # public domain to this port
-    ports:
-      - "127.0.0.1:${APP_PORT:?Set APP_PORT in .env (ask the server admin)}:80"
-    networks: [app]
+    networks: [app, traefik_public]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+          pids: 100
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_public"
+      - "traefik.http.routers.servicemarketplace-https.rule=Host(`${APP_DOMAIN:?Set APP_DOMAIN in .env}`)"
+      - "traefik.http.routers.servicemarketplace-https.entrypoints=websecure"
+      - "traefik.http.routers.servicemarketplace-https.tls=true"
+      - "traefik.http.routers.servicemarketplace-https.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.servicemarketplace-https.service=servicemarketplace-service"
+      - "traefik.http.services.servicemarketplace-service.loadbalancer.server.port=80"
 
   # one-off: creates the tables and loads the seed data, then exits.
   # only runs when COMPOSE_PROFILES=dbsetup is set in ./.env
@@ -37,10 +58,20 @@ services:
     restart: "no"
     profiles: [dbsetup]
     networks: [db]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+          pids: 100
 
 networks:
+  # private network between web and api
   app: {}
-  # the shared Docker network the global-db MySQL container is on
+  # the shared reverse proxy
+  traefik_public:
+    external: true
+  # the project's network that the global-db MySQL container is attached to
   db:
     external: true
-    name: ${DB_NETWORK:?Set DB_NETWORK in .env (ask the server admin)}
+    name: net_servicemarketplace
