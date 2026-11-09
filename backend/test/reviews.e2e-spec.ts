@@ -18,6 +18,7 @@ import { MailService } from '../src/modules/mail/mail.service';
 import { JwtStrategy } from '../src/modules/auth/strategies/jwt.strategy';
 import { mockRepo, testConfigService, applyMainConfig, signTestToken } from './test-helpers';
 
+const PROVIDER_ID = '5b6c7d8e-1f2a-4b3c-9d4e-5f6a7b8c9d0e';
 const BOOKING_ID = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 
 describe('Review endpoints (integration)', () => {
@@ -162,6 +163,42 @@ describe('Review endpoints (integration)', () => {
         .expect(201);
 
       expect(res.body.status).toBe('pending');
+    });
+
+    it('accepts a review about a provider without a booking (saved as pending)', async () => {
+      const token = customerToken();
+      providerRepo.findOne.mockResolvedValue({ providerId: PROVIDER_ID, isVerified: true, isActive: true, isBlocked: false });
+      reviewRepo.findOne.mockResolvedValue(null);
+      reviewRepo.save.mockImplementation(async (r: any) => ({ ...r, reviewId: 'rev-2' }));
+
+      const res = await request(app.getHttpServer())
+        .post('/api/reviews')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ providerId: PROVIDER_ID, rating: 4, comment: 'fixed my neighbour\'s fan' })
+        .expect(201);
+
+      expect(res.body).toMatchObject({ bookingId: null, providerId: PROVIDER_ID, status: 'pending' });
+    });
+
+    it('returns 400 without a booking or a provider', async () => {
+      const token = customerToken();
+
+      await request(app.getHttpServer())
+        .post('/api/reviews')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ rating: 4 })
+        .expect(400);
+      expect(reviewRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 for a provider id that is not a real id', async () => {
+      const token = customerToken();
+
+      await request(app.getHttpServer())
+        .post('/api/reviews')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ providerId: 'not-an-id', rating: 4 })
+        .expect(400);
     });
 
     it('returns 400 when no provider has been assigned yet', async () => {
@@ -324,7 +361,7 @@ describe('Review endpoints (integration)', () => {
         .expect(200);
 
       expect(res.body).toEqual(['b-1']);
-      expect(reviewRepo.find.mock.calls[0][0].where).toEqual({ customerId: 'cust-1' });
+      expect(reviewRepo.find.mock.calls[0][0].where).toMatchObject({ customerId: 'cust-1' });
     });
 
     it('needs a login (401)', async () => {

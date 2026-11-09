@@ -336,7 +336,7 @@ function assignProvider(request) {
       <header class="ops-topbar">
         <div>
           <h1>{{ activeView === 'dashboard' ? 'Admin dashboard' : activeView }}</h1>
-          <p>Manage users, provider approvals, request assignment and chat approval.</p>
+          <p>Manage users, provider approvals, request assignment, chat approval and review approval.</p>
         </div><input v-model="searchTerm" placeholder="Search admin workspace..." />
       </header>
 

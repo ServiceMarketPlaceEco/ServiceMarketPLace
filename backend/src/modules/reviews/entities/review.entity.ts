@@ -26,8 +26,10 @@ export class Review {
   @PrimaryGeneratedColumn('uuid', { name: 'review_id' })
   reviewId: string;
 
-  @Column({ name: 'booking_id' })
-  bookingId: string;
+  // empty when a customer reviews a provider they haven't booked through the
+  // site (migration 007). an admin approves every review either way
+  @Column({ name: 'booking_id', type: 'varchar', length: 255, nullable: true })
+  bookingId: string | null;
 
   @Column({ name: 'customer_id' })
   customerId: string;
@@ -55,9 +57,9 @@ export class Review {
   updatedAt: Date;
 
   // Relations
-  @ManyToOne(() => Booking, (booking) => booking.reviews)
+  @ManyToOne(() => Booking, (booking) => booking.reviews, { nullable: true })
   @JoinColumn({ name: 'booking_id' })
-  booking: Booking;
+  booking: Booking | null;
 
   @ManyToOne(() => Customer, (customer) => customer.reviews)
   @JoinColumn({ name: 'customer_id' })

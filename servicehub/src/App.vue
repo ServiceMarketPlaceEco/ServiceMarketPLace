@@ -81,6 +81,8 @@ const providerReviews = ref([])
 const reviewedBookingIds = ref([])
 // the signed in customer's own reviews with their approval status
 const myReviews = ref([])
+// approved providers, so a customer can review one they haven't booked here
+const reviewableProviders = ref([])
 
 // Customer phone verification state. The pending registration is kept only in
 // memory until the code is confirmed, so its password is never stored locally.
@@ -397,7 +399,8 @@ async function loadPublicReviews() {
       name: review.username || review.name || review.customer?.name || 'ServiceHub user',
       role: review.userType || review.role || 'guest',
       serviceId: review.serviceId,
-      serviceTitle: review.serviceTitle || review.service?.serviceName || 'Service',
+      // reviews about a provider without a booking have no service
+      serviceTitle: review.serviceTitle || review.service?.serviceName || 'General review',
       providerName: review.providerName || '',
       rating: Number(review.rating || 0),
       comment: review.comment || '',
@@ -483,6 +486,7 @@ async function refreshBookings() {
       // backend still stops a second review with "already reviewed"
       reviewedBookingIds.value = await api.getMyReviewedBookingIds().catch(() => [])
       myReviews.value = await api.getMyReviews().catch(() => [])
+      reviewableProviders.value = await api.getApprovedProviders().catch(() => [])
     }
     else if (signedInUser.value.role === 'provider') raw = await api.getProviderBookings()
     else raw = await api.getAllBookings()
@@ -798,14 +802,17 @@ function openRequest(service) {
 // a review is always about one of the customer's bookings. the backend works
 // out the provider from the booking, so we only send what the customer chose.
 // it is saved as pending and only shows publicly once an admin approves it
+// any signed-in customer can review: one of their bookings (bookingId), or a
+// provider they haven't booked here (providerId). either way it waits for an
+// admin to approve it before it shows
 async function submitReview(review) {
   try {
     await api.createReview({
-      bookingId: review.bookingId,
+      ...(review.bookingId ? { bookingId: review.bookingId } : { providerId: review.providerId }),
       rating: Number(review.rating),
       comment: review.comment
     })
-    reviewedBookingIds.value = [...reviewedBookingIds.value, review.bookingId]
+    if (review.bookingId) reviewedBookingIds.value = [...reviewedBookingIds.value, review.bookingId]
     myReviews.value = await api.getMyReviews().catch(() => myReviews.value)
     alert('Thank you! Your review will appear once an admin has approved it.')
   } catch (err) {
@@ -1038,7 +1045,8 @@ async function updateBlockRequest({ id, status }) {
       <HowItWorksPage v-else-if="currentPage === 'how'" />
       <LegalPage v-else-if="currentPage === 'privacy' || currentPage === 'terms'" :page="currentPage" />
       <ReviewsPage v-else-if="currentPage === 'reviews'" :reviews="reviews"
-        :reviewable-bookings="reviewableBookings" :my-reviews="myReviews" :signed-in-user="signedInUser"
+        :reviewable-bookings="reviewableBookings" :reviewable-providers="reviewableProviders" :my-reviews="myReviews"
+        :signed-in-user="signedInUser"
         @submit-review="submitReview" @sign-in="goTo('signin')" />
       <SignInPage v-else-if="currentPage === 'signin'" :google-error="googleSignInError" @sign-in="signIn"
         @google-sign-in="signInWithGoogle" @go-register="goTo('register')" @forgot-password="requestPasswordReset"

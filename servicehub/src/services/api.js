@@ -256,6 +256,12 @@ export function registerCustomer(payload) {
   })
 }
 
+// approved providers anyone can see (the backend never lists unapproved
+// ones). the reviews page uses it so a customer can review any provider
+export async function getApprovedProviders() {
+  return resultArray(await request('/providers'))
+}
+
 export function registerProvider(payload) {
   return request('/auth/register/provider', {
     method: 'POST',

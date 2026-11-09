@@ -1,3 +1,4 @@
+import { IsNull, Not } from 'typeorm';
 // Unit tests for ReviewsService.
 // This is the normal review path, not the fake review detector. That has its
 // own spec file in the moderation folder.
@@ -120,7 +121,7 @@ describe('ReviewsService', () => {
 
       const [review] = await service.findPublic();
 
-      expect(review).toMatchObject({ name: 'ServiceHub customer', serviceTitle: 'Service', providerName: '' });
+      expect(review).toMatchObject({ name: 'ServiceHub customer', serviceTitle: null, providerName: '' });
     });
   });
 
@@ -129,7 +130,69 @@ describe('ReviewsService', () => {
       reviewRepo.find.mockResolvedValue([{ bookingId: 'b-1' }, { bookingId: 'b-7' }]);
 
       expect(await service.findReviewedBookingIds('c-1')).toEqual(['b-1', 'b-7']);
-      expect(reviewRepo.find.mock.calls[0][0].where).toEqual({ customerId: 'c-1' });
+      expect(reviewRepo.find.mock.calls[0][0].where).toEqual({ customerId: 'c-1', bookingId: Not(IsNull()) });
+    });
+  });
+
+  // reviews about a provider without a booking
+  describe('create without a booking', () => {
+    const dto: any = { providerId: 'prov-1', rating: 4, comment: 'fixed my neighbour\'s tap, very tidy' };
+    const approvedProvider = { providerId: 'prov-1', isVerified: true, isActive: true, isBlocked: false };
+
+    it('saves a pending review about the provider with no booking', async () => {
+      providerRepo.findOne.mockResolvedValue(approvedProvider);
+      reviewRepo.findOne.mockResolvedValue(null);
+      reviewRepo.save.mockImplementation(async (r: any) => ({ ...r, reviewId: 'rev-9' }));
+
+      const result = await service.create('cust-1', dto);
+
+      expect(result).toMatchObject({ bookingId: null, providerId: 'prov-1', status: ReviewStatus.PENDING });
+      expect(bookingRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('only allows approved, active providers', async () => {
+      providerRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.create('cust-1', dto)).rejects.toThrow(NotFoundException);
+      expect(providerRepo.findOne.mock.calls[0][0].where).toEqual({
+        providerId: 'prov-1',
+        isVerified: true,
+        isActive: true,
+        isBlocked: false,
+      });
+      expect(reviewRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('allows one review per customer per provider without a booking', async () => {
+      providerRepo.findOne.mockResolvedValue(approvedProvider);
+      reviewRepo.findOne.mockResolvedValue({ reviewId: 'rev-1', status: ReviewStatus.PENDING });
+
+      await expect(service.create('cust-1', dto)).rejects.toThrow(ConflictException);
+      expect(reviewRepo.findOne.mock.calls[0][0].where).toEqual({
+        customerId: 'cust-1',
+        providerId: 'prov-1',
+        bookingId: IsNull(),
+        status: Not(ReviewStatus.REJECTED),
+      });
+    });
+
+    it('needs a booking or a provider', async () => {
+      await expect(service.create('cust-1', { rating: 5 } as any)).rejects.toThrow(BadRequestException);
+    });
+
+    it('uses the booking when both are sent, so a booking review cannot be pinned on another provider', async () => {
+      bookingRepo.findOne.mockResolvedValue({
+        bookingId: 'b-1',
+        customerId: 'cust-1',
+        providerService: { providerId: 'prov-1', provider: { providerId: 'prov-1' } },
+      });
+      reviewRepo.findOne.mockResolvedValue(null);
+      reviewRepo.save.mockImplementation(async (r: any) => r);
+
+      const result = await service.create('cust-1', { bookingId: 'b-1', providerId: 'prov-other', rating: 3 } as any);
+
+      expect(result.providerId).toBe('prov-1');
+      expect(result.bookingId).toBe('b-1');
     });
   });
 
