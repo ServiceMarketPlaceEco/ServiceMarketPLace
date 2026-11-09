@@ -21,4 +21,4 @@ EXPOSE 3001
 # healthy once the API answers. node is used because the slim image has no curl
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:' + (process.env.API_PORT || 3001) + '/api/services').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
-CMD ["node", "dist/src/main.js"]
+CMD ["node", "dist/main.js"]
