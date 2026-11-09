@@ -1,298 +1,255 @@
-// Unit tests for ChatService.
-// The rules: a customer and provider can only chat about a booking once an
-// admin has assigned the provider, each person only sees their own chats,
-// admins can see and answer all of them, and unread counts only count
-// messages from the other side.
+// Unit tests for ChatService: customer <-> provider chat on a booking.
+// Covers who may ask for chat, the admin approval gate, who may read and send,
+// and that the sender's role always comes from their login.
 // Run with: npm test
 
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ChatService } from './chat.service';
-import { ConversationType } from './entities/chat-conversation.entity';
-import { ChatSender } from './entities/chat-message.entity';
-import { CurrentUserData } from '../../common/decorators/current-user.decorator';
+import { ChatApprovalStatus } from './entities/chat-approval.entity';
+import { BookingStatus } from '../bookings/entities/booking.entity';
 
-const customer: CurrentUserData = {
-  userId: 'cust-1',
-  email: 'c@x.com',
-  userType: 'customer',
-  user: { name: 'Nusrat Jahan' },
-};
-const otherCustomer: CurrentUserData = { ...customer, userId: 'cust-2', user: { name: 'Someone Else' } };
-const provider: CurrentUserData = {
-  userId: 'prov-1',
-  email: 'p@x.com',
-  userType: 'provider',
-  user: { providerName: 'Karim Uddin' },
-};
-const admin: CurrentUserData = { userId: 'admin-1', email: 'a@x.com', userType: 'admin', user: { name: 'Admin' } };
+const mockRepo = () => ({
+  findOne: jest.fn(),
+  find: jest.fn(),
+  create: jest.fn((x: any) => ({ ...x })),
+  save: jest.fn(async (x: any) => ({ id: x.id ?? 'new-id', createdAt: new Date('2026-11-06T10:00:00Z'), ...x })),
+  createQueryBuilder: jest.fn(),
+});
 
-// a query builder whose chain methods all return itself
-function queryBuilder(result: { many?: any[]; raw?: any[] }) {
-  const qb: any = {};
-  for (const name of ['select', 'addSelect', 'where', 'andWhere', 'innerJoin', 'groupBy']) {
-    qb[name] = jest.fn(() => qb);
-  }
-  qb.getMany = jest.fn(async () => result.many ?? []);
-  qb.getRawMany = jest.fn(async () => result.raw ?? []);
-  return qb;
-}
+const customer = { userId: 'cust-1', userType: 'customer' as const };
+const otherCustomer = { userId: 'cust-2', userType: 'customer' as const };
+const provider = { userId: 'prov-1', userType: 'provider' as const };
+const otherProvider = { userId: 'prov-2', userType: 'provider' as const };
+const admin = { userId: 'admin-1', userType: 'admin' as const };
 
-const bookingChat = (overrides: any = {}) => ({
-  conversationId: 'conv-1',
-  type: ConversationType.BOOKING,
-  chatKey: 'booking:b-1',
+const booking = (overrides: any = {}) => ({
+  bookingId: 'bk-1',
   customerId: 'cust-1',
-  providerId: 'prov-1',
-  bookingId: 'b-1',
-  customer: { name: 'Nusrat Jahan' },
-  provider: { providerName: 'Karim Uddin' },
-  booking: { serviceName: 'Plumbing', date: '2026-11-10' },
-  lastMessageAt: null,
+  providerServiceId: 'ps-1',
+  status: BookingStatus.CONFIRMED,
+  serviceName: 'Home Cleaning',
+  customer: { name: 'Rahim', passwordHash: 'secret' },
+  providerService: { providerId: 'prov-1', provider: { providerName: 'Karim Services', passwordHash: 'secret' } },
   ...overrides,
 });
 
+// fake query builder that records the where clause and returns `rows`
+const fakeQb = (rows: any[]) => {
+  const qb: any = { whereCalls: [] as any[] };
+  for (const m of ['innerJoinAndSelect', 'leftJoinAndSelect', 'innerJoin', 'leftJoin', 'orderBy']) {
+    qb[m] = jest.fn(() => qb);
+  }
+  qb.where = jest.fn((sql: string, params: any) => (qb.whereCalls.push({ sql, params }), qb));
+  qb.getMany = jest.fn(async () => rows);
+  return qb;
+};
+
 describe('ChatService', () => {
   let service: ChatService;
-  let conversations: any;
-  let messages: any;
-  let bookings: any;
-  let customers: any;
-  let providers: any;
-  let bookingRows: any[];
+  let approvalRepo: any;
+  let messageRepo: any;
+  let bookingRepo: any;
 
   beforeEach(() => {
-    bookingRows = [];
-    conversations = {
-      find: jest.fn(async () => []),
-      findOne: jest.fn(async () => null),
-      findOneOrFail: jest.fn(async () => ({ conversationId: 'conv-support', chatKey: 'customer:cust-1' })),
-      insert: jest.fn(async () => undefined),
-      update: jest.fn(async () => undefined),
-    };
-    messages = {
-      find: jest.fn(async () => []),
-      create: jest.fn((x: any) => x),
-      save: jest.fn(async (x: any) => ({ ...x, messageId: 'msg-1', createdAt: new Date('2026-11-06T02:00:00Z') })),
-      createQueryBuilder: jest.fn(() => queryBuilder({})),
-    };
-    bookings = { createQueryBuilder: jest.fn(() => queryBuilder({ raw: bookingRows })) };
-    customers = { findOne: jest.fn() };
-    providers = { findOne: jest.fn() };
-    service = new ChatService(conversations, messages, bookings, customers, providers);
+    approvalRepo = mockRepo();
+    messageRepo = mockRepo();
+    bookingRepo = mockRepo();
+    bookingRepo.findOne.mockResolvedValue(booking());
+    service = new ChatService(approvalRepo, messageRepo, bookingRepo);
   });
 
-  describe('who can open which chat', () => {
-    it('lets the customer and provider of a booking into its chat', () => {
-      const chat: any = bookingChat();
-      expect(service.canAccess(customer, chat)).toBe(true);
-      expect(service.canAccess(provider, chat)).toBe(true);
+  describe('requestApproval', () => {
+    it('lets the customer ask for chat on their booking', async () => {
+      approvalRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.requestApproval(customer, 'bk-1');
+
+      expect(result).toMatchObject({
+        bookingId: 'bk-1',
+        requestedBy: 'customer',
+        status: ChatApprovalStatus.PENDING,
+        customerName: 'Rahim',
+        providerName: 'Karim Services',
+        serviceName: 'Home Cleaning',
+      });
+      expect(approvalRepo.save).toHaveBeenCalledWith(expect.objectContaining({ requestedById: 'cust-1' }));
     });
 
-    it('keeps other customers and providers out', () => {
-      const chat: any = bookingChat();
-      expect(service.canAccess(otherCustomer, chat)).toBe(false);
-      expect(service.canAccess({ ...provider, userId: 'prov-9' }, chat)).toBe(false);
+    it('lets the assigned provider ask for chat', async () => {
+      approvalRepo.findOne.mockResolvedValue(null);
+      const result = await service.requestApproval(provider, 'bk-1');
+      expect(result.requestedBy).toBe('provider');
     });
 
-    it('lets admins into every chat', () => {
-      expect(service.canAccess(admin, bookingChat() as any)).toBe(true);
-      expect(service.canAccess(admin, { type: ConversationType.PROVIDER_SUPPORT, providerId: 'prov-1' } as any)).toBe(
-        true,
-      );
+    it('never puts password hashes in the response', async () => {
+      approvalRepo.findOne.mockResolvedValue(null);
+      const result = await service.requestApproval(customer, 'bk-1');
+      expect(JSON.stringify(result)).not.toContain('secret');
     });
 
-    it('keeps a provider out of a customer support chat and the other way round', () => {
-      const customerSupport: any = { type: ConversationType.CUSTOMER_SUPPORT, customerId: 'cust-1', providerId: null };
-      const providerSupport: any = { type: ConversationType.PROVIDER_SUPPORT, customerId: null, providerId: 'prov-1' };
-      expect(service.canAccess(provider, customerSupport)).toBe(false);
-      expect(service.canAccess(customer, providerSupport)).toBe(false);
+    it('refuses someone who is not on the booking', async () => {
+      await expect(service.requestApproval(otherCustomer, 'bk-1')).rejects.toThrow(ForbiddenException);
+      await expect(service.requestApproval(otherProvider, 'bk-1')).rejects.toThrow(ForbiddenException);
+      await expect(service.requestApproval(admin, 'bk-1')).rejects.toThrow(ForbiddenException);
+      expect(approvalRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('refuses until a provider is assigned', async () => {
+      bookingRepo.findOne.mockResolvedValue(booking({ providerServiceId: null, providerService: null }));
+      await expect(service.requestApproval(customer, 'bk-1')).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses on a cancelled booking', async () => {
+      bookingRepo.findOne.mockResolvedValue(booking({ status: BookingStatus.CANCELLED }));
+      await expect(service.requestApproval(customer, 'bk-1')).rejects.toThrow(BadRequestException);
+    });
+
+    it('returns 404 for an unknown booking', async () => {
+      bookingRepo.findOne.mockResolvedValue(null);
+      await expect(service.requestApproval(customer, 'nope')).rejects.toThrow(NotFoundException);
+    });
+
+    it('does not create a second request while one is pending or approved', async () => {
+      approvalRepo.findOne.mockResolvedValue({ id: 'ap-1', bookingId: 'bk-1', requestedBy: 'provider', status: ChatApprovalStatus.APPROVED });
+
+      const result = await service.requestApproval(customer, 'bk-1');
+
+      expect(result).toMatchObject({ id: 'ap-1', status: ChatApprovalStatus.APPROVED, requestedBy: 'provider' });
+      expect(approvalRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('puts a rejected request back in the queue when asked again', async () => {
+      approvalRepo.findOne.mockResolvedValue({
+        id: 'ap-1', bookingId: 'bk-1', requestedBy: 'provider', status: ChatApprovalStatus.REJECTED,
+        reviewedBy: 'admin-1', reviewedAt: new Date(),
+      });
+
+      const result = await service.requestApproval(customer, 'bk-1');
+
+      expect(result).toMatchObject({ id: 'ap-1', status: ChatApprovalStatus.PENDING, requestedBy: 'customer', reviewedAt: null });
     });
   });
 
-  describe('listConversations', () => {
-    it('opens a chat for each assigned booking and a support chat for the customer', async () => {
-      bookingRows.push({ bookingId: 'b-1', customerId: 'cust-1', providerId: 'prov-1' });
+  describe('reviewApproval', () => {
+    it('lets the admin approve and records who did it', async () => {
+      approvalRepo.findOne.mockResolvedValue({ id: 'ap-1', bookingId: 'bk-1', status: ChatApprovalStatus.PENDING, booking: booking() });
 
-      await service.listConversations(customer);
+      const result = await service.reviewApproval('admin-1', 'ap-1', 'approved');
 
-      expect(conversations.insert).toHaveBeenCalledWith(
-        expect.objectContaining({ type: ConversationType.BOOKING, chatKey: 'booking:b-1', providerId: 'prov-1' }),
-      );
-      expect(conversations.insert).toHaveBeenCalledWith(
-        expect.objectContaining({ type: ConversationType.CUSTOMER_SUPPORT, chatKey: 'customer:cust-1' }),
-      );
+      expect(result.status).toBe(ChatApprovalStatus.APPROVED);
+      expect(approvalRepo.save).toHaveBeenCalledWith(expect.objectContaining({ reviewedBy: 'admin-1', reviewedAt: expect.any(Date) }));
     });
 
-    it('only opens booking chats once the booking is past pending', async () => {
-      const qb = queryBuilder({ raw: [] });
-      bookings.createQueryBuilder.mockReturnValue(qb);
-
-      await service.listConversations(customer);
-
-      expect(qb.where).toHaveBeenCalledWith('booking.status != :pending', { pending: 'pending' });
-      expect(qb.innerJoin).toHaveBeenCalledWith('booking.providerService', 'ps');
+    it('lets the admin reject', async () => {
+      approvalRepo.findOne.mockResolvedValue({ id: 'ap-1', bookingId: 'bk-1', status: ChatApprovalStatus.PENDING, booking: booking() });
+      expect((await service.reviewApproval('admin-1', 'ap-1', 'rejected')).status).toBe(ChatApprovalStatus.REJECTED);
     });
 
-    it('moves the chat to the new provider when the admin reassigns the job', async () => {
-      bookingRows.push({ bookingId: 'b-1', customerId: 'cust-1', providerId: 'prov-2' });
-      conversations.find.mockResolvedValueOnce([bookingChat()]);
+    it('returns 404 for an unknown approval', async () => {
+      approvalRepo.findOne.mockResolvedValue(null);
+      await expect(service.reviewApproval('admin-1', 'nope', 'approved')).rejects.toThrow(NotFoundException);
+    });
+  });
 
-      await service.listConversations(customer);
+  describe('listApprovals', () => {
+    it('filters to the customer\'s own bookings', async () => {
+      const qb = fakeQb([{ id: 'ap-1', bookingId: 'bk-1', status: 'pending', booking: booking() }]);
+      approvalRepo.createQueryBuilder.mockReturnValue(qb);
 
-      expect(conversations.update).toHaveBeenCalledWith('conv-1', { providerId: 'prov-2' });
+      const result = await service.listApprovals(customer);
+
+      expect(qb.whereCalls).toEqual([{ sql: 'booking.customerId = :userId', params: { userId: 'cust-1' } }]);
+      expect(result[0]).toMatchObject({ id: 'ap-1', customerName: 'Rahim' });
     });
 
-    it('treats a duplicate insert from two refreshes at once as fine', async () => {
-      bookingRows.push({ bookingId: 'b-1', customerId: 'cust-1', providerId: 'prov-1' });
-      conversations.insert.mockRejectedValueOnce({ code: 'ER_DUP_ENTRY' });
-
-      await expect(service.listConversations(customer)).resolves.toBeDefined();
+    it('filters to the provider\'s own bookings', async () => {
+      const qb = fakeQb([]);
+      approvalRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.listApprovals(provider);
+      expect(qb.whereCalls).toEqual([{ sql: 'providerService.providerId = :userId', params: { userId: 'prov-1' } }]);
     });
 
-    it('names each chat for the person looking at it', async () => {
-      conversations.find.mockResolvedValue([bookingChat()]);
+    it('gives admins every approval', async () => {
+      const qb = fakeQb([]);
+      approvalRepo.createQueryBuilder.mockReturnValue(qb);
+      await service.listApprovals(admin);
+      expect(qb.whereCalls).toEqual([]);
+    });
+  });
 
-      const [forCustomer] = await service.listConversations(customer);
-      const [forProvider] = await service.listConversations(provider);
-      const [forAdmin] = await service.listConversations(admin);
+  describe('listMessages', () => {
+    const stored = [{ id: 'm-1', bookingId: 'bk-1', senderId: 'cust-1', senderType: 'customer', message: 'hi', createdAt: new Date() }];
 
-      expect(forCustomer.title).toBe('Karim Uddin');
-      expect(forProvider.title).toBe('Nusrat Jahan');
-      expect(forAdmin.title).toBe('Nusrat Jahan and Karim Uddin');
-      expect(forCustomer.subtitle).toBe('Plumbing on 2026-11-10');
+    it('returns a booking\'s conversation to its customer and provider', async () => {
+      messageRepo.find.mockResolvedValue(stored);
+      expect(await service.listMessages(customer, 'bk-1')).toHaveLength(1);
+      expect(await service.listMessages(provider, 'bk-1')).toHaveLength(1);
+      expect(messageRepo.find).toHaveBeenCalledWith({ where: { bookingId: 'bk-1' }, order: { createdAt: 'ASC' } });
     });
 
-    it('only shows admins the chats that have messages', async () => {
-      await service.listConversations(admin);
-
-      const [options] = conversations.find.mock.calls[0];
-      expect(options.where.lastMessageAt).toBeDefined();
-      expect(conversations.insert).not.toHaveBeenCalled();
+    it('lets an admin read a conversation', async () => {
+      messageRepo.find.mockResolvedValue(stored);
+      expect(await service.listMessages(admin, 'bk-1')).toHaveLength(1);
     });
 
-    it('counts unread messages from the other side only', async () => {
-      conversations.find.mockResolvedValue([bookingChat()]);
-      const unreadQuery = queryBuilder({ raw: [{ id: 'conv-1', count: '3' }] });
-      messages.createQueryBuilder.mockReturnValueOnce(queryBuilder({})).mockReturnValueOnce(unreadQuery);
-
-      const [chat] = await service.listConversations(customer);
-
-      expect(chat.unread).toBe(3);
-      expect(unreadQuery.andWhere).toHaveBeenCalledWith('m.sender_type != :me', { me: ChatSender.CUSTOMER });
+    it('hides a conversation from anyone else', async () => {
+      await expect(service.listMessages(otherCustomer, 'bk-1')).rejects.toThrow(ForbiddenException);
+      await expect(service.listMessages(otherProvider, 'bk-1')).rejects.toThrow(ForbiddenException);
     });
 
-    it('puts the chat with the newest message first', async () => {
-      conversations.find.mockResolvedValue([
-        bookingChat({ conversationId: 'old', lastMessageAt: new Date('2026-11-01') }),
-        bookingChat({ conversationId: 'new', lastMessageAt: new Date('2026-11-05') }),
-        bookingChat({ conversationId: 'empty', lastMessageAt: null }),
-      ]);
+    it('without a booking, returns messages across the caller\'s own bookings', async () => {
+      const qb = fakeQb(stored);
+      messageRepo.createQueryBuilder.mockReturnValue(qb);
 
-      const list = await service.listConversations(customer);
+      expect(await service.listMessages(provider)).toHaveLength(1);
+      expect(qb.whereCalls).toEqual([{ sql: 'providerService.providerId = :userId', params: { userId: 'prov-1' } }]);
+    });
 
-      expect(list.map((c) => c.conversationId)).toEqual(['new', 'old', 'empty']);
+    it('makes admins name a booking', async () => {
+      await expect(service.listMessages(admin)).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('sendMessage', () => {
-    it('saves the message with the sender worked out from the login', async () => {
-      conversations.findOne.mockResolvedValue(bookingChat());
+    const approved = { id: 'ap-1', bookingId: 'bk-1', status: ChatApprovalStatus.APPROVED };
 
-      const message = await service.sendMessage(provider, 'conv-1', '  On my way  ');
+    it('saves a message once chat is approved, with the role from the login', async () => {
+      approvalRepo.findOne.mockResolvedValue(approved);
 
-      expect(message).toMatchObject({
-        senderType: ChatSender.PROVIDER,
-        senderId: 'prov-1',
-        senderName: 'Karim Uddin',
-        body: 'On my way',
-      });
-      expect(conversations.update).toHaveBeenCalledWith('conv-1', {
-        lastMessageAt: message.createdAt,
-        providerReadAt: message.createdAt,
-      });
+      const result = await service.sendMessage(provider, { bookingId: 'bk-1', message: '  On my way  ' });
+
+      expect(result).toMatchObject({ bookingId: 'bk-1', senderId: 'prov-1', senderType: 'provider', message: 'On my way' });
     });
 
-    it('refuses a chat that is not yours, as if it did not exist', async () => {
-      conversations.findOne.mockResolvedValue(bookingChat());
+    it('refuses before an admin approves', async () => {
+      approvalRepo.findOne.mockResolvedValue({ ...approved, status: ChatApprovalStatus.PENDING });
+      await expect(service.sendMessage(customer, { bookingId: 'bk-1', message: 'hi' })).rejects.toThrow(ForbiddenException);
 
-      await expect(service.sendMessage(otherCustomer, 'conv-1', 'hi')).rejects.toThrow(NotFoundException);
-      expect(messages.save).not.toHaveBeenCalled();
+      approvalRepo.findOne.mockResolvedValue(null);
+      await expect(service.sendMessage(customer, { bookingId: 'bk-1', message: 'hi' })).rejects.toThrow(ForbiddenException);
+      expect(messageRepo.save).not.toHaveBeenCalled();
     });
 
-    it('refuses an empty message', async () => {
-      conversations.findOne.mockResolvedValue(bookingChat());
-
-      await expect(service.sendMessage(customer, 'conv-1', '   ')).rejects.toThrow(BadRequestException);
+    it('refuses after an admin rejects an open chat', async () => {
+      approvalRepo.findOne.mockResolvedValue({ ...approved, status: ChatApprovalStatus.REJECTED });
+      await expect(service.sendMessage(customer, { bookingId: 'bk-1', message: 'hi' })).rejects.toThrow(ForbiddenException);
     });
 
-    it('lets an admin answer any chat', async () => {
-      conversations.findOne.mockResolvedValue(bookingChat());
-
-      const message = await service.sendMessage(admin, 'conv-1', 'I have checked the booking');
-
-      expect(message.senderType).toBe(ChatSender.ADMIN);
-      expect(message.senderName).toBe('Admin');
-    });
-  });
-
-  describe('getMessages', () => {
-    it('marks the chat as read for whoever opened it', async () => {
-      conversations.findOne.mockResolvedValue(bookingChat());
-
-      await service.getMessages(customer, 'conv-1');
-
-      expect(conversations.update).toHaveBeenCalledWith('conv-1', { customerReadAt: expect.any(Date) });
+    it('refuses someone who is not on the booking, admins included', async () => {
+      approvalRepo.findOne.mockResolvedValue(approved);
+      await expect(service.sendMessage(otherCustomer, { bookingId: 'bk-1', message: 'hi' })).rejects.toThrow(ForbiddenException);
+      await expect(service.sendMessage(admin, { bookingId: 'bk-1', message: 'hi' })).rejects.toThrow(ForbiddenException);
     });
 
-    it('only fetches newer messages on a refresh', async () => {
-      conversations.findOne.mockResolvedValue(bookingChat());
-
-      await service.getMessages(customer, 'conv-1', '2026-11-06T02:00:00.000Z');
-
-      const [options] = messages.find.mock.calls[0];
-      expect(options.order).toEqual({ createdAt: 'ASC' });
-      expect(options.where.createdAt).toBeDefined();
+    it('refuses on a cancelled booking', async () => {
+      bookingRepo.findOne.mockResolvedValue(booking({ status: BookingStatus.CANCELLED }));
+      approvalRepo.findOne.mockResolvedValue(approved);
+      await expect(service.sendMessage(customer, { bookingId: 'bk-1', message: 'hi' })).rejects.toThrow(BadRequestException);
     });
 
-    it('returns the first load oldest first', async () => {
-      conversations.findOne.mockResolvedValue(bookingChat());
-      messages.find.mockResolvedValue([{ messageId: 'b' }, { messageId: 'a' }]);
-
-      const result = await service.getMessages(customer, 'conv-1');
-
-      expect(result.map((m) => m.messageId)).toEqual(['a', 'b']);
-    });
-
-    it('does not show someone else’s chat', async () => {
-      conversations.findOne.mockResolvedValue(bookingChat());
-
-      await expect(service.getMessages(otherCustomer, 'conv-1')).rejects.toThrow(NotFoundException);
-    });
-  });
-
-  describe('startSupportChat', () => {
-    it('opens a chat between the admin and a provider', async () => {
-      providers.findOne.mockResolvedValue({ providerId: 'prov-1' });
-      conversations.findOneOrFail.mockResolvedValue({
-        conversationId: 'conv-9',
-        type: ConversationType.PROVIDER_SUPPORT,
-        chatKey: 'provider:prov-1',
-        providerId: 'prov-1',
-        provider: { providerName: 'Karim Uddin' },
-      });
-
-      const chat = await service.startSupportChat(admin, 'provider', 'prov-1');
-
-      expect(conversations.insert).toHaveBeenCalledWith(
-        expect.objectContaining({ type: ConversationType.PROVIDER_SUPPORT, chatKey: 'provider:prov-1' }),
-      );
-      expect(chat.title).toBe('Karim Uddin');
-    });
-
-    it('returns 404 for an account that does not exist', async () => {
-      customers.findOne.mockResolvedValue(null);
-
-      await expect(service.startSupportChat(admin, 'customer', 'ghost')).rejects.toThrow(NotFoundException);
+    it('refuses a blank message', async () => {
+      approvalRepo.findOne.mockResolvedValue(approved);
+      await expect(service.sendMessage(customer, { bookingId: 'bk-1', message: '   ' })).rejects.toThrow(BadRequestException);
     });
   });
 });

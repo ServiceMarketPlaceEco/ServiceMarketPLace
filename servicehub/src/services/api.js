@@ -812,35 +812,70 @@ export function changeMyAdminPassword(currentPassword, newPassword) {
   return request('/admins/me/password', { method: 'POST', body: { currentPassword, newPassword }, auth: true })
 }
 
-// ---------- Chat ----------
-// Customer <-> provider (per booking, once an admin assigns the provider),
-// admin <-> customer and admin <-> provider. The chat screen refreshes every
-// 5 seconds, passing the newest message time so only new messages come back.
+// ---------- Chat approval ----------
 
-export async function getChats() {
-  return resultArray(await request('/chat/conversations', { auth: true }))
-}
-
-export async function getChatMessages(conversationId, after) {
-  const query = after ? `?${new URLSearchParams({ after }).toString()}` : ''
-  return resultArray(
-    await request(`/chat/conversations/${encodeURIComponent(conversationId)}/messages${query}`, { auth: true })
+export async function getChatApprovals() {
+  const result = await request(
+    '/chat/approvals',
+    {
+      auth: true
+    }
   )
+
+  return resultArray(result)
 }
 
-export function sendChatMessage(conversationId, body) {
-  return request(`/chat/conversations/${encodeURIComponent(conversationId)}/messages`, {
+export function requestChatApproval(
+  payload
+) {
+  return request('/chat/approvals', {
     method: 'POST',
-    body: { body },
+    body: payload,
     auth: true
   })
 }
 
-// admin only: open (or reopen) a chat with a customer or provider
-export function startSupportChat(userType, userId) {
-  return request('/chat/conversations/support', {
+export function updateChatApproval(
+  approvalId,
+  status
+) {
+  return request(
+    `/chat/approvals/${encodeURIComponent(
+      approvalId
+    )}`,
+    {
+      method: 'PATCH',
+      body: { status },
+      auth: true
+    }
+  )
+}
+
+// ---------- Chat messages ----------
+
+export async function getChatMessages(
+  bookingId
+) {
+  const query = bookingId
+    ? `?${new URLSearchParams({
+      bookingId: String(bookingId)
+    }).toString()}`
+    : ''
+
+  const result = await request(
+    `/chat/messages${query}`,
+    {
+      auth: true
+    }
+  )
+
+  return resultArray(result)
+}
+
+export function sendChatMessage(payload) {
+  return request('/chat/messages', {
     method: 'POST',
-    body: { userType, userId },
+    body: payload,
     auth: true
   })
 }

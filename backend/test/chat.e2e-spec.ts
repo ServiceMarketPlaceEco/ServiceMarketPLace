@@ -1,6 +1,11 @@
-// Integration tests for the chat routes: login, who may do what, and input
-// checks. The chat rules themselves are covered in chat.service.spec.ts, so
-// here ChatService is a fake and the real JWT login and guards are used.
+// Integration test for customer <-> provider chat, as one story:
+// provider asks to chat -> blocked until admin approves -> admin approves ->
+// both sides message each other -> outsiders can't read or write -> admin
+// closes the chat again.
+//
+// Approvals and messages live in small in-memory stores so each request sees
+// what the previous one saved. Real Nest app, real JWT guards, real validation.
+// Run with: npm run test:e2e
 
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
@@ -10,50 +15,90 @@ import * as request from 'supertest';
 
 import { ChatController } from '../src/modules/chat/chat.controller';
 import { ChatService } from '../src/modules/chat/chat.service';
+import { ChatApproval } from '../src/modules/chat/entities/chat-approval.entity';
+import { ChatMessage } from '../src/modules/chat/entities/chat-message.entity';
+import { Booking } from '../src/modules/bookings/entities/booking.entity';
 import { Customer } from '../src/modules/customers/entities/customer.entity';
 import { ServiceProvider } from '../src/modules/providers/entities/service-provider.entity';
 import { Admin } from '../src/modules/admins/entities/admin.entity';
 import { JwtStrategy } from '../src/modules/auth/strategies/jwt.strategy';
 import { mockRepo, testConfigService, applyMainConfig, signTestToken } from './test-helpers';
 
-const CHAT_ID = '3c9e1d2a-5b6f-4a7c-8d9e-0f1a2b3c4d5e';
-const USER_ID = '9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d';
+const BOOKINGS: Record<string, any> = {
+  'bk-1': {
+    bookingId: 'bk-1',
+    customerId: 'cust-1',
+    providerServiceId: 'ps-1',
+    status: 'confirmed',
+    serviceName: 'Home Cleaning',
+    customer: { name: 'Rahim', passwordHash: 'hash' },
+    providerService: { providerId: 'prov-1', provider: { providerName: 'Karim Services', passwordHash: 'hash' } },
+  },
+  // no provider assigned yet
+  'bk-2': { bookingId: 'bk-2', customerId: 'cust-1', providerServiceId: null, status: 'pending', providerService: null },
+};
 
-describe('Chat endpoints (integration)', () => {
+describe('Customer <-> provider chat (integration)', () => {
   let app: INestApplication;
-  let chat: any;
-  let customerRepo: any;
-  let providerRepo: any;
-  let adminRepo: any;
+  const approvals = new Map<string, any>();
+  const messages: any[] = [];
+  let nextId = 1;
 
-  const customerToken = () => signTestToken({ sub: 'cust-1', email: 'c@x.com', userType: 'customer' });
-  const providerToken = () => signTestToken({ sub: 'prov-1', email: 'p@x.com', userType: 'provider' });
-  const adminToken = () => signTestToken({ sub: 'admin-1', email: 'a@x.com', userType: 'admin' });
+  const tokens = {
+    customer: signTestToken({ sub: 'cust-1', email: 'c1@x.com', userType: 'customer' }),
+    otherCustomer: signTestToken({ sub: 'cust-2', email: 'c2@x.com', userType: 'customer' }),
+    provider: signTestToken({ sub: 'prov-1', email: 'p1@x.com', userType: 'provider' }),
+    otherProvider: signTestToken({ sub: 'prov-2', email: 'p2@x.com', userType: 'provider' }),
+    admin: signTestToken({ sub: 'admin-1', email: 'a@x.com', userType: 'admin' }),
+  };
 
   beforeAll(async () => {
-    chat = {
-      listConversations: jest.fn(async () => []),
-      getMessages: jest.fn(async () => []),
-      sendMessage: jest.fn(async (_u: any, id: string, body: string) => ({ messageId: 'm-1', conversationId: id, body })),
-      startSupportChat: jest.fn(async () => ({ conversationId: CHAT_ID })),
-    };
-    customerRepo = { ...mockRepo(), findOne: jest.fn(async () => ({ customerId: 'cust-1', isActive: true, isBlocked: false, name: 'Nusrat' })) };
-    providerRepo = {
+    const approvalRepo = {
       ...mockRepo(),
-      findOne: jest.fn(async () => ({ providerId: 'prov-1', isActive: true, isBlocked: false, isVerified: true })),
+      findOne: jest.fn(async ({ where }: any) => {
+        const found = where.id
+          ? approvals.get(where.id)
+          : [...approvals.values()].find((a) => a.bookingId === where.bookingId);
+        return found && { ...found, booking: BOOKINGS[found.bookingId] };
+      }),
+      save: jest.fn(async (a: any) => {
+        const saved = { ...a, id: a.id ?? `ap-${nextId++}`, createdAt: a.createdAt ?? new Date(), updatedAt: new Date() };
+        delete saved.booking;
+        approvals.set(saved.id, saved);
+        return { ...saved };
+      }),
+      createQueryBuilder: jest.fn(() => {
+        const qb: any = {};
+        for (const m of ['innerJoinAndSelect', 'leftJoinAndSelect', 'where', 'orderBy']) qb[m] = () => qb;
+        qb.getMany = async () => [...approvals.values()].map((a) => ({ ...a, booking: BOOKINGS[a.bookingId] }));
+        return qb;
+      }),
     };
-    adminRepo = { ...mockRepo(), findOne: jest.fn(async () => ({ id: 'admin-1', isActive: true, role: 'admin' })) };
+    const messageRepo = {
+      ...mockRepo(),
+      find: jest.fn(async ({ where }: any) => messages.filter((m) => m.bookingId === where.bookingId)),
+      save: jest.fn(async (m: any) => {
+        const saved = { ...m, id: `msg-${nextId++}`, createdAt: new Date() };
+        messages.push(saved);
+        return saved;
+      }),
+    };
+    const bookingRepo = { ...mockRepo(), findOne: jest.fn(async ({ where }: any) => BOOKINGS[where.bookingId] ?? null) };
+    const activeAccount = { ...mockRepo(), findOne: jest.fn(async () => ({ id: 'admin-1', isActive: true, isBlocked: false, isVerified: true, role: 'admin' })) };
 
     const moduleRef = await Test.createTestingModule({
       imports: [PassportModule],
       controllers: [ChatController],
       providers: [
+        ChatService,
         JwtStrategy,
         testConfigService,
-        { provide: ChatService, useValue: chat },
-        { provide: getRepositoryToken(Customer), useValue: customerRepo },
-        { provide: getRepositoryToken(ServiceProvider), useValue: providerRepo },
-        { provide: getRepositoryToken(Admin), useValue: adminRepo },
+        { provide: getRepositoryToken(ChatApproval), useValue: approvalRepo },
+        { provide: getRepositoryToken(ChatMessage), useValue: messageRepo },
+        { provide: getRepositoryToken(Booking), useValue: bookingRepo },
+        { provide: getRepositoryToken(Customer), useValue: activeAccount },
+        { provide: getRepositoryToken(ServiceProvider), useValue: activeAccount },
+        { provide: getRepositoryToken(Admin), useValue: activeAccount },
       ],
     }).compile();
 
@@ -66,91 +111,76 @@ describe('Chat endpoints (integration)', () => {
     await app.close();
   });
 
-  beforeEach(() => jest.clearAllMocks());
-
-  it('needs a login for every chat route', async () => {
-    await request(app.getHttpServer()).get('/api/chat/conversations').expect(401);
-    await request(app.getHttpServer()).get(`/api/chat/conversations/${CHAT_ID}/messages`).expect(401);
-    await request(app.getHttpServer()).post(`/api/chat/conversations/${CHAT_ID}/messages`).send({ body: 'hi' }).expect(401);
-    expect(chat.sendMessage).not.toHaveBeenCalled();
+  const as = (token: string) => ({
+    get: (url: string) => request(app.getHttpServer()).get(url).set('Authorization', `Bearer ${token}`),
+    post: (url: string) => request(app.getHttpServer()).post(url).set('Authorization', `Bearer ${token}`),
+    patch: (url: string) => request(app.getHttpServer()).patch(url).set('Authorization', `Bearer ${token}`),
   });
 
-  it('lists chats for customers, providers and admins', async () => {
-    for (const token of [customerToken(), providerToken(), adminToken()]) {
-      await request(app.getHttpServer()).get('/api/chat/conversations').set('Authorization', `Bearer ${token}`).expect(200);
-    }
-    expect(chat.listConversations.mock.calls.map((call: any[]) => call[0].userType)).toEqual([
-      'customer',
-      'provider',
-      'admin',
+  it('needs a login', async () => {
+    await request(app.getHttpServer()).get('/api/chat/approvals').expect(401);
+    await request(app.getHttpServer()).post('/api/chat/messages').send({ bookingId: 'bk-1', message: 'hi' }).expect(401);
+  });
+
+  it('runs the whole chat journey', async () => {
+    // 1. Before anything is approved, nobody can send.
+    await as(tokens.customer).post('/api/chat/messages').send({ bookingId: 'bk-1', message: 'hello?' }).expect(403);
+
+    // 2. Chat can't be requested before a provider is assigned.
+    await as(tokens.customer).post('/api/chat/approvals').send({ bookingId: 'bk-2' }).expect(400);
+
+    // 3. An outsider can't request chat on someone else's booking.
+    await as(tokens.otherProvider).post('/api/chat/approvals').send({ bookingId: 'bk-1' }).expect(403);
+
+    // 4. The provider asks for chat.
+    const requested = await as(tokens.provider).post('/api/chat/approvals').send({ bookingId: 'bk-1' }).expect(201);
+    expect(requested.body).toMatchObject({ bookingId: 'bk-1', requestedBy: 'provider', status: 'pending' });
+    const approvalId = requested.body.id;
+
+    // 5. Still pending, so still no messages.
+    await as(tokens.provider).post('/api/chat/messages').send({ bookingId: 'bk-1', message: 'hi' }).expect(403);
+
+    // 6. Only an admin can approve it.
+    await as(tokens.provider).patch(`/api/chat/approvals/${approvalId}`).send({ status: 'approved' }).expect(403);
+    await as(tokens.admin).patch(`/api/chat/approvals/${approvalId}`).send({ status: 'maybe' }).expect(400);
+
+    // 7. The admin sees it with names, not just ids, and no password hashes.
+    const queue = await as(tokens.admin).get('/api/chat/approvals').expect(200);
+    expect(queue.body[0]).toMatchObject({ id: approvalId, customerName: 'Rahim', providerName: 'Karim Services', serviceName: 'Home Cleaning' });
+    expect(JSON.stringify(queue.body)).not.toContain('hash');
+
+    const approved = await as(tokens.admin).patch(`/api/chat/approvals/${approvalId}`).send({ status: 'approved' }).expect(200);
+    expect(approved.body.status).toBe('approved');
+
+    // 8. Both sides can now talk. The role comes from the token: a client
+    //    can't send senderRole/senderId to pretend to be the other side.
+    await as(tokens.customer).post('/api/chat/messages').send({ bookingId: 'bk-1', message: 'hi', senderRole: 'provider' }).expect(400);
+    await as(tokens.customer).post('/api/chat/messages').send({ bookingId: 'bk-1', message: '   ' }).expect(400);
+    await as(tokens.customer).post('/api/chat/messages').send({ bookingId: 'bk-1', message: 'x'.repeat(2001) }).expect(400);
+
+    const sent = await as(tokens.customer).post('/api/chat/messages').send({ bookingId: 'bk-1', message: 'Can you come at 10?' }).expect(201);
+    expect(sent.body).toMatchObject({ senderType: 'customer', senderId: 'cust-1', message: 'Can you come at 10?' });
+    await as(tokens.provider).post('/api/chat/messages').send({ bookingId: 'bk-1', message: 'Yes, see you then' }).expect(201);
+
+    const convo = await as(tokens.provider).get('/api/chat/messages?bookingId=bk-1').expect(200);
+    expect(convo.body.map((m: any) => [m.senderType, m.message])).toEqual([
+      ['customer', 'Can you come at 10?'],
+      ['provider', 'Yes, see you then'],
     ]);
+
+    // 9. Outsiders can't read or write; the admin can read but not write.
+    await as(tokens.otherCustomer).get('/api/chat/messages?bookingId=bk-1').expect(403);
+    await as(tokens.otherProvider).post('/api/chat/messages').send({ bookingId: 'bk-1', message: 'hi' }).expect(403);
+    await as(tokens.admin).get('/api/chat/messages?bookingId=bk-1').expect(200);
+    await as(tokens.admin).post('/api/chat/messages').send({ bookingId: 'bk-1', message: 'hi' }).expect(403);
+
+    // 10. The admin closes the chat: history stays, sending stops.
+    await as(tokens.admin).patch(`/api/chat/approvals/${approvalId}`).send({ status: 'rejected' }).expect(200);
+    await as(tokens.customer).post('/api/chat/messages').send({ bookingId: 'bk-1', message: 'still there?' }).expect(403);
+    expect((await as(tokens.customer).get('/api/chat/messages?bookingId=bk-1').expect(200)).body).toHaveLength(2);
   });
 
-  it('sends a message as the signed in user', async () => {
-    const res = await request(app.getHttpServer())
-      .post(`/api/chat/conversations/${CHAT_ID}/messages`)
-      .set('Authorization', `Bearer ${providerToken()}`)
-      .send({ body: '  On my way  ' })
-      .expect(201);
-
-    expect(res.body.body).toBe('On my way');
-    const [user, id] = chat.sendMessage.mock.calls[0];
-    expect(user.userId).toBe('prov-1');
-    expect(id).toBe(CHAT_ID);
-  });
-
-  it('refuses an empty or very long message', async () => {
-    for (const body of ['', '   ', 'x'.repeat(2001)]) {
-      await request(app.getHttpServer())
-        .post(`/api/chat/conversations/${CHAT_ID}/messages`)
-        .set('Authorization', `Bearer ${customerToken()}`)
-        .send({ body })
-        .expect(400);
-    }
-    expect(chat.sendMessage).not.toHaveBeenCalled();
-  });
-
-  it('refuses a chat id that is not a real id', async () => {
-    await request(app.getHttpServer())
-      .get('/api/chat/conversations/not-an-id/messages')
-      .set('Authorization', `Bearer ${customerToken()}`)
-      .expect(400);
-  });
-
-  it('passes the refresh time through and refuses a bad one', async () => {
-    await request(app.getHttpServer())
-      .get(`/api/chat/conversations/${CHAT_ID}/messages?after=2026-11-06T02:00:00.000Z`)
-      .set('Authorization', `Bearer ${customerToken()}`)
-      .expect(200);
-    expect(chat.getMessages.mock.calls[0][2]).toBe('2026-11-06T02:00:00.000Z');
-
-    await request(app.getHttpServer())
-      .get(`/api/chat/conversations/${CHAT_ID}/messages?after=yesterday`)
-      .set('Authorization', `Bearer ${customerToken()}`)
-      .expect(400);
-  });
-
-  it('lets only admins start a chat with a user', async () => {
-    await request(app.getHttpServer())
-      .post('/api/chat/conversations/support')
-      .set('Authorization', `Bearer ${customerToken()}`)
-      .send({ userType: 'provider', userId: USER_ID })
-      .expect(403);
-    expect(chat.startSupportChat).not.toHaveBeenCalled();
-
-    await request(app.getHttpServer())
-      .post('/api/chat/conversations/support')
-      .set('Authorization', `Bearer ${adminToken()}`)
-      .send({ userType: 'provider', userId: USER_ID })
-      .expect(201);
-    expect(chat.startSupportChat.mock.calls[0].slice(1)).toEqual(['provider', USER_ID]);
-  });
-
-  it('checks the admin picked a customer or provider', async () => {
-    await request(app.getHttpServer())
-      .post('/api/chat/conversations/support')
-      .set('Authorization', `Bearer ${adminToken()}`)
-      .send({ userType: 'admin', userId: USER_ID })
-      .expect(400);
+  it('404s for a booking that does not exist', async () => {
+    await as(tokens.customer).post('/api/chat/approvals').send({ bookingId: 'nope' }).expect(404);
   });
 });

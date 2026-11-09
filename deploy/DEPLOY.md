@@ -2,7 +2,8 @@
 
 This runs the whole of ServiceHub (database, API and website) on one Linux
 server with Docker. It is the quickest way to put the site online. The manual
-way (Node, MySQL and Nginx installed by hand) is in the handover notes.
+way (Node, MySQL and nginx installed by hand) is in
+[docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).
 
 ## What you need
 
@@ -40,8 +41,8 @@ docker compose --profile https up -d --build
 ```
 
 The first start takes a few minutes. It builds the website and the API, and
-the database is created from the migrations and the production-safe seeds
-(`backend/database/docker-init.sh`). Check that everything is up:
+the database is created from the migrations and the seeds that are safe for a
+live site, without the demo and test accounts (`backend/database/docker-init.sh`). Check that everything is up:
 
 ```bash
 docker compose ps          # db, backend and web should say "healthy" or "running"
@@ -51,18 +52,19 @@ docker compose logs backend --tail 50
 The backend log says `Email is ready` when the email login works. It warns if
 Twilio or email are not set up.
 
-## 3. Replace the seeded admin
+## 3. Create the first admin
 
-The seeded admin's password is in the README, so replace it before you tell
-anyone the address:
+The live database has no accounts (the demo admin and demo provider are for
+laptops only). Make the first admin from the backend container:
 
-1. Sign in as `admin@servicehub.com` / `Admin@123` and open **Admin accounts**.
-2. Add your own admin with **Super admin** ticked.
-3. Log out, sign in with the new account, and choose **Switch off** next to
-   `admin@servicehub.com`. The yellow warning disappears once it is off.
+```bash
+docker compose exec backend npm run admin:create
+```
 
-Also switch off the demo provider "Rajshahi Demo Provider" under **Service
-providers**.
+It asks for a name, email, role (choose `super_admin`) and password. After
+that, sign in on the website and add any other admins from **Admin accounts**.
+`npm run admin:reset-password` and `npm run admin:deactivate` work the same way
+if someone is locked out or leaves.
 
 ## 4. Before you announce it
 
@@ -84,7 +86,7 @@ automatically on an existing database, so run it by hand, for example:
 
 ```bash
 docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' \
-  < backend/database/migrations/005_add_chat_and_review_approval.sql
+  < backend/database/migrations/006_add_review_approval.sql
 ```
 
 Every migration is safe to run twice.

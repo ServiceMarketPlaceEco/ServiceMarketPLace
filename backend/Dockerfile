@@ -14,6 +14,8 @@ WORKDIR /app
 COPY --from=build --chown=node:node /app/package.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
+# the database scripts, for `docker compose exec backend npm run admin:create`
+COPY --from=build --chown=node:node /app/database ./database
 USER node
 EXPOSE 3001
 # healthy once the API answers. node is used because the slim image has no curl

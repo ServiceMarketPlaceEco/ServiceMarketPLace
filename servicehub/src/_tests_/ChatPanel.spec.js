@@ -1,183 +1,129 @@
-import { mount, flushPromises } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// The chat screen talks to the backend through these four api calls, so they
-// are the only thing mocked. Everything else is the real component.
 vi.mock('../services/api', () => ({
-  getChats: vi.fn(),
   getChatMessages: vi.fn(),
-  sendChatMessage: vi.fn(),
-  startSupportChat: vi.fn()
+  sendChatMessage: vi.fn()
 }))
 
 import * as api from '../services/api'
 import ChatPanel from '../components/Chat/ChatPanel.vue'
 
-const bookingChat = {
-  conversationId: 'conv-1',
-  type: 'booking',
-  title: 'Karim Uddin',
-  subtitle: 'Plumbing on 2026-11-10',
-  bookingId: 'b-1',
-  lastMessage: { body: 'See you at 10', senderType: 'provider', senderName: 'Karim Uddin', createdAt: '2026-11-06T01:00:00.000Z' },
-  lastMessageAt: '2026-11-06T01:00:00.000Z',
-  unread: 2
-}
-const supportChat = {
-  conversationId: 'conv-2',
-  type: 'customer_support',
-  title: 'ServiceHub admin',
-  subtitle: 'Questions about bookings or your account',
-  bookingId: null,
-  lastMessage: null,
-  lastMessageAt: null,
-  unread: 0
-}
-const firstMessages = [
-  { messageId: 'm-1', senderType: 'customer', senderName: 'Nusrat', body: 'Hi, are you coming today?', createdAt: '2026-11-06T00:59:00.000Z' },
-  { messageId: 'm-2', senderType: 'provider', senderName: 'Karim Uddin', body: 'See you at 10', createdAt: '2026-11-06T01:00:00.000Z' }
-]
+// A booking in the shape App.vue's normalizeBooking() produces.
+const booking = (overrides = {}) => ({
+  id: 'bk-1',
+  serviceTitle: 'Home Cleaning',
+  status: 'assigned-to-provider',
+  providerStatus: 'accepted',
+  customerName: 'Rahim',
+  providerId: 'prov-1',
+  providerName: 'Karim Services',
+  ...overrides
+})
 
-describe('ChatPanel', () => {
+const approval = status => ({ id: 'ap-1', requestId: 'bk-1', status })
+
+const mountPanel = props => mount(ChatPanel, { props: { request: booking(), role: 'customer', approval: null, ...props } })
+
+describe('ChatPanel (customer <-> provider chat)', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    api.getChats.mockResolvedValue([bookingChat, supportChat])
-    api.getChatMessages.mockImplementation(async (_id, after) => (after ? [] : firstMessages))
-    // the panel opens the first chat by itself on a wide screen
-    window.innerWidth = 1200
+    api.getChatMessages.mockResolvedValue([])
+    api.sendChatMessage.mockReset()
   })
-
   afterEach(() => {
     vi.useRealTimers()
+    vi.clearAllMocks()
   })
 
-  it('lists the chats with their unread counts', async () => {
-    window.innerWidth = 500
-    const wrapper = mount(ChatPanel, { props: { role: 'customer' } })
-    await flushPromises()
-
-    const items = wrapper.findAll('.chat-item')
-    expect(items).toHaveLength(2)
-    expect(items[0].text()).toContain('Karim Uddin')
-    expect(items[0].find('.chat-badge').text()).toBe('2')
-    expect(items[1].text()).toContain('No messages yet')
-    expect(wrapper.emitted('unread').at(-1)).toEqual([2])
+  it('explains chat opens once a provider is assigned', () => {
+    const wrapper = mountPanel({ request: booking({ providerId: '', providerName: '' }) })
+    expect(wrapper.text()).toContain('once a provider has been assigned')
+    expect(wrapper.find('button').exists()).toBe(false)
   })
 
-  it('opens a chat, shows its messages and clears its unread count', async () => {
-    const wrapper = mount(ChatPanel, { props: { role: 'customer' } })
-    await flushPromises()
+  it('asks an admin to open chat', async () => {
+    const wrapper = mountPanel()
+    expect(wrapper.text()).toContain('Chat with Karim Services')
 
-    expect(api.getChatMessages).toHaveBeenCalledWith('conv-1')
-    const bubbles = wrapper.findAll('.chat-bubble')
-    expect(bubbles).toHaveLength(2)
-    // my own message sits on the right without a name, theirs shows the sender
-    expect(bubbles[0].classes()).toContain('mine')
-    expect(bubbles[1].text()).toContain('Karim Uddin')
-    expect(wrapper.find('.chat-item.active .chat-badge').exists()).toBe(false)
+    await wrapper.find('button').trigger('click')
+    expect(wrapper.emitted('request-chat')).toEqual([[{ requestId: 'bk-1' }]])
+    expect(api.getChatMessages).not.toHaveBeenCalled()
   })
 
-  it('sends a message and shows it straight away', async () => {
-    api.sendChatMessage.mockResolvedValue({
-      messageId: 'm-3', senderType: 'customer', senderName: 'Nusrat', body: 'Thank you', createdAt: '2026-11-06T01:05:00.000Z'
-    })
-    const wrapper = mount(ChatPanel, { props: { role: 'customer' } })
-    await flushPromises()
+  it('waits for the admin and re-checks the approval while pending', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountPanel({ approval: approval('pending'), pollMs: 1000 })
+    expect(wrapper.text()).toContain('waiting for an admin')
+    expect(wrapper.find('textarea').exists()).toBe(false)
 
-    await wrapper.find('textarea').setValue('  Thank you  ')
-    await wrapper.find('form').trigger('submit')
-    await flushPromises()
-
-    expect(api.sendChatMessage).toHaveBeenCalledWith('conv-1', 'Thank you')
-    expect(wrapper.findAll('.chat-bubble').at(-1).text()).toContain('Thank you')
-    expect(wrapper.find('textarea').element.value).toBe('')
+    vi.advanceTimersByTime(2000)
+    expect(wrapper.emitted('refresh-chat')).toHaveLength(2)
+    wrapper.unmount()
   })
 
-  it('does not send an empty message', async () => {
-    const wrapper = mount(ChatPanel, { props: { role: 'customer' } })
-    await flushPromises()
-
-    await wrapper.find('textarea').setValue('   ')
-    await wrapper.find('form').trigger('submit')
-
-    expect(api.sendChatMessage).not.toHaveBeenCalled()
-  })
-
-  it('checks for new messages every 5 seconds, asking only for newer ones', async () => {
-    const wrapper = mount(ChatPanel, { props: { role: 'customer' } })
-    await flushPromises()
-    api.getChatMessages.mockResolvedValueOnce([
-      { messageId: 'm-9', senderType: 'provider', senderName: 'Karim Uddin', body: 'Running 5 minutes late', createdAt: '2026-11-06T01:10:00.000Z' }
+  it('shows the conversation with my messages on my side once approved', async () => {
+    api.getChatMessages.mockResolvedValue([
+      { id: 'm1', senderType: 'provider', message: 'On my way', createdAt: '2026-11-06T10:00:00Z' },
+      { id: 'm2', senderType: 'customer', message: 'Great, thanks', createdAt: '2026-11-06T10:01:00Z' }
     ])
-
-    await vi.advanceTimersByTimeAsync(5000)
+    const wrapper = mountPanel({ approval: approval('approved') })
     await flushPromises()
 
-    expect(api.getChatMessages).toHaveBeenLastCalledWith('conv-1', '2026-11-06T01:00:00.000Z')
-    expect(wrapper.text()).toContain('Running 5 minutes late')
+    expect(api.getChatMessages).toHaveBeenCalledWith('bk-1')
+    const rows = wrapper.findAll('.chat-bubble-row')
+    expect(rows.map(r => r.find('p').text())).toEqual(['On my way', 'Great, thanks'])
+    expect(rows.map(r => r.classes().includes('mine'))).toEqual([false, true])
+  })
+
+  it('sends a message and only the booking id + text go to the backend', async () => {
+    api.sendChatMessage.mockResolvedValue({ id: 'm9', senderType: 'provider', message: 'Hello', createdAt: new Date().toISOString() })
+    const wrapper = mountPanel({ role: 'provider', approval: approval('approved') })
+    await flushPromises()
+
+    await wrapper.find('textarea').setValue('  Hello  ')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(api.sendChatMessage).toHaveBeenCalledWith({ bookingId: 'bk-1', message: 'Hello' })
+    expect(wrapper.find('textarea').element.value).toBe('')
+    expect(wrapper.find('.chat-bubble-row.mine p').text()).toBe('Hello')
+  })
+
+  it('polls for new messages while approved and stops when closed', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountPanel({ approval: approval('approved'), pollMs: 1000 })
+    await flushPromises()
+    expect(api.getChatMessages).toHaveBeenCalledTimes(1)
+
+    vi.advanceTimersByTime(3000)
+    expect(api.getChatMessages).toHaveBeenCalledTimes(4)
+
     wrapper.unmount()
+    vi.advanceTimersByTime(3000)
+    expect(api.getChatMessages).toHaveBeenCalledTimes(4)
   })
 
-  it('stops refreshing when the screen is closed', async () => {
-    const wrapper = mount(ChatPanel, { props: { role: 'customer' } })
-    await flushPromises()
-    wrapper.unmount()
-    const calls = api.getChats.mock.calls.length
-
-    await vi.advanceTimersByTimeAsync(15000)
-
-    expect(api.getChats.mock.calls.length).toBe(calls)
-  })
-
-  it('opens the chat for a booking when asked to (the Message buttons)', async () => {
-    window.innerWidth = 500
-    const wrapper = mount(ChatPanel, { props: { role: 'customer', focusBookingId: 'b-1' } })
+  it('keeps history readable but stops sending after an admin closes the chat', async () => {
+    api.getChatMessages.mockResolvedValue([{ id: 'm1', senderType: 'customer', message: 'hi', createdAt: '2026-11-06T10:00:00Z' }])
+    const wrapper = mountPanel({ approval: approval('rejected') })
     await flushPromises()
 
-    expect(wrapper.find('.chat-thread-head').text()).toContain('Karim Uddin')
+    expect(wrapper.findAll('.chat-bubble-row')).toHaveLength(1)
+    expect(wrapper.find('textarea').exists()).toBe(false)
+    expect(wrapper.text()).toContain('An admin has closed this chat')
   })
 
-  it('shows the error when a message fails to send', async () => {
-    api.sendChatMessage.mockRejectedValue(new Error('Chat not found'))
-    const wrapper = mount(ChatPanel, { props: { role: 'customer' } })
+  it('shows the error when sending fails and re-checks the approval', async () => {
+    api.sendChatMessage.mockRejectedValue(new Error('Chat on this booking has not been approved by an admin'))
+    const wrapper = mountPanel({ approval: approval('approved') })
     await flushPromises()
 
     await wrapper.find('textarea').setValue('hello')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.find('.chat-error').text()).toBe('Chat not found')
-    // the draft is kept so nothing has to be typed again
+    expect(wrapper.find('.chat-error').text()).toContain('not been approved')
+    expect(wrapper.emitted('refresh-chat')).toHaveLength(1)
     expect(wrapper.find('textarea').element.value).toBe('hello')
-  })
-
-  it('lets an admin start a chat with a provider', async () => {
-    api.getChats.mockResolvedValue([])
-    api.startSupportChat.mockResolvedValue({ ...supportChat, conversationId: 'conv-7', type: 'provider_support', title: 'Karim Uddin', subtitle: 'Provider' })
-    const wrapper = mount(ChatPanel, {
-      props: {
-        role: 'admin',
-        accounts: [
-          { id: 'prov-1', role: 'provider', name: 'Karim Uddin' },
-          { id: 'cust-1', role: 'customer', name: 'Nusrat Jahan' }
-        ]
-      }
-    })
-    await flushPromises()
-
-    await wrapper.find('.chat-start select').setValue('provider:prov-1')
-    await wrapper.find('.chat-start button').trigger('click')
-    await flushPromises()
-
-    expect(api.startSupportChat).toHaveBeenCalledWith('provider', 'prov-1')
-    expect(wrapper.find('.chat-thread-head').text()).toContain('Karim Uddin')
-  })
-
-  it('does not show the admin picker to customers', async () => {
-    const wrapper = mount(ChatPanel, { props: { role: 'customer' } })
-    await flushPromises()
-
-    expect(wrapper.find('.chat-start').exists()).toBe(false)
   })
 })

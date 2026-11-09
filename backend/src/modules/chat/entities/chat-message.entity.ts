@@ -1,38 +1,38 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
-import { ChatConversation } from './chat-conversation.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  ManyToOne,
+  JoinColumn,
+  Index,
+} from 'typeorm';
+import { Booking } from '../../bookings/entities/booking.entity';
+import { ChatParticipantType } from './chat-approval.entity';
 
-export enum ChatSender {
-  CUSTOMER = 'customer',
-  PROVIDER = 'provider',
-  ADMIN = 'admin',
-}
-
+// A message between the customer and the provider of one booking.
 @Entity('chat_messages')
-@Index(['conversationId', 'createdAt'])
+@Index(['bookingId', 'createdAt'])
 export class ChatMessage {
   @PrimaryGeneratedColumn('uuid', { name: 'message_id' })
-  messageId: string;
+  id: string;
 
-  @Column({ name: 'conversation_id', type: 'varchar', length: 36 })
-  conversationId: string;
+  @Column({ name: 'booking_id', type: 'varchar', length: 36 })
+  bookingId: string;
 
-  @Column({ name: 'sender_type', type: 'enum', enum: ChatSender })
-  senderType: ChatSender;
-
-  @Column({ name: 'sender_id', type: 'varchar', length: 36 })
+  @Column({ name: 'sender_id', type: 'varchar', length: 255 })
   senderId: string;
 
-  // kept on the message so the name still shows if the account changes later
-  @Column({ name: 'sender_name', type: 'varchar', length: 255 })
-  senderName: string;
+  @Column({ name: 'sender_type', type: 'enum', enum: ['customer', 'provider'] })
+  senderType: ChatParticipantType;
 
   @Column({ type: 'text' })
-  body: string;
+  message: string;
 
-  @CreateDateColumn({ name: 'created_at', precision: 3, default: () => 'CURRENT_TIMESTAMP(3)' })
+  @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
-  @ManyToOne(() => ChatConversation, (conversation) => conversation.messages, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'conversation_id' })
-  conversation: ChatConversation;
+  @ManyToOne(() => Booking)
+  @JoinColumn({ name: 'booking_id' })
+  booking: Booking;
 }

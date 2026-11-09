@@ -47,8 +47,8 @@ const isPrivacy = computed(() => props.page === 'privacy')
           <li><strong>Provider location:</strong> while a provider has a job in progress and chooses
             <strong>Share location</strong>, we store their position so the customer can follow them on the map. We
             do not track customers' location.</li>
-          <li><strong>Messages and reviews:</strong> chat messages between customers, providers and our admin team,
-            and the reviews customers write.</li>
+          <li><strong>Messages and reviews:</strong> chat messages between a customer and provider about a
+            booking, once our admin team has opened the chat, and the reviews customers write.</li>
           <li><strong>Sign-in information:</strong> your browser keeps a sign-in token so you stay signed in. We do not
             use advertising or tracking cookies.</li>
         </ul>

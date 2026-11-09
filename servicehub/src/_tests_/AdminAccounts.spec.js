@@ -29,8 +29,8 @@ describe('AdminAccounts', () => {
   it('warns while the default admin is still switched on', async () => {
     const wrapper = await mountAs('seeded', [seeded])
 
-    expect(wrapper.find('.launch-warning').text()).toContain('Replace the default admin before launch')
-    expect(wrapper.find('.launch-warning').text()).toContain('You are signed in as the default admin')
+    expect(wrapper.find('.launch-warning').text()).toContain('Switch off the demo admin before launch')
+    expect(wrapper.find('.launch-warning').text()).toContain('You are signed in as the demo admin')
   })
 
   it('stops warning once the default admin is switched off', async () => {

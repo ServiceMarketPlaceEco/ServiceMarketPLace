@@ -71,6 +71,7 @@ const selectedTrackingRequest = ref(null)
 const services = ref([])
 const requests = ref([])
 const accounts = ref([])
+const chatApprovals = ref([])
 const blockRequests = ref([])
 const reviews = ref([])
 const appMain = ref(null)
@@ -350,6 +351,7 @@ function toggleTheme() { theme.value = theme.value === 'dark' ? 'light' : 'dark'
 function signOut() {
   api.clearTokens()
   signedInUser.value = null
+  chatApprovals.value = []
   currentPage.value = 'home'
 }
 
@@ -577,11 +579,40 @@ async function refreshProviderReviews() {
   }
 }
 
+// Chat approvals for the signed-in user (every one for admins). The messages
+// themselves are loaded by ChatPanel for the conversation that is open.
+function normalizeChatApproval(approval) {
+  return {
+    id: approval.id,
+    requestId: approval.bookingId,
+    requestedBy: approval.requestedBy,
+    status: approval.status,
+    serviceTitle: approval.serviceName || 'Service request',
+    customerName: approval.customerName || '',
+    providerName: approval.providerName || '',
+    createdAt: approval.createdAt
+  }
+}
+
+async function refreshChatData() {
+  if (!signedInUser.value) {
+    chatApprovals.value = []
+    return
+  }
+
+  try {
+    const approvals = await api.getChatApprovals()
+    chatApprovals.value = approvals.map(normalizeChatApproval)
+  } catch (err) {
+    console.warn('Could not load chat data:', err.message)
+  }
+}
+
 async function applySession(res, userType) {
   api.setTokens(res.accessToken, res.refreshToken)
   signedInUser.value = normalizeUser(res.user, userType)
   currentPage.value = 'dashboard'
-  await refreshBookings()
+  await Promise.all([refreshBookings(), refreshChatData()])
   if (userType === 'admin') {
     await refreshAdminAccounts()
     await refreshAdminReports()
@@ -595,7 +626,7 @@ async function applySession(res, userType) {
 onMounted(async () => {
   await Promise.all([loadServices(), loadPublicReviews()])
   if (signedInUser.value) {
-    await refreshBookings()
+    await Promise.all([refreshBookings(), refreshChatData()])
     if (signedInUser.value.role === 'admin') {
       await refreshAdminAccounts()
       await refreshAdminReports()
@@ -926,6 +957,33 @@ async function changeProviderPassword(payload) {
   }
 }
 
+// ---------- Chat ----------
+
+async function requestChat({ requestId }) {
+  try {
+    await api.requestChatApproval({ bookingId: requestId })
+    await refreshChatData()
+  } catch (err) {
+    alert(err.message || 'Could not request chat approval.')
+  }
+}
+async function approveChat(id) {
+  try {
+    await api.updateChatApproval(id, 'approved')
+    await refreshChatData()
+  } catch (err) {
+    alert(err.message || 'Could not approve chat access.')
+  }
+}
+async function rejectChat(id) {
+  try {
+    await api.updateChatApproval(id, 'rejected')
+    await refreshChatData()
+  } catch (err) {
+    alert(err.message || 'Could not reject chat access.')
+  }
+}
+
 // ---------- Reports / block requests (real backend data) ----------
 
 async function createBlockRequest(payload) {
@@ -992,25 +1050,26 @@ async function updateBlockRequest({ id, status }) {
         @submit-request="submitRequest" @back="goTo('services')" />
 
       <CustomerDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'customer'"
-        :customer="signedInUser" :requests="requests" @request-another="goTo('services')"
-        @view-tracking="openTracking" />
+        :customer="signedInUser" :requests="requests" :chat-approvals="chatApprovals"
+        @request-another="goTo('services')" @view-tracking="openTracking" @request-chat="requestChat"
+        @refresh-chat="refreshChatData" />
 
       <ProviderDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'provider'"
-        :current-user="signedInUser" :requests="requests"
+        :current-user="signedInUser" :requests="requests" :chat-approvals="chatApprovals"
         :theme="theme" :provider-services="providerServices" :available-services="services" :reviews="providerReviews"
         @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @accept-request="acceptProviderRequest"
-        @decline-request="declineProviderRequest" @status-change="changeRequestStatus"
-        @block-request="createBlockRequest" @add-service="addProviderServiceOffering"
+        @decline-request="declineProviderRequest" @status-change="changeRequestStatus" @request-chat="requestChat"
+        @refresh-chat="refreshChatData" @block-request="createBlockRequest" @add-service="addProviderServiceOffering"
         @toggle-service="toggleProviderService" @update-profile="updateProviderProfile"
         @change-password="changeProviderPassword" />
 
       <AdminDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'admin'" :current-user="signedInUser"
         :accounts="accounts"
-        :requests="requests" :block-requests="blockRequests" :theme="theme"
+        :requests="requests" :chat-approvals="chatApprovals" :block-requests="blockRequests" :theme="theme"
         @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @approve-provider="approveProvider"
         @reject-provider="rejectProvider" @activate-provider="activateProvider" @block-customer="blockCustomer"
-        @activate-customer="activateCustomer" @assign-request="assignRequest"
-        @block-status-change="updateBlockRequest" @services-changed="loadServices" />
+        @activate-customer="activateCustomer" @assign-request="assignRequest" @approve-chat="approveChat"
+        @reject-chat="rejectChat" @block-status-change="updateBlockRequest" @services-changed="loadServices" />
 
       <TrackingPage v-else-if="currentPage === 'tracking'" :requests="requests"
         :selected-request="selectedTrackingRequest" @back="goTo(signedInUser ? 'dashboard' : 'home')" />

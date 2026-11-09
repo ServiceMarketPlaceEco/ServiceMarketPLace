@@ -1,21 +1,17 @@
-// chat between customers, providers and admins
-//
-//   GET  /chat/conversations                 the signed in user's chats
-//   POST /chat/conversations/support         admin opens a chat with a user
-//   GET  /chat/conversations/:id/messages    messages (?after= for refreshes)
-//   POST /chat/conversations/:id/messages    send a message
-//
-// everyone has to be signed in. who can see which chat is checked in
-// ChatService.canAccess. the website refreshes every 5 seconds instead of
-// keeping a live connection open, so it works behind any server or proxy.
-
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { ChatService } from './chat.service';
-import { MessagesQueryDto, SendMessageDto, StartSupportChatDto } from './dto';
-import { AdminGuard, JwtAuthGuard } from '../auth/guards';
+import {
+  CreateChatApprovalDto,
+  UpdateChatApprovalDto,
+  ChatMessagesQueryDto,
+  SendChatMessageDto,
+} from './dto';
+import { JwtAuthGuard, AdminGuard } from '../auth/guards';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 
+// Customer <-> provider chat, one conversation per booking. Either side asks
+// to open it, an admin approves it, then both can send messages.
 @ApiTags('chat')
 @ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
@@ -23,40 +19,48 @@ import { CurrentUser, CurrentUserData } from '../../common/decorators/current-us
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
-  @Get('conversations')
-  @ApiOperation({ summary: 'Chats for the signed in user, newest first, with unread counts' })
-  async list(@CurrentUser() user: CurrentUserData) {
-    return this.chatService.listConversations(user);
+  @Get('approvals')
+  @ApiOperation({ summary: 'List chat approvals (all for admins, own bookings otherwise)' })
+  @ApiResponse({ status: 200, description: 'List of chat approvals' })
+  listApprovals(@CurrentUser() user: CurrentUserData) {
+    return this.chatService.listApprovals(user);
   }
 
-  @Post('conversations/support')
+  @Post('approvals')
+  @ApiOperation({ summary: 'Ask an admin to open chat on a booking (customer or assigned provider)' })
+  @ApiResponse({ status: 201, description: 'Approval requested (or the existing one returned)' })
+  @ApiResponse({ status: 400, description: 'No provider assigned yet, or booking cancelled' })
+  @ApiResponse({ status: 403, description: 'Not the customer or provider on this booking' })
+  requestApproval(@CurrentUser() user: CurrentUserData, @Body() dto: CreateChatApprovalDto) {
+    return this.chatService.requestApproval(user, dto.bookingId);
+  }
+
+  @Patch('approvals/:id')
   @UseGuards(AdminGuard)
-  @ApiOperation({ summary: 'Admin opens a chat with a customer or provider' })
-  @ApiResponse({ status: 404, description: 'No such customer or provider' })
-  async startSupport(@CurrentUser() user: CurrentUserData, @Body() dto: StartSupportChatDto) {
-    return this.chatService.startSupportChat(user, dto.userType, dto.userId);
+  @ApiOperation({ summary: 'Approve or reject a chat request (Admin only)' })
+  @ApiResponse({ status: 200, description: 'Approval updated' })
+  @ApiResponse({ status: 403, description: 'Not an admin' })
+  reviewApproval(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id') id: string,
+    @Body() dto: UpdateChatApprovalDto,
+  ) {
+    return this.chatService.reviewApproval(user.userId, id, dto.status);
   }
 
-  @Get('conversations/:id/messages')
-  @ApiOperation({ summary: 'Messages in a chat, oldest first. Marks the chat as read' })
-  @ApiResponse({ status: 404, description: 'Chat not found or not yours' })
-  async messages(
-    @CurrentUser() user: CurrentUserData,
-    @Param('id', new ParseUUIDPipe()) id: string,
-    @Query() query: MessagesQueryDto,
-  ) {
-    return this.chatService.getMessages(user, id, query.after);
+  @Get('messages')
+  @ApiOperation({ summary: 'List chat messages, for one booking or across your own bookings' })
+  @ApiResponse({ status: 200, description: 'Messages, oldest first' })
+  @ApiResponse({ status: 403, description: 'Not the customer or provider on this booking' })
+  listMessages(@CurrentUser() user: CurrentUserData, @Query() query: ChatMessagesQueryDto) {
+    return this.chatService.listMessages(user, query.bookingId);
   }
 
-  @Post('conversations/:id/messages')
-  @ApiOperation({ summary: 'Send a message' })
-  @ApiResponse({ status: 201, description: 'The saved message' })
-  @ApiResponse({ status: 404, description: 'Chat not found or not yours' })
-  async send(
-    @CurrentUser() user: CurrentUserData,
-    @Param('id', new ParseUUIDPipe()) id: string,
-    @Body() dto: SendMessageDto,
-  ) {
-    return this.chatService.sendMessage(user, id, dto.body);
+  @Post('messages')
+  @ApiOperation({ summary: 'Send a message on a booking whose chat an admin approved' })
+  @ApiResponse({ status: 201, description: 'Message sent' })
+  @ApiResponse({ status: 403, description: 'Not a participant, or chat not approved' })
+  sendMessage(@CurrentUser() user: CurrentUserData, @Body() dto: SendChatMessageDto) {
+    return this.chatService.sendMessage(user, dto);
   }
 }

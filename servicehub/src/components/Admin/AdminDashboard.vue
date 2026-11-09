@@ -2,19 +2,18 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { formatStatus, serviceImageSrc } from '../../data/services'
 import * as api from '../../services/api'
-import ChatPanel from '../Chat/ChatPanel.vue'
 import AdminAccounts from './AdminAccounts.vue'
-import { useUnreadChats } from '../../composables/useUnreadChats'
 
 const props = defineProps({
   currentUser: { type: Object, default: null },
   accounts: { type: Array, default: () => [] },
   requests: { type: Array, default: () => [] },
+  chatApprovals: { type: Array, default: () => [] },
   blockRequests: { type: Array, default: () => [] },
   theme: { type: String, default: 'light' }
 })
 
-const emit = defineEmits(['approve-provider', 'reject-provider', 'activate-provider', 'block-customer', 'activate-customer', 'assign-request', 'block-status-change', 'services-changed', 'sign-out', 'go-home', 'toggle-theme'])
+const emit = defineEmits(['approve-provider', 'reject-provider', 'activate-provider', 'block-customer', 'activate-customer', 'assign-request', 'approve-chat', 'reject-chat', 'block-status-change', 'services-changed', 'sign-out', 'go-home', 'toggle-theme'])
 
 const activeView = ref('dashboard')
 const searchTerm = ref('')
@@ -67,9 +66,6 @@ watch(activeView, view => {
   if (view === 'approvals') loadPendingReviews()
 })
 
-// ---------- Messages ----------
-const { unread: unreadChats, setUnread: setUnreadChats } = useUnreadChats()
-
 // ---------- Review approvals ----------
 // every new review waits here until an admin approves or rejects it
 const pendingReviews = ref([])
@@ -103,14 +99,16 @@ async function decideReview(review, decision) {
   }
 }
 
-function bookingStateLabel(status) {
+// a review can be about a booking (any state) or about a provider with no booking
+function bookingStateLabel(review) {
+  if (!review.booking) return 'No booking'
   return {
-    pending: 'Not assigned',
-    confirmed: 'Not started',
-    in_progress: 'In progress',
-    completed: 'Completed',
-    cancelled: 'Cancelled'
-  }[status] || status || 'Unknown'
+    pending: 'Booking not assigned',
+    confirmed: 'Booking not started',
+    in_progress: 'Booking in progress',
+    completed: 'Booking completed',
+    cancelled: 'Booking cancelled'
+  }[review.booking.status] || 'Booking'
 }
 
 onMounted(loadPendingReviews)
@@ -127,7 +125,11 @@ async function saveServiceImage(service) {
     // An empty field clears the photo so the catalogue falls back to its default.
     const updated = await api.updateService(service.serviceId, { imageUrl: imageUrl || null })
     service.imageUrl = updated?.imageUrl ?? (imageUrl || null)
-    imageDrafts.value[service.serviceId] = service.imageUrl || ''
+    // only tidy the field if it still holds what was saved: anything the admin
+    // typed while the save was in flight must not be overwritten
+    if (String(imageDrafts.value[service.serviceId] || '').trim() === imageUrl) {
+      imageDrafts.value[service.serviceId] = service.imageUrl || ''
+    }
     emit('services-changed')
   } catch (err) {
     imageErrors.value[service.serviceId] = err.message || 'Could not save the image.'
@@ -313,8 +315,7 @@ function assignProvider(request) {
           providers</button>
         <button :class="{ active: activeView === 'services' }" @click="activeView = 'services'">Services</button>
         <button :class="{ active: activeView === 'requests' }" @click="activeView = 'requests'">Requests</button>
-        <button :class="{ active: activeView === 'messages' }" @click="activeView = 'messages'">Messages<span
-            v-if="unreadChats" class="tab-badge">{{ unreadChats }}</span></button>
+        <button :class="{ active: activeView === 'chat' }" @click="activeView = 'chat'">Chat approvals</button>
         <button :class="{ active: activeView === 'approvals' }" @click="activeView = 'approvals'">Review
           approvals<span v-if="pendingReviews.length" class="tab-badge">{{ pendingReviews.length }}</span></button>
         <button :class="{ active: activeView === 'blocks' }" @click="activeView = 'blocks'">Block requests</button>
@@ -335,7 +336,7 @@ function assignProvider(request) {
       <header class="ops-topbar">
         <div>
           <h1>{{ activeView === 'dashboard' ? 'Admin dashboard' : activeView }}</h1>
-          <p>Manage users, provider approvals, request assignment, messages and review approvals.</p>
+          <p>Manage users, provider approvals, request assignment and chat approval.</p>
         </div><input v-model="searchTerm" placeholder="Search admin workspace..." />
       </header>
 
@@ -554,8 +555,44 @@ function assignProvider(request) {
         </section>
       </template>
 
-      <template v-if="activeView === 'messages'">
-        <ChatPanel role="admin" :accounts="accounts" @unread="setUnreadChats" />
+      <template v-if="activeView === 'chat'">
+        <section class="ops-panel">
+          <div class="panel-heading">
+            <h2>Chat approval requests</h2><span>{{ chatApprovals.filter(a => a.status === 'pending').length }} waiting · {{
+              chatApprovals.length }} total</span>
+          </div>
+          <p class="muted">Customer/provider chat on a request stays locked until an admin approves it. Rejecting an
+            open chat closes it again.</p>
+          <div v-if="chatApprovals.length === 0" class="empty-state">No chat approval requests yet.</div>
+          <div v-else class="responsive-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Request</th>
+                  <th>Customer</th>
+                  <th>Provider</th>
+                  <th>Requested by</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="approval in chatApprovals" :key="approval.id">
+                  <td><strong>{{ approval.serviceTitle }}</strong><small>{{ approval.requestId }}</small></td>
+                  <td>{{ approval.customerName || '—' }}</td>
+                  <td>{{ approval.providerName || '—' }}</td>
+                  <td>{{ approval.requestedBy }}</td>
+                  <td><span class="status-pill" :class="approval.status">{{ approval.status }}</span></td>
+                  <td class="row-actions"><button v-if="approval.status !== 'approved'" class="success small"
+                      @click="$emit('approve-chat', approval.id)">Approve</button><button
+                      v-if="approval.status !== 'rejected'" class="secondary small"
+                      @click="$emit('reject-chat', approval.id)">{{ approval.status === 'approved' ? 'Close chat' :
+                        'Reject' }}</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </template>
 
       <template v-if="activeView === 'approvals'">
@@ -567,8 +604,8 @@ function assignProvider(request) {
             </button>
           </div>
           <p class="muted">
-            New reviews only show on the website after you approve them. Customers can review a booking whether or
-            not the job was finished, so check the booking state before deciding.
+            New reviews only show on the website after you approve them. Any signed-in customer can review any
+            provider, with or without a booking, so check whether there was a booking before deciding.
           </p>
           <p v-if="pendingError" class="error-text">{{ pendingError }}</p>
           <div v-if="!pendingLoading && pendingReviews.length === 0" class="empty-state">
@@ -578,8 +615,9 @@ function assignProvider(request) {
             <div>
               <strong>{{ review.customer?.name || 'Customer' }} about {{ review.provider?.providerName || 'provider'
               }}</strong>
-              <small>{{ review.booking?.serviceName || 'Booking' }} · {{ bookingStateLabel(review.booking?.status) }} ·
-                {{ review.rating }}/5 · {{ new Date(review.createdAt).toLocaleDateString() }}</small>
+              <small>{{ review.booking?.serviceName ? review.booking.serviceName + ' · ' : '' }}{{
+                bookingStateLabel(review) }} · {{ review.rating }}/5 · {{ new Date(review.createdAt).toLocaleDateString()
+                }}</small>
               <p>{{ review.comment || 'No comment' }}</p>
             </div>
             <div class="row-actions">

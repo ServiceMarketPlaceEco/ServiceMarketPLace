@@ -38,38 +38,21 @@ A NestJS backend for the ServiceHub marketplace platform, providing authenticati
    ```bash
    cp .env.example .env
    ```
-   
-   Update `.env` with your MySQL credentials:
-   ```env
-   # Database
-   DB_HOST=localhost
-   DB_PORT=3306
-   DB_USERNAME=your_username
-   DB_PASSWORD=your_password
-   DB_DATABASE=servicehub
-   
-   # JWT
-   JWT_SECRET=your-super-secret-key-change-in-production
-   JWT_EXPIRES_IN=15m
-   JWT_REFRESH_SECRET=your-refresh-secret-key
-   JWT_REFRESH_EXPIRES_IN=7d
-   
-   # Mail (optional for development)
-   MAIL_HOST=smtp.gmail.com
-   MAIL_PORT=587
-   MAIL_USER=your-email@gmail.com
-   MAIL_PASSWORD=your-app-password
-   MAIL_FROM="ServiceHub" <noreply@servicehub.com>
-   ```
+   Set the `DB_*` values to your MySQL server. Every setting is explained in
+   `.env.example`. Mail, Google and the AI keys are optional for development.
 
 3. **Create the database, tables and seed data**:
    ```bash
    npm run db:setup
    ```
-   This creates the `DB_DATABASE` database if needed and runs
-   `database/migrations/000_initial_schema.sql`, then every file in
-   `database/seeds/`, in order. Use `npm run db:reset` to drop and rebuild it.
-   See the root `README.md` for manual (DBeaver / mysql CLI) instructions.
+   This creates the `DB_DATABASE` database if needed and runs every file in
+   `database/migrations/`, then every file in `database/seeds/`, in order.
+   Use `npm run db:reset` to drop and rebuild it. See the root `README.md` for
+   manual (DBeaver / mysql CLI) instructions.
+
+   On a production server use `npm run db:setup -- --production` instead,
+   which skips the demo and test seeds, then `npm run admin:create` for the
+   first admin. See [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).
 
 4. **Start the server**:
    ```bash
@@ -89,7 +72,7 @@ Once the server is running, visit:
 
 ## API Endpoints
 
-### Authentication (`/api/v1/auth`)
+### Authentication (`/api/auth`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -103,7 +86,7 @@ Once the server is running, visit:
 | POST | `/forgot-password` | Request password reset |
 | POST | `/reset-password` | Reset password with token |
 
-### Services (`/api/v1/services`)
+### Services (`/api/services`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -114,7 +97,7 @@ Once the server is running, visit:
 | PATCH | `/:id` | Update service (admin) |
 | DELETE | `/:id` | Delete service (admin) |
 
-### Customers (`/api/v1/customers`)
+### Customers (`/api/customers`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -123,7 +106,7 @@ Once the server is running, visit:
 | GET | `/bookings` | Get customer's bookings |
 | GET | `/reviews` | Get customer's reviews |
 
-### Providers (`/api/v1/providers`)
+### Providers (`/api/providers`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -136,7 +119,7 @@ Once the server is running, visit:
 | PATCH | `/services/:id` | Update service offering |
 | DELETE | `/services/:id` | Remove service offering |
 
-### Bookings (`/api/v1/bookings`)
+### Bookings (`/api/bookings`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -145,7 +128,7 @@ Once the server is running, visit:
 | PATCH | `/:id/status` | Update booking status |
 | POST | `/:id/cancel` | Cancel a booking |
 
-### Payments (`/api/v1/payments`)
+### Payments (`/api/payments`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -153,7 +136,7 @@ Once the server is running, visit:
 | GET | `/:id` | Get payment details |
 | POST | `/:id/complete` | Mark payment as complete |
 
-### Reviews (`/api/v1/reviews`)
+### Reviews (`/api/reviews`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -162,13 +145,27 @@ Once the server is running, visit:
 | PATCH | `/:id` | Update a review |
 | DELETE | `/:id` | Delete a review |
 
-### Reports (`/api/v1/reports`)
+### Reports (`/api/reports`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/` | Create a report/block |
 | GET | `/` | Get reports (admin) |
 | PATCH | `/:id` | Resolve a report (admin) |
+
+### Chat (`/api/v1/chat`)
+
+Customer <-> provider chat, one conversation per booking. Either side asks to
+open it, an admin approves it, then both can send messages. While a chat
+panel is open the frontend polls `GET /messages` every few seconds.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/approvals` | Chat approvals (all for admins, own bookings otherwise) |
+| POST | `/approvals` | Ask to open chat on a booking (its customer or assigned provider) |
+| PATCH | `/approvals/:id` | Approve or reject / close a chat (admin) |
+| GET | `/messages?bookingId=` | A booking's messages (participants, or an admin reading a dispute) |
+| POST | `/messages` | Send a message on an approved booking chat |
 
 ### Admin (`/api/v1/admins`)
 
@@ -203,7 +200,10 @@ backend/
 │   └── main.ts                  # Application entry
 ├── database/
 │   ├── migrations/              # SQL migration scripts
-│   └── seeds/                   # Seed data scripts
+│   ├── seeds/                   # Seed data ("demo"/"test" ones are development only)
+│   ├── setup.js                 # npm run db:setup / db:reset
+│   ├── create-admin.js          # npm run admin:create / admin:reset-password / admin:deactivate
+│   └── disable-demo-accounts.js # npm run db:disable-demo-accounts
 ├── .env.example                 # Environment template
 ├── nest-cli.json                # NestJS CLI config
 ├── package.json                 # Dependencies
@@ -227,6 +227,8 @@ backend/
 - **reviews**: Customer reviews for providers
 - **block_reports**: Block and report functionality
 - **refresh_tokens**: JWT refresh token storage
+- **chat_approvals**: Admin approval to open chat on a booking (migration 005)
+- **chat_messages**: Customer <-> provider chat messages per booking (migration 005)
 
 ## Security Features
 
@@ -252,11 +254,8 @@ npm run build
 
 ## Production Deployment
 
-1. Set `NODE_ENV=production`
-2. Use strong secrets for `JWT_SECRET` and `JWT_REFRESH_SECRET`
-3. Configure a production SMTP service for emails
-4. Set `CORS_ORIGIN` to your frontend domain
-5. Use a managed MySQL service (AWS RDS, PlanetScale, etc.)
+See [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md): server setup, environment
+variables, the first admin account, nginx and HTTPS, backups and restore.
 
 ## License
 

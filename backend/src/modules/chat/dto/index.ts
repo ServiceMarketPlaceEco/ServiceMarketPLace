@@ -1,31 +1,41 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, IsIn, IsISO8601 } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export class SendMessageDto {
-  @ApiProperty({ example: 'Hi, I will be there at 10:30.' })
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+export const CHAT_MESSAGE_MAX_LENGTH = 2000;
+
+const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+
+export class CreateChatApprovalDto {
+  @ApiProperty({ example: 'uuid-of-booking' })
   @IsString()
-  @IsNotEmpty({ message: 'Type a message first' })
-  @MaxLength(2000)
-  body: string;
+  @IsNotEmpty()
+  bookingId: string;
 }
 
-// admin starting a chat with someone who hasn't messaged yet
-export class StartSupportChatDto {
-  @ApiProperty({ enum: ['customer', 'provider'] })
-  @IsIn(['customer', 'provider'])
-  userType: 'customer' | 'provider';
-
-  @ApiProperty()
-  @IsUUID()
-  userId: string;
+export class UpdateChatApprovalDto {
+  @ApiProperty({ enum: ['approved', 'rejected'] })
+  @IsIn(['approved', 'rejected'])
+  status: 'approved' | 'rejected';
 }
 
-export class MessagesQueryDto {
-  // only messages newer than this, so the 5 second refresh stays small
-  @ApiPropertyOptional({ example: '2026-11-06T02:00:00.000Z' })
+export class ChatMessagesQueryDto {
+  @ApiPropertyOptional({ description: 'Only messages for this booking. Required for admins.' })
   @IsOptional()
-  @IsISO8601()
-  after?: string;
+  @IsString()
+  bookingId?: string;
+}
+
+export class SendChatMessageDto {
+  @ApiProperty({ example: 'uuid-of-booking' })
+  @IsString()
+  @IsNotEmpty()
+  bookingId: string;
+
+  @ApiProperty({ example: 'I will arrive around 10:30, is that ok?' })
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty({ message: 'Message cannot be empty' })
+  @MaxLength(CHAT_MESSAGE_MAX_LENGTH)
+  message: string;
 }

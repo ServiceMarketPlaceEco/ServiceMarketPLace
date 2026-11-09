@@ -1,339 +1,253 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, MoreThan, Not, Repository } from 'typeorm';
-import { ChatConversation, ConversationType } from './entities/chat-conversation.entity';
-import { ChatMessage, ChatSender } from './entities/chat-message.entity';
+import { Repository } from 'typeorm';
 import { Booking, BookingStatus } from '../bookings/entities/booking.entity';
-import { Customer } from '../customers/entities/customer.entity';
-import { ServiceProvider } from '../providers/entities/service-provider.entity';
+import {
+  ChatApproval,
+  ChatApprovalStatus,
+  ChatParticipantType,
+} from './entities/chat-approval.entity';
+import { ChatMessage } from './entities/chat-message.entity';
+import { SendChatMessageDto } from './dto';
 import { CurrentUserData } from '../../common/decorators/current-user.decorator';
 
-// what the chat list shows for each conversation, worded for whoever asks
-export interface ConversationSummary {
-  conversationId: string;
-  type: ConversationType;
-  title: string;
-  subtitle: string;
-  bookingId: string | null;
-  customerId: string | null;
-  providerId: string | null;
-  lastMessage: { body: string; senderType: ChatSender; senderName: string; createdAt: Date } | null;
-  lastMessageAt: Date | null;
-  unread: number;
+// What the endpoints return. Built by hand instead of returning entities so
+// related customer/provider rows (and their password hashes) never leak out.
+export interface ChatApprovalView {
+  id: string;
+  bookingId: string;
+  requestedBy: ChatParticipantType;
+  status: ChatApprovalStatus;
+  serviceName: string | null;
+  customerName: string | null;
+  providerName: string | null;
+  reviewedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-// how many messages the first open of a chat loads. later refreshes only
-// fetch what is newer than the last message the screen already has
-const FIRST_LOAD_LIMIT = 200;
-// admins see the chats that have messages, newest first
-const ADMIN_LIST_LIMIT = 200;
+export interface ChatMessageView {
+  id: string;
+  bookingId: string;
+  senderId: string;
+  senderType: ChatParticipantType;
+  message: string;
+  createdAt: Date;
+}
+
+type ChatUser = Pick<CurrentUserData, 'userId' | 'userType'>;
 
 @Injectable()
 export class ChatService {
   constructor(
-    @InjectRepository(ChatConversation)
-    private conversationRepository: Repository<ChatConversation>,
+    @InjectRepository(ChatApproval)
+    private approvalRepository: Repository<ChatApproval>,
     @InjectRepository(ChatMessage)
     private messageRepository: Repository<ChatMessage>,
     @InjectRepository(Booking)
     private bookingRepository: Repository<Booking>,
-    @InjectRepository(Customer)
-    private customerRepository: Repository<Customer>,
-    @InjectRepository(ServiceProvider)
-    private providerRepository: Repository<ServiceProvider>,
   ) {}
 
-  // ---------- list ----------
+  // ---------- Approvals ----------
 
-  async listConversations(user: CurrentUserData): Promise<ConversationSummary[]> {
-    let conversations: ChatConversation[];
+  // A customer or provider on a booking asks an admin to open chat on it.
+  // Asking again while pending/approved just returns the existing approval;
+  // asking again after a rejection puts it back in the admin's queue.
+  async requestApproval(user: ChatUser, bookingId: string): Promise<ChatApprovalView> {
+    const booking = await this.loadBooking(bookingId);
+    const role = this.assertParticipant(booking, user);
+
+    if (!booking.providerServiceId) {
+      throw new BadRequestException('Chat opens once a provider is assigned to this booking');
+    }
+    if (booking.status === BookingStatus.CANCELLED) {
+      throw new BadRequestException('Chat is not available on a cancelled booking');
+    }
+
+    const existing = await this.approvalRepository.findOne({ where: { bookingId } });
+    if (existing && existing.status !== ChatApprovalStatus.REJECTED) {
+      return this.toApprovalView(existing, booking);
+    }
+
+    const approval = existing ?? this.approvalRepository.create({ bookingId });
+    approval.requestedBy = role;
+    approval.requestedById = user.userId;
+    approval.status = ChatApprovalStatus.PENDING;
+    approval.reviewedBy = null;
+    approval.reviewedAt = null;
+
+    const saved = await this.approvalRepository.save(approval);
+    return this.toApprovalView(saved, booking);
+  }
+
+  // Admin approves or rejects. Rejecting an approved chat closes it again:
+  // the history stays readable but no new messages are accepted.
+  async reviewApproval(
+    adminId: string,
+    approvalId: string,
+    status: 'approved' | 'rejected',
+  ): Promise<ChatApprovalView> {
+    const approval = await this.approvalRepository.findOne({
+      where: { id: approvalId },
+      relations: ['booking', 'booking.customer', 'booking.providerService', 'booking.providerService.provider', 'booking.providerService.service'],
+    });
+    if (!approval) {
+      throw new NotFoundException('Chat approval not found');
+    }
+
+    approval.status = status === 'approved' ? ChatApprovalStatus.APPROVED : ChatApprovalStatus.REJECTED;
+    approval.reviewedBy = adminId;
+    approval.reviewedAt = new Date();
+
+    const saved = await this.approvalRepository.save(approval);
+    return this.toApprovalView(saved, approval.booking);
+  }
+
+  // Admins see every approval; customers and providers see the ones on their
+  // own bookings.
+  async listApprovals(user: ChatUser): Promise<ChatApprovalView[]> {
+    const qb = this.approvalRepository
+      .createQueryBuilder('approval')
+      .innerJoinAndSelect('approval.booking', 'booking')
+      .leftJoinAndSelect('booking.customer', 'customer')
+      .leftJoinAndSelect('booking.providerService', 'providerService')
+      .leftJoinAndSelect('providerService.provider', 'provider')
+      .leftJoinAndSelect('providerService.service', 'service');
 
     if (user.userType === 'customer') {
-      await this.openBookingChats({ customerId: user.userId });
-      await this.getOrCreateSupport('customer', user.userId);
-      conversations = await this.conversationRepository.find({
-        where: [
-          { customerId: user.userId, type: ConversationType.BOOKING },
-          { customerId: user.userId, type: ConversationType.CUSTOMER_SUPPORT },
-        ],
-        relations: ['customer', 'provider', 'booking'],
-      });
+      qb.where('booking.customerId = :userId', { userId: user.userId });
     } else if (user.userType === 'provider') {
-      await this.openBookingChats({ providerId: user.userId });
-      await this.getOrCreateSupport('provider', user.userId);
-      conversations = await this.conversationRepository.find({
-        where: [
-          { providerId: user.userId, type: ConversationType.BOOKING },
-          { providerId: user.userId, type: ConversationType.PROVIDER_SUPPORT },
-        ],
-        relations: ['customer', 'provider', 'booking'],
-      });
-    } else {
-      // admins don't need an empty chat for every user, just the ones with
-      // messages. they start a new one from the user picker instead
-      conversations = await this.conversationRepository.find({
-        where: { lastMessageAt: Not(IsNull()) },
-        relations: ['customer', 'provider', 'booking'],
-        order: { lastMessageAt: 'DESC' },
-        take: ADMIN_LIST_LIMIT,
-      });
+      qb.where('providerService.providerId = :userId', { userId: user.userId });
+    } else if (user.userType !== 'admin') {
+      return [];
     }
 
-    const summaries = await this.summarise(conversations, user);
-    // newest activity first, empty chats after them
-    return summaries.sort((a, b) => this.timeOf(b) - this.timeOf(a));
+    const approvals = await qb.orderBy('approval.createdAt', 'DESC').getMany();
+    return approvals.map((a) => this.toApprovalView(a, a.booking));
   }
 
-  private timeOf(summary: ConversationSummary): number {
-    return summary.lastMessageAt ? new Date(summary.lastMessageAt).getTime() : 0;
-  }
+  // ---------- Messages ----------
 
-  // makes sure every booking that has a provider assigned (by the admin) has
-  // its customer <-> provider chat. pending bookings don't get one yet.
-  private async openBookingChats(who: { customerId?: string; providerId?: string }): Promise<void> {
-    const qb = this.bookingRepository
-      .createQueryBuilder('booking')
-      .innerJoin('booking.providerService', 'ps')
-      .select(['booking.bookingId AS bookingId', 'booking.customerId AS customerId', 'ps.providerId AS providerId'])
-      .where('booking.status != :pending', { pending: BookingStatus.PENDING });
-
-    if (who.customerId) qb.andWhere('booking.customerId = :customerId', { customerId: who.customerId });
-    if (who.providerId) qb.andWhere('ps.providerId = :providerId', { providerId: who.providerId });
-
-    const rows: { bookingId: string; customerId: string; providerId: string }[] = await qb.getRawMany();
-    if (rows.length === 0) return;
-
-    const existing = await this.conversationRepository.find({
-      where: { chatKey: In(rows.map((row) => `booking:${row.bookingId}`)) },
-    });
-    const byKey = new Map(existing.map((c) => [c.chatKey, c]));
-
-    for (const row of rows) {
-      const key = `booking:${row.bookingId}`;
-      const found = byKey.get(key);
-      if (!found) {
-        await this.insertIgnoringDuplicate({
-          type: ConversationType.BOOKING,
-          chatKey: key,
-          bookingId: row.bookingId,
-          customerId: row.customerId,
-          providerId: row.providerId,
-        });
-      } else if (found.providerId !== row.providerId) {
-        // the admin gave the job to a different provider, so the chat moves
-        // to the new one and the old provider can no longer see it
-        await this.conversationRepository.update(found.conversationId, { providerId: row.providerId });
+  // With a bookingId: that booking's conversation (participants, or an admin
+  // looking into a dispute). Without: every message across the caller's own
+  // bookings, so a dashboard can load all its conversations in one call.
+  async listMessages(user: ChatUser, bookingId?: string): Promise<ChatMessageView[]> {
+    if (bookingId) {
+      const booking = await this.loadBooking(bookingId);
+      if (user.userType !== 'admin') {
+        this.assertParticipant(booking, user);
       }
-    }
-  }
-
-  private async getOrCreateSupport(userType: 'customer' | 'provider', userId: string): Promise<ChatConversation> {
-    const key = `${userType}:${userId}`;
-    const existing = await this.conversationRepository.findOne({ where: { chatKey: key } });
-    if (existing) return existing;
-
-    await this.insertIgnoringDuplicate({
-      type: userType === 'customer' ? ConversationType.CUSTOMER_SUPPORT : ConversationType.PROVIDER_SUPPORT,
-      chatKey: key,
-      customerId: userType === 'customer' ? userId : null,
-      providerId: userType === 'provider' ? userId : null,
-      bookingId: null,
-    });
-    return this.conversationRepository.findOneOrFail({ where: { chatKey: key } });
-  }
-
-  // two refreshes can race to create the same chat. chat_key is unique, so
-  // the second insert fails with a duplicate error, which just means it exists
-  private async insertIgnoringDuplicate(values: Partial<ChatConversation>): Promise<void> {
-    try {
-      await this.conversationRepository.insert(values);
-    } catch (error: any) {
-      if (error?.code !== 'ER_DUP_ENTRY') throw error;
-    }
-  }
-
-  private async summarise(conversations: ChatConversation[], user: CurrentUserData): Promise<ConversationSummary[]> {
-    if (conversations.length === 0) return [];
-    const ids = conversations.map((c) => c.conversationId);
-    const me = this.senderFor(user);
-    const readColumn = this.readColumnFor(user);
-
-    // the newest message of each chat
-    const latest: ChatMessage[] = await this.messageRepository
-      .createQueryBuilder('m')
-      .where('m.conversationId IN (:...ids)', { ids })
-      .andWhere(
-        'm.createdAt = (SELECT MAX(m2.created_at) FROM chat_messages m2 WHERE m2.conversation_id = m.conversation_id)',
-      )
-      .getMany();
-    const latestByChat = new Map(latest.map((m) => [m.conversationId, m]));
-
-    // messages from the other side that arrived after I last opened the chat
-    const unreadRows: { id: string; count: string }[] = await this.messageRepository
-      .createQueryBuilder('m')
-      .innerJoin(ChatConversation, 'c', 'c.conversation_id = m.conversation_id')
-      .select('m.conversation_id', 'id')
-      .addSelect('COUNT(*)', 'count')
-      .where('m.conversation_id IN (:...ids)', { ids })
-      .andWhere('m.sender_type != :me', { me })
-      .andWhere(`(c.${readColumn} IS NULL OR m.created_at > c.${readColumn})`)
-      .groupBy('m.conversation_id')
-      .getRawMany();
-    const unreadByChat = new Map(unreadRows.map((row) => [row.id, Number(row.count)]));
-
-    return conversations.map((c) => {
-      const last = latestByChat.get(c.conversationId);
-      return {
-        conversationId: c.conversationId,
-        type: c.type,
-        ...this.describe(c, user),
-        bookingId: c.bookingId,
-        customerId: c.customerId,
-        providerId: c.providerId,
-        lastMessage: last
-          ? { body: last.body, senderType: last.senderType, senderName: last.senderName, createdAt: last.createdAt }
-          : null,
-        lastMessageAt: last?.createdAt ?? c.lastMessageAt ?? null,
-        unread: unreadByChat.get(c.conversationId) ?? 0,
-      };
-    });
-  }
-
-  // the name at the top of a chat depends on who is looking at it
-  private describe(c: ChatConversation, user: CurrentUserData): { title: string; subtitle: string } {
-    const customerName = c.customer?.name || 'Customer';
-    const providerName = c.provider?.providerName || 'Provider';
-    const service = c.booking?.serviceName || 'Booking';
-    const when = c.booking?.date ? ` on ${String(c.booking.date).slice(0, 10)}` : '';
-
-    if (c.type === ConversationType.CUSTOMER_SUPPORT) {
-      return user.userType === 'admin'
-        ? { title: customerName, subtitle: 'Customer' }
-        : { title: 'ServiceHub admin', subtitle: 'Questions about bookings or your account' };
-    }
-    if (c.type === ConversationType.PROVIDER_SUPPORT) {
-      return user.userType === 'admin'
-        ? { title: providerName, subtitle: 'Provider' }
-        : { title: 'ServiceHub admin', subtitle: 'Questions about jobs or your account' };
-    }
-    if (user.userType === 'customer') return { title: providerName, subtitle: `${service}${when}` };
-    if (user.userType === 'provider') return { title: customerName, subtitle: `${service}${when}` };
-    return { title: `${customerName} and ${providerName}`, subtitle: `${service}${when}` };
-  }
-
-  // ---------- one chat ----------
-
-  async getMessages(user: CurrentUserData, conversationId: string, after?: string): Promise<ChatMessage[]> {
-    const conversation = await this.findAllowed(user, conversationId);
-
-    let messages: ChatMessage[];
-    if (after) {
-      messages = await this.messageRepository.find({
-        where: { conversationId, createdAt: MoreThan(new Date(after)) },
+      const messages = await this.messageRepository.find({
+        where: { bookingId },
         order: { createdAt: 'ASC' },
-        take: FIRST_LOAD_LIMIT,
       });
-    } else {
-      messages = (
-        await this.messageRepository.find({
-          where: { conversationId },
-          order: { createdAt: 'DESC' },
-          take: FIRST_LOAD_LIMIT,
-        })
-      ).reverse();
+      return messages.map((m) => this.toMessageView(m));
     }
 
-    // opening the chat counts as reading it
-    await this.conversationRepository.update(conversation.conversationId, {
-      [this.readFieldFor(user)]: new Date(),
-    });
+    if (user.userType === 'admin') {
+      throw new BadRequestException('bookingId is required');
+    }
 
-    return messages;
+    const qb = this.messageRepository
+      .createQueryBuilder('message')
+      .innerJoin('message.booking', 'booking')
+      .leftJoin('booking.providerService', 'providerService');
+
+    if (user.userType === 'customer') {
+      qb.where('booking.customerId = :userId', { userId: user.userId });
+    } else if (user.userType === 'provider') {
+      qb.where('providerService.providerId = :userId', { userId: user.userId });
+    } else {
+      return [];
+    }
+
+    const messages = await qb.orderBy('message.createdAt', 'ASC').getMany();
+    return messages.map((m) => this.toMessageView(m));
   }
 
-  async sendMessage(user: CurrentUserData, conversationId: string, body: string): Promise<ChatMessage> {
-    const conversation = await this.findAllowed(user, conversationId);
-    const text = (body || '').trim();
-    if (!text) throw new BadRequestException('Type a message first');
+  async sendMessage(user: ChatUser, dto: SendChatMessageDto): Promise<ChatMessageView> {
+    const booking = await this.loadBooking(dto.bookingId);
+    // the sender's role comes from their token, never from the request body
+    const role = this.assertParticipant(booking, user);
 
-    const message = await this.messageRepository.save(
+    if (booking.status === BookingStatus.CANCELLED) {
+      throw new BadRequestException('Chat is not available on a cancelled booking');
+    }
+
+    const approval = await this.approvalRepository.findOne({ where: { bookingId: dto.bookingId } });
+    if (approval?.status !== ChatApprovalStatus.APPROVED) {
+      throw new ForbiddenException('Chat on this booking has not been approved by an admin');
+    }
+
+    const text = (dto.message ?? '').trim();
+    if (!text) {
+      throw new BadRequestException('Message cannot be empty');
+    }
+
+    const saved = await this.messageRepository.save(
       this.messageRepository.create({
-        conversationId: conversation.conversationId,
-        senderType: this.senderFor(user),
+        bookingId: dto.bookingId,
         senderId: user.userId,
-        senderName: this.nameOf(user),
-        body: text,
+        senderType: role,
+        message: text,
       }),
     );
+    return this.toMessageView(saved);
+  }
 
-    // sending also means you've read everything before it
-    await this.conversationRepository.update(conversation.conversationId, {
-      lastMessageAt: message.createdAt,
-      [this.readFieldFor(user)]: message.createdAt,
+  // ---------- Helpers ----------
+
+  private async loadBooking(bookingId: string): Promise<Booking> {
+    const booking = await this.bookingRepository.findOne({
+      where: { bookingId },
+      relations: ['customer', 'providerService', 'providerService.provider', 'providerService.service'],
     });
-
-    return message;
-  }
-
-  // admin starting (or reopening) a support chat with a customer or provider
-  async startSupportChat(user: CurrentUserData, userType: 'customer' | 'provider', userId: string) {
-    const exists =
-      userType === 'customer'
-        ? await this.customerRepository.findOne({ where: { customerId: userId } })
-        : await this.providerRepository.findOne({ where: { providerId: userId } });
-    if (!exists) throw new NotFoundException(`That ${userType} account was not found`);
-
-    const conversation = await this.getOrCreateSupport(userType, userId);
-    const full = await this.conversationRepository.findOneOrFail({
-      where: { conversationId: conversation.conversationId },
-      relations: ['customer', 'provider', 'booking'],
-    });
-    const [summary] = await this.summarise([full], user);
-    return summary;
-  }
-
-  // a chat you aren't part of looks the same as one that doesn't exist, so
-  // nobody can find out which chats are there by guessing ids
-  private async findAllowed(user: CurrentUserData, conversationId: string): Promise<ChatConversation> {
-    const conversation = await this.conversationRepository.findOne({ where: { conversationId } });
-    if (!conversation || !this.canAccess(user, conversation)) {
-      throw new NotFoundException('Chat not found');
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
     }
-    return conversation;
+    return booking;
   }
 
-  canAccess(user: CurrentUserData, c: ChatConversation): boolean {
-    if (user.userType === 'admin') return true;
-    if (user.userType === 'customer') {
-      return c.customerId === user.userId && c.type !== ConversationType.PROVIDER_SUPPORT;
+  // Only the booking's own customer and its assigned provider take part in
+  // its chat. Admins never send messages.
+  private assertParticipant(booking: Booking, user: ChatUser): ChatParticipantType {
+    if (user.userType === 'customer' && booking.customerId === user.userId) {
+      return 'customer';
     }
-    if (user.userType === 'provider') {
-      return c.providerId === user.userId && c.type !== ConversationType.CUSTOMER_SUPPORT;
+    if (user.userType === 'provider' && booking.providerService?.providerId === user.userId) {
+      return 'provider';
     }
-    return false;
+    throw new ForbiddenException('You do not have access to this conversation');
   }
 
-  private senderFor(user: CurrentUserData): ChatSender {
-    if (user.userType === 'customer') return ChatSender.CUSTOMER;
-    if (user.userType === 'provider') return ChatSender.PROVIDER;
-    return ChatSender.ADMIN;
+  private toApprovalView(approval: ChatApproval, booking?: Booking | null): ChatApprovalView {
+    return {
+      id: approval.id,
+      bookingId: approval.bookingId,
+      requestedBy: approval.requestedBy,
+      status: approval.status,
+      serviceName: booking?.serviceName || booking?.providerService?.service?.serviceName || null,
+      customerName: booking?.customer?.name ?? null,
+      providerName: booking?.providerService?.provider?.providerName ?? null,
+      reviewedAt: approval.reviewedAt ?? null,
+      createdAt: approval.createdAt,
+      updatedAt: approval.updatedAt,
+    };
   }
 
-  private nameOf(user: CurrentUserData): string {
-    if (user.userType === 'provider') return user.user?.providerName || 'Provider';
-    if (user.userType === 'admin') return user.user?.name || 'Admin';
-    return user.user?.name || 'Customer';
-  }
-
-  private readFieldFor(user: CurrentUserData): 'customerReadAt' | 'providerReadAt' | 'adminReadAt' {
-    if (user.userType === 'customer') return 'customerReadAt';
-    if (user.userType === 'provider') return 'providerReadAt';
-    return 'adminReadAt';
-  }
-
-  private readColumnFor(user: CurrentUserData): string {
-    if (user.userType === 'customer') return 'customer_read_at';
-    if (user.userType === 'provider') return 'provider_read_at';
-    return 'admin_read_at';
+  private toMessageView(message: ChatMessage): ChatMessageView {
+    return {
+      id: message.id,
+      bookingId: message.bookingId,
+      senderId: message.senderId,
+      senderType: message.senderType,
+      message: message.message,
+      createdAt: message.createdAt,
+    };
   }
 }

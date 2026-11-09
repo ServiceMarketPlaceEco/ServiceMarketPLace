@@ -1,9 +1,11 @@
 #!/bin/sh
 # Runs once, the first time the MySQL container starts with an empty data
 # volume (docker-compose.yml mounts it into /docker-entrypoint-initdb.d).
-# It builds the ServiceHub database the same way the deployment guide does:
-# every migration in order, then only the seeds that are safe for a real
-# site. 003_moderation_test_seed.sql (fake accounts and reviews) is left out.
+# It builds the ServiceHub database the same way `npm run db:setup --
+# --production` does: every migration in order, then every seed except the
+# ones with "demo" or "test" in the name (fake accounts with known
+# passwords). No accounts are created: make the first admin afterwards with
+#   docker compose exec backend npm run admin:create
 set -e
 
 run() {
@@ -15,8 +17,11 @@ for f in /servicehub-db/migrations/*.sql; do
   run "$f"
 done
 
-run /servicehub-db/seeds/001_seed_data.sql
-run /servicehub-db/seeds/002_rajshahi_services_seed.sql
-run /servicehub-db/seeds/004_service_images_seed.sql
+for f in /servicehub-db/seeds/*.sql; do
+  case "$(basename "$f" | tr 'A-Z' 'a-z')" in
+    *demo*|*test*) echo "ServiceHub: skipping $f (development only)" ;;
+    *) run "$f" ;;
+  esac
+done
 
 echo "ServiceHub: database ready"

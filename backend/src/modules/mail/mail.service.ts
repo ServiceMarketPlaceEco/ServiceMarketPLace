@@ -188,6 +188,8 @@ export class MailService implements OnModuleInit {
             <h2>Hello ${escapeHtml(name)},</h2>
             <p>We received a request to reset your password. Click the button below to set a new password:</p>
             <a href="${resetUrl}" class="button">Reset Password</a>
+            <p>Or open ServiceHub, choose <strong>Forgot password</strong> and paste this reset token:</p>
+            <p style="font-family: monospace; font-size: 15px; word-break: break-all; background: #f3f4f6; padding: 10px; border-radius: 6px;">${resetToken}</p>
             <div class="warning">
               <p><strong>Note:</strong> This link will expire in 1 hour.</p>
             </div>

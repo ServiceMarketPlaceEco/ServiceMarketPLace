@@ -1,23 +1,10 @@
 -- =====================================================
 -- ServiceHub Seed Data Script
--- Run this after database/migrations/000_initial_schema.sql
--- to populate initial data for testing.
--- Safe to re-run: existing rows are skipped.
+-- Run this after database/migrations/000_initial_schema.sql.
+-- General service categories. No accounts: the default admin
+-- is in 005_demo_accounts_seed.sql (local development only).
+-- Safe for production. Safe to re-run: existing rows are skipped.
 -- =====================================================
-
--- Create default admin account
---   email:    admin@servicehub.com
---   password: Admin@123 (hashed with bcrypt)
-INSERT INTO admins (id, name, email, password_hash, role, is_active, created_at)
-VALUES (
-  UUID(),
-  'Super Admin',
-  'admin@servicehub.com',
-  '$2b$10$UF.QoWk.RszrXKDuML9o1eNnyLOZTmiGYn7GhMtNc7MHbcJCDeC5O',
-  'super_admin',
-  TRUE,
-  NOW()
-) ON DUPLICATE KEY UPDATE name = name;
 
 -- Insert default service categories (idempotent: skips rows that already exist by name)
 INSERT INTO services (service_id, service_name, description, icon, is_active)

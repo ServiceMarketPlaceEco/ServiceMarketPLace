@@ -1,36 +1,35 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { formatStatus } from '../../data/services'
 import ChatPanel from '../Chat/ChatPanel.vue'
-import { useUnreadChats } from '../../composables/useUnreadChats'
 
-defineProps({
+const props = defineProps({
   customer: Object,
   requests: {
+    type: Array,
+    default: () => []
+  },
+  chatApprovals: {
     type: Array,
     default: () => []
   }
 })
 
-defineEmits(['request-another', 'view-tracking'])
+defineEmits(['request-another', 'view-tracking', 'request-chat', 'refresh-chat'])
 
-const activeTab = ref('requests')
-const focusBookingId = ref('')
-const { unread, setUnread } = useUnreadChats()
+const chatRequestId = ref(null)
+const chatSection = ref(null)
+const chatRequest = computed(() => props.requests.find(r => r.id === chatRequestId.value) || null)
+const chatApproval = computed(() => props.chatApprovals.find(a => a.requestId === chatRequestId.value) || null)
 
-// a customer can message the provider once an admin has assigned one
-function canMessage(request) {
-  return Boolean(request.providerName) && request.status !== 'waiting-admin-approval'
+function approvalFor(request) {
+  return props.chatApprovals.find(a => a.requestId === request.id)
 }
 
-function messageProvider(request) {
-  focusBookingId.value = request.id
-  activeTab.value = 'messages'
-}
-
-function openMessages() {
-  focusBookingId.value = ''
-  activeTab.value = 'messages'
+async function openChat(request) {
+  chatRequestId.value = request.id
+  await nextTick()
+  chatSection.value?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
 }
 </script>
 
@@ -48,17 +47,7 @@ function openMessages() {
       </button>
     </div>
 
-    <div class="moderation-tabs">
-      <button :class="{ active: activeTab === 'requests' }" @click="activeTab = 'requests'">My requests</button>
-      <button :class="{ active: activeTab === 'messages' }" @click="openMessages">
-        Messages <span v-if="unread" class="tab-badge">{{ unread }}</span>
-      </button>
-    </div>
-
-    <ChatPanel v-if="activeTab === 'messages'" role="customer" :focus-booking-id="focusBookingId"
-      @unread="setUnread" />
-
-    <div v-else-if="!requests.length" class="empty-state">
+    <div v-if="!requests.length" class="empty-state">
       No service requests yet.
     </div>
 
@@ -76,7 +65,8 @@ function openMessages() {
               <th>Date</th>
               <th>Provider</th>
               <th>Status</th>
-              <th>Actions</th>
+              <th>Tracking</th>
+              <th>Chat</th>
             </tr>
           </thead>
 
@@ -96,14 +86,37 @@ function openMessages() {
               <td>
                 <span class="status-pill" :class="request.status">{{ formatStatus(request.status) }}</span>
               </td>
-              <td class="row-actions">
+              <td>
                 <button class="secondary small" @click="$emit('view-tracking', request)">Track</button>
-                <button v-if="canMessage(request)" class="primary small" @click="messageProvider(request)">Message</button>
+              </td>
+              <td>
+                <button class="secondary small chat-open" :disabled="!request.providerName"
+                  :title="request.providerName ? '' : 'Chat opens once a provider is assigned'"
+                  @click="openChat(request)">
+                  {{ approvalFor(request)?.status === 'approved' ? 'Open chat' : 'Chat' }}
+                </button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
+
+    <div v-if="chatRequest" ref="chatSection" class="table-card clean-card customer-chat">
+      <div class="panel-heading">
+        <h3>Messages</h3>
+        <button class="secondary small" type="button" @click="chatRequestId = null">Close</button>
+      </div>
+      <ChatPanel :request="chatRequest" role="customer" :approval="chatApproval"
+        @request-chat="$emit('request-chat', $event)" @refresh-chat="$emit('refresh-chat')" />
+    </div>
   </section>
 </template>
+
+<style scoped>
+.customer-chat {
+  margin-top: 20px;
+  /* room so the floating AI Help button doesn't sit on top of Send */
+  margin-bottom: 88px;
+}
+</style>

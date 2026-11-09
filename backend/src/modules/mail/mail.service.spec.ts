@@ -85,6 +85,9 @@ describe('MailService', () => {
     const email = sentEmail();
     expect(email.subject).toBe('Reset Your ServiceHub Password');
     expect(email.html).toContain('href="http://localhost:5173/reset-password?token=tok-123"');
+    // the app doesn't read the token from the link, so it's also shown as text
+    // for the user to paste into the "Forgot password" form
+    expect(email.html).toContain('>tok-123</p>');
     expect(email.html).toContain('expire in 1 hour');
   });
 

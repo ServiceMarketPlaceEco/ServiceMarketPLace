@@ -28,7 +28,11 @@ const pwSaving = ref(false)
 
 const me = computed(() => admins.value.find(a => a.id === props.currentUserId) || null)
 const iAmSuper = computed(() => me.value?.role === 'super_admin')
-const seededStillOn = computed(() => admins.value.some(a => a.email === SEEDED_EMAIL && a.isActive))
+// the demo admin only exists in development databases (seed 005), where every
+// laptop has it on purpose, so the warning only shows on a built site
+const WARN_ABOUT_DEMO_ADMIN = import.meta.env.PROD || import.meta.env.MODE === 'test'
+const seededStillOn = computed(() =>
+  WARN_ABOUT_DEMO_ADMIN && admins.value.some(a => a.email === SEEDED_EMAIL && a.isActive))
 const signedInAsSeeded = computed(() => me.value?.email === SEEDED_EMAIL)
 
 function roleLabel(role) {
@@ -129,17 +133,17 @@ onMounted(load)
 
 <template>
   <section v-if="seededStillOn" class="ops-panel launch-warning" role="status">
-    <h2>Replace the default admin before launch</h2>
+    <h2>Switch off the demo admin before launch</h2>
     <p>
-      The default admin ({{ SEEDED_EMAIL }}) is still switched on, and its password is in the README, so anyone could
-      sign in with it.
+      The demo admin ({{ SEEDED_EMAIL }}) is switched on, and its password is in the README, so anyone could sign in
+      with it. It should never exist on a live site.
     </p>
     <ol>
       <li>Add your own admin below with <strong>Super admin</strong> ticked.</li>
       <li>Log out and sign in with the new account.</li>
       <li>Come back here and choose <strong>Switch off</strong> next to {{ SEEDED_EMAIL }}.</li>
     </ol>
-    <p v-if="signedInAsSeeded" class="muted">You are signed in as the default admin right now.</p>
+    <p v-if="signedInAsSeeded" class="muted">You are signed in as the demo admin right now.</p>
   </section>
 
   <p v-if="notice" class="success-text" role="status">{{ notice }}</p>

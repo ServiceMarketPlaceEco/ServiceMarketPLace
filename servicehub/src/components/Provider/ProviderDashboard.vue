@@ -3,18 +3,18 @@ import { computed, reactive, ref, onBeforeUnmount } from 'vue'
 import { formatStatus } from '../../data/services'
 import * as api from '../../services/api'
 import ChatPanel from '../Chat/ChatPanel.vue'
-import { useUnreadChats } from '../../composables/useUnreadChats'
 
 const props = defineProps({
   currentUser: { type: Object, default: null },
   requests: { type: Array, default: () => [] },
+  chatApprovals: { type: Array, default: () => [] },
   theme: { type: String, default: 'light' },
   providerServices: { type: Array, default: () => [] },
   availableServices: { type: Array, default: () => [] },
   reviews: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['accept-request', 'decline-request', 'status-change', 'block-request', 'sign-out', 'go-home', 'toggle-theme', 'add-service', 'toggle-service', 'update-profile', 'change-password'])
+const emit = defineEmits(['accept-request', 'decline-request', 'status-change', 'request-chat', 'refresh-chat', 'block-request', 'sign-out', 'go-home', 'toggle-theme', 'add-service', 'toggle-service', 'update-profile', 'change-password'])
 
 const activeView = ref('dashboard')
 const searchTerm = ref('')
@@ -23,17 +23,7 @@ const declineReason = ref('')
 const replyTarget = ref(null)
 const replyText = ref('')
 const localReplies = ref({})
-// the Messages tab opens on this booking's chat when set
-const focusBookingId = ref('')
-const { unread: unreadChats, setUnread: setUnreadChats } = useUnreadChats()
-function messageCustomer(request) {
-  focusBookingId.value = request.id
-  activeView.value = 'messages'
-}
-function openMessages() {
-  focusBookingId.value = ''
-  activeView.value = 'messages'
-}
+const chatRequestId = ref(null)
 const blockTargetName = ref('')
 const blockReason = ref('')
 const showServiceModal = ref(false)
@@ -71,6 +61,10 @@ const filteredRequests = computed(() => {
   return providerRequests.value.filter(item => `${item.serviceTitle} ${item.customerName} ${item.location} ${item.status} ${item.providerStatus}`.toLowerCase().includes(q))
 })
 
+function chatApprovalFor(requestId) { return props.chatApprovals.find(item => item.requestId === requestId) || null }
+const chatLabels = { 'not-requested': 'Not opened', pending: 'Awaiting admin', approved: 'Open', rejected: 'Closed' }
+function chatStatus(requestId) { return chatApprovalFor(requestId)?.status || 'not-requested' }
+const chatRequest = computed(() => providerRequests.value.find(r => r.id === chatRequestId.value) || providerRequests.value[0] || null)
 function acceptRequest(request) { emit('accept-request', { requestId: request.id, providerId: props.currentUser?.id }) }
 function startJob(request) { emit('status-change', { requestId: request.id, status: 'in-progress' }) }
 function completeJob(request) { emit('status-change', { requestId: request.id, status: 'completed' }) }
@@ -175,8 +169,7 @@ function savePassword() {
         <button :class="{ active: activeView === 'dashboard' }" @click="activeView = 'dashboard'">Dashboard</button>
         <button :class="{ active: activeView === 'services' }" @click="activeView = 'services'">My services</button>
         <button :class="{ active: activeView === 'requests' }" @click="activeView = 'requests'">Requests</button>
-        <button :class="{ active: activeView === 'messages' }" @click="openMessages">Messages<span v-if="unreadChats"
-            class="tab-badge">{{ unreadChats }}</span></button>
+        <button :class="{ active: activeView === 'messages' }" @click="activeView = 'messages'">Messages</button>
         <button :class="{ active: activeView === 'reviews' }" @click="activeView = 'reviews'">Reviews</button>
         <button :class="{ active: activeView === 'settings' }" @click="activeView = 'settings'">Settings</button>
       </nav>
@@ -193,7 +186,7 @@ function savePassword() {
       <header class="ops-topbar">
         <div>
           <h1>{{ activeView === 'dashboard' ? 'Provider dashboard' : activeView }}</h1>
-          <p>Manage services, assigned requests, reviews and chats with customers and the admin team.</p>
+          <p>Manage services, assigned requests, reviews and approved customer chats.</p>
         </div><input v-model="searchTerm" aria-label="Search provider workspace"
           placeholder="Search provider workspace..." />
       </header>
@@ -287,9 +280,7 @@ function savePassword() {
                 @click="acceptRequest(request)">Accept</button><button v-if="request.providerStatus === 'accepted'"
                 class="primary small" @click="startJob(request)">Start job</button><button
                 v-if="request.providerStatus === 'in-progress'" class="success small"
-                @click="completeJob(request)">Complete</button><button
-                v-if="request.providerStatus !== 'waiting-provider-acceptance'" class="secondary small"
-                @click="messageCustomer(request)">Message customer</button><button v-if="request.providerStatus === 'completed'"
+                @click="completeJob(request)">Complete</button><button v-if="request.providerStatus === 'completed'"
                 class="secondary small" @click="undoComplete(request)">Undo complete</button><button
                 v-if="['accepted', 'in-progress'].includes(request.providerStatus)" class="secondary small"
                 @click="sharingRequestId === request.id ? stopSharingLocation() : startSharingLocation(request)">{{
@@ -300,7 +291,24 @@ function savePassword() {
       </template>
 
       <template v-if="activeView === 'messages'">
-        <ChatPanel role="provider" :focus-booking-id="focusBookingId" @unread="setUnreadChats" />
+        <section class="ops-panel">
+          <h2>Customer chats</h2>
+          <p class="muted">Chat with a customer opens once a ServiceHub admin approves it.</p>
+          <div v-if="providerRequests.length === 0" class="empty-state">No assigned request conversations yet.</div>
+          <div v-else class="provider-chat-layout">
+            <nav class="provider-chat-list" aria-label="Conversations">
+              <button v-for="request in providerRequests" :key="request.id" type="button"
+                :class="{ active: chatRequest?.id === request.id }" @click="chatRequestId = request.id">
+                <strong>{{ request.customerName || 'Customer' }}</strong>
+                <small>{{ request.serviceTitle }}</small>
+                <span class="status-pill" :class="chatStatus(request.id)">{{ chatLabels[chatStatus(request.id)] }}</span>
+              </button>
+            </nav>
+            <ChatPanel v-if="chatRequest" :request="chatRequest" role="provider"
+              :approval="chatApprovalFor(chatRequest.id)" @request-chat="emit('request-chat', $event)"
+              @refresh-chat="emit('refresh-chat')" />
+          </div>
+        </section>
       </template>
 
       <template v-if="activeView === 'reviews'">
@@ -393,3 +401,53 @@ function savePassword() {
     </section>
   </section>
 </template>
+
+<style scoped>
+.provider-chat-layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.provider-chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 460px;
+  overflow-y: auto;
+}
+
+.provider-chat-list button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.provider-chat-list button.active {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.provider-chat-list small {
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  .provider-chat-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .provider-chat-list {
+    max-height: 220px;
+  }
+}
+</style>
