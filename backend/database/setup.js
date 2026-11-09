@@ -54,9 +54,16 @@ async function main() {
       console.log(`Dropping database \`${database}\`...`);
       await connection.query(`DROP DATABASE IF EXISTS \`${database}\``);
     }
-    await connection.query(
-      `CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`,
-    );
+    try {
+      await connection.query(
+        `CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`,
+      );
+    } catch (err) {
+      // on a shared server the admin creates the database and our user may
+      // not be allowed to run CREATE DATABASE at all; carry on if it exists
+      if (err.code !== 'ER_DBACCESS_DENIED_ERROR' && err.code !== 'ER_ACCESS_DENIED_ERROR') throw err;
+      console.log(`Not allowed to create \`${database}\`, using the existing one.`);
+    }
     await connection.query(`USE \`${database}\``);
 
     const files = [

@@ -1,0 +1,46 @@
+# Production deployment on the team VPS. Run from this folder with:
+#   sudo project-ctl build servicemarketplace
+#   sudo project-ctl up servicemarketplace
+# Settings come from two files that are never committed:
+#   ./.env          compose settings (copy .env.example)
+#   ./backend/.env  backend settings (copy backend/.env.example)
+
+services:
+  api:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      NODE_ENV: production
+      API_PORT: 3001
+    restart: unless-stopped
+    networks: [app, db]
+
+  web:
+    build:
+      context: ./servicehub
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+    depends_on: [api]
+    restart: unless-stopped
+    # only reachable from the server itself; the server's nginx forwards the
+    # public domain to this port
+    ports:
+      - "127.0.0.1:${APP_PORT:?Set APP_PORT in .env (ask the server admin)}:80"
+    networks: [app]
+
+  # one-off: creates the tables and loads the seed data, then exits.
+  # only runs when COMPOSE_PROFILES=dbsetup is set in ./.env
+  db-setup:
+    build: ./backend
+    env_file: ./backend/.env
+    command: ["node", "database/setup.js"]
+    restart: "no"
+    profiles: [dbsetup]
+    networks: [db]
+
+networks:
+  app: {}
+  # the shared Docker network the global-db MySQL container is on
+  db:
+    external: true
+    name: ${DB_NETWORK:?Set DB_NETWORK in .env (ask the server admin)}
