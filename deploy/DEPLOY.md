@@ -85,8 +85,10 @@ The database keeps its data. A new migration file is **not** run
 automatically on an existing database, so run it by hand, for example:
 
 ```bash
-docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' \
-  < backend/database/migrations/006_add_review_approval.sql
+for f in backend/database/migrations/006_add_review_approval.sql \
+         backend/database/migrations/007_reviews_without_booking.sql; do
+  docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' < "$f"
+done
 ```
 
 Every migration is safe to run twice.

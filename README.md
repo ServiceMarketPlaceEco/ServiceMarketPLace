@@ -108,11 +108,12 @@ it does not exist, and runs these scripts in order:
 | 5 | `backend/database/migrations/004_add_phone_verification_attempts.sql` | `failed_attempts` on phone_verifications, so a code locks after 5 wrong guesses |
 | 6 | `backend/database/migrations/005_add_chat.sql` | Chat approvals and messages between customers and providers |
 | 7 | `backend/database/migrations/006_add_review_approval.sql` | Approval status on reviews (pending, approved, rejected) |
-| 8 | `backend/database/seeds/001_seed_data.sql` | General service categories |
-| 9 | `backend/database/seeds/002_rajshahi_services_seed.sql` | Rajshahi service catalog |
-| 10 | `backend/database/seeds/003_moderation_test_seed.sql` | Test accounts and reviews for the moderation workflow *(development only)* |
-| 11 | `backend/database/seeds/004_service_images_seed.sql` | Photos for the seeded services |
-| 12 | `backend/database/seeds/005_demo_accounts_seed.sql` | Default admin + a demo provider with prices *(development only)* |
+| 8 | `backend/database/migrations/007_reviews_without_booking.sql` | Lets a review be about a provider without a booking |
+| 9 | `backend/database/seeds/001_seed_data.sql` | General service categories |
+| 10 | `backend/database/seeds/002_rajshahi_services_seed.sql` | Rajshahi service catalog |
+| 11 | `backend/database/seeds/003_moderation_test_seed.sql` | Test accounts and reviews for the moderation workflow *(development only)* |
+| 12 | `backend/database/seeds/004_service_images_seed.sql` | Photos for the seeded services |
+| 13 | `backend/database/seeds/005_demo_accounts_seed.sql` | Default admin + a demo provider with prices *(development only)* |
 
 Expected output:
 
@@ -124,6 +125,7 @@ Running database/migrations/003_add_service_image.sql
 Running database/migrations/004_add_phone_verification_attempts.sql
 Running database/migrations/005_add_chat.sql
 Running database/migrations/006_add_review_approval.sql
+Running database/migrations/007_reviews_without_booking.sql
 Running database/seeds/001_seed_data.sql
 Running database/seeds/002_rajshahi_services_seed.sql
 Running database/seeds/003_moderation_test_seed.sql
@@ -157,6 +159,7 @@ mysql -u root -p servicehub < database/migrations/003_add_service_image.sql
 mysql -u root -p servicehub < database/migrations/004_add_phone_verification_attempts.sql
 mysql -u root -p servicehub < database/migrations/005_add_chat.sql
 mysql -u root -p servicehub < database/migrations/006_add_review_approval.sql
+mysql -u root -p servicehub < database/migrations/007_reviews_without_booking.sql
 mysql -u root -p servicehub < database/seeds/001_seed_data.sql
 mysql -u root -p servicehub < database/seeds/002_rajshahi_services_seed.sql
 mysql -u root -p servicehub < database/seeds/003_moderation_test_seed.sql
@@ -180,11 +183,12 @@ mysql -u root -p servicehub < database/seeds/005_demo_accounts_seed.sql
    5. `backend/database/migrations/004_add_phone_verification_attempts.sql`
    6. `backend/database/migrations/005_add_chat.sql`
    7. `backend/database/migrations/006_add_review_approval.sql`
-   8. `backend/database/seeds/001_seed_data.sql`
-   9. `backend/database/seeds/002_rajshahi_services_seed.sql`
-   10. `backend/database/seeds/003_moderation_test_seed.sql`
-   11. `backend/database/seeds/004_service_images_seed.sql`
-   12. `backend/database/seeds/005_demo_accounts_seed.sql`
+   8. `backend/database/migrations/007_reviews_without_booking.sql`
+   9. `backend/database/seeds/001_seed_data.sql`
+   10. `backend/database/seeds/002_rajshahi_services_seed.sql`
+   11. `backend/database/seeds/003_moderation_test_seed.sql`
+   12. `backend/database/seeds/004_service_images_seed.sql`
+   13. `backend/database/seeds/005_demo_accounts_seed.sql`
 
 </details>
 
