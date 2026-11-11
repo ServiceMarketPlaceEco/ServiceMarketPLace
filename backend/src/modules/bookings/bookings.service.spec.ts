@@ -33,6 +33,15 @@ describe('BookingsService', () => {
   });
 
   describe('create', () => {
+    it('emails the admin team that a new request is waiting to be assigned', async () => {
+      const adminNotifier = { notify: jest.fn() };
+      service = new BookingsService(bookingRepo, providerServiceRepo, mailService, adminNotifier as any);
+
+      await service.create('cust-1', { date: '2026-09-01', time: '10:00', serviceName: 'Home Cleaning', address: 'Rajshahi' } as any);
+
+      expect(adminNotifier.notify).toHaveBeenCalledWith('New service request', expect.stringContaining('Home Cleaning'));
+    });
+
     it('creates a quick booking without a provider service (customer just describes the job)', async () => {
       const dto: any = {
         date: '2026-09-01',
@@ -219,6 +228,15 @@ describe('BookingsService', () => {
 
       expect(result.status).toBe(BookingStatus.CONFIRMED);
       expect(mailService.sendBookingStatusUpdate).toHaveBeenCalled();
+    });
+
+    it('refuses (403, not a crash) when the booking has no provider yet', async () => {
+      bookingRepo.findOne.mockResolvedValue({ ...bookingWith(BookingStatus.PENDING), providerService: null });
+
+      await expect(
+        service.updateStatusByProvider('prov-1', 'b-1', 'confirmed'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(bookingRepo.save).not.toHaveBeenCalled();
     });
 
     it('blocks skipping straight from pending to completed', async () => {

@@ -199,6 +199,53 @@ describe('MailService', () => {
     });
   });
 
+  describe('notices', () => {
+    it('emails each admin once about something waiting for them', async () => {
+      await service.sendAdminNotification(['a@x.com', 'b@x.com', 'a@x.com', ''], 'Review waiting for approval', 'A customer wrote a review.', 'Great <b>job</b>');
+
+      expect(sendMail).toHaveBeenCalledTimes(2);
+      expect(sentEmail().subject).toBe('ServiceHub: Review waiting for approval');
+      // the quoted text comes from a user, so it can't add HTML
+      expect(sentEmail().html).toContain('Great &lt;b&gt;job&lt;/b&gt;');
+    });
+
+    it('tells a customer or provider the admin team wrote to them', async () => {
+      await service.sendSupportMessageNotification('n@example.com', 'Nusrat', 'Your plumber is confirmed.');
+
+      expect(sentEmail().to).toBe('n@example.com');
+      expect(sentEmail().subject).toBe('New message from the ServiceHub admin team');
+      expect(sentEmail().html).toContain('Your plumber is confirmed.');
+    });
+
+    it('cuts a very long quoted message short', async () => {
+      await service.sendSupportMessageNotification('n@example.com', 'Nusrat', 'x'.repeat(900));
+
+      expect(sentEmail().html).toContain(`${'x'.repeat(500)}...`);
+      expect(sentEmail().html).not.toContain('x'.repeat(501));
+    });
+
+    it.each([
+      [true, 'Your ServiceHub chat is open', 'is now open'],
+      [false, 'Your ServiceHub chat request', 'was not approved'],
+    ])('tells both sides the chat decision (approved: %s)', async (approved, subject, words) => {
+      await service.sendChatDecision('n@example.com', 'Nusrat', 'AC Repair', approved);
+
+      expect(sentEmail().subject).toBe(subject);
+      expect(sentEmail().html).toContain(words);
+      expect(sentEmail().html).toContain('<strong>AC Repair</strong>');
+    });
+
+    it.each([
+      [true, 'Your ServiceHub review is published', 'is now on the Reviews page'],
+      [false, 'Your ServiceHub review', 'was not approved'],
+    ])('tells the customer the review decision (approved: %s)', async (approved, subject, words) => {
+      await service.sendReviewDecision('n@example.com', 'Nusrat', 'Karim Uddin', approved);
+
+      expect(sentEmail().subject).toBe(subject);
+      expect(sentEmail().html).toContain(words);
+    });
+  });
+
   describe('real email providers', () => {
     it('uses TLS from the start on port 465', () => {
       createTransport.mockClear();

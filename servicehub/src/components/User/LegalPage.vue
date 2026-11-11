@@ -48,7 +48,8 @@ const isPrivacy = computed(() => props.page === 'privacy')
             <strong>Share location</strong>, we store their position so the customer can follow them on the map. We
             do not track customers' location.</li>
           <li><strong>Messages and reviews:</strong> chat messages between a customer and provider about a
-            booking, once our admin team has opened the chat, and the reviews customers write.</li>
+            booking, once our admin team has opened the chat, messages you send to our admin team, and the reviews customers
+            write.</li>
           <li><strong>Sign-in information:</strong> your browser keeps a sign-in token so you stay signed in. We do not
             use advertising or tracking cookies.</li>
         </ul>
@@ -57,7 +58,8 @@ const isPrivacy = computed(() => props.page === 'privacy')
         <ul>
           <li>To create your account and confirm your phone number with a text message code.</li>
           <li>To pass your request to a suitable provider and let you both follow the job.</li>
-          <li>To send emails about your account and bookings, such as password resets and booking updates.</li>
+          <li>To send emails about your account and bookings, such as password resets, booking updates and replies
+            from our admin team.</li>
           <li>To keep the marketplace safe: our admins check reviews before they are shown, and look for fake reviews
             and fake accounts.</li>
         </ul>
@@ -86,9 +88,10 @@ const isPrivacy = computed(() => props.page === 'privacy')
 
         <h2>Your choices</h2>
         <p>
-          To get a copy of your information, correct it, or close your account and have it removed, email [contact
-          email]. Providers can also update their own profile in Settings. We may keep some records where we need them for a
-          dispute or the law.
+          Customers can change their name, address and password, or close their account, in Settings on their
+          dashboard. Closing an account removes your name, phone number, email and address. Providers can update their
+          profile in Settings. For anything else, such as a copy of your information, message our admin team or email
+          [contact email]. We may keep some records where we need them for a dispute or the law.
         </p>
 
         <h2>Keeping it safe</h2>

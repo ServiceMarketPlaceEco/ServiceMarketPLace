@@ -206,6 +206,93 @@ export class MailService implements OnModuleInit {
     await this.sendMail(email, 'Reset Your ServiceHub Password', html);
   }
 
+  // a plain notice email: a title, a greeting, a few lines and an optional
+  // quoted message. lines are HTML the caller built; the quote is user text
+  // and is escaped here
+  private noticeEmail(title: string, greetingName: string, lines: string[], quote?: string): string {
+    const quoted = quote ? escapeHtml(quote.length > 500 ? `${quote.slice(0, 500)}...` : quote) : '';
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #7437F4; color: white; padding: 20px; text-align: center; }
+          .content { padding: 20px; background: #f9fafb; }
+          .quote { background: white; border-left: 4px solid #7437F4; padding: 12px 16px; margin: 16px 0; white-space: pre-wrap; }
+          .button { display: inline-block; background: #7437F4; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+          .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header"><h1>${escapeHtml(title)}</h1></div>
+          <div class="content">
+            <h2>Hello ${escapeHtml(greetingName)},</h2>
+            ${lines.map((line) => `<p>${line}</p>`).join('')}
+            ${quoted ? `<div class="quote">${quoted}</div>` : ''}
+            <a href="${this.appUrl}" class="button">Open ServiceHub</a>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} ServiceHub. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
+  // tells the admin team something is waiting for them (a message, a chat
+  // request, a review), so nobody has to keep the dashboard open
+  async sendAdminNotification(adminEmails: string[], subject: string, intro: string, quote?: string): Promise<void> {
+    const html = this.noticeEmail(subject, 'admin team', [escapeHtml(intro)], quote);
+    for (const email of new Set(adminEmails.filter(Boolean))) {
+      await this.sendMail(email, `ServiceHub: ${subject}`, html);
+    }
+  }
+
+  // the admin team wrote to a customer or provider
+  async sendSupportMessageNotification(email: string, name: string, message: string): Promise<void> {
+    const html = this.noticeEmail(
+      'New message from ServiceHub',
+      name,
+      ['The ServiceHub admin team sent you a message. Sign in to reply.'],
+      message,
+    );
+    await this.sendMail(email, 'New message from the ServiceHub admin team', html);
+  }
+
+  // an admin opened or refused the chat on a booking
+  async sendChatDecision(email: string, name: string, serviceName: string, approved: boolean): Promise<void> {
+    const service = escapeHtml(serviceName || 'your booking');
+    const html = this.noticeEmail(
+      approved ? 'Your chat is open' : 'Chat request not approved',
+      name,
+      [
+        approved
+          ? `Chat for <strong>${service}</strong> is now open. Sign in to send a message.`
+          : `The chat request for <strong>${service}</strong> was not approved. You can ask again from your dashboard, or message the admin team.`,
+      ],
+    );
+    await this.sendMail(email, approved ? 'Your ServiceHub chat is open' : 'Your ServiceHub chat request', html);
+  }
+
+  // an admin approved or rejected a customer's review
+  async sendReviewDecision(email: string, name: string, providerName: string, approved: boolean): Promise<void> {
+    const provider = escapeHtml(providerName || 'the provider');
+    const html = this.noticeEmail(
+      approved ? 'Your review is published' : 'Your review was not published',
+      name,
+      [
+        approved
+          ? `Thank you. Your review of <strong>${provider}</strong> is now on the Reviews page.`
+          : `Your review of <strong>${provider}</strong> was not approved, so it is not shown on the website. You can write a new one.`,
+      ],
+    );
+    await this.sendMail(email, approved ? 'Your ServiceHub review is published' : 'Your ServiceHub review', html);
+  }
+
   // the simple layout every booking email uses
   private bookingEmail(title: string, greetingName: string, lines: string[], booking: Booking): string {
     const service = escapeHtml(booking.serviceName || 'your service');

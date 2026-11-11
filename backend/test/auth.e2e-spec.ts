@@ -2,7 +2,7 @@
 
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
+import { JwtModule, JwtService } from '@nestjs/jwt';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as request from 'supertest';
 import * as bcrypt from 'bcrypt';
@@ -315,6 +315,56 @@ describe('Auth endpoints (integration)', () => {
 
       expect(res.body.message).toContain('If an account exists');
       expect(mailService.sendPasswordResetEmail).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /api/auth/reset-password', () => {
+    const provider = { providerId: 'prov-9', providerName: 'Karim', email: 'karim@example.com', passwordHash: 'old-hash' };
+
+    // asks for a reset with no account type, like the app does, and returns
+    // the token the email would carry
+    async function requestReset() {
+      customerRepo.findOne.mockResolvedValue(null);
+      providerRepo.findOne.mockResolvedValue({ ...provider });
+      await request(app.getHttpServer())
+        .post('/api/auth/forgot-password')
+        .send({ email: provider.email })
+        .expect(200);
+      expect(mailService.sendPasswordResetEmail).toHaveBeenCalledTimes(1);
+      return mailService.sendPasswordResetEmail.mock.calls[0][2];
+    }
+
+    it('a provider gets a reset email without saying what kind of account it is', async () => {
+      const token = await requestReset();
+      expect(mailService.sendPasswordResetEmail).toHaveBeenCalledWith('karim@example.com', 'Karim', token);
+    });
+
+    it('the reset token works once and stops working after the password changes', async () => {
+      const token = await requestReset();
+
+      await request(app.getHttpServer())
+        .post('/api/auth/reset-password')
+        .send({ token, newPassword: 'NewPassword@2026' })
+        .expect(200);
+      expect(providerRepo.update).toHaveBeenCalledWith({ providerId: 'prov-9' }, expect.objectContaining({ passwordHash: expect.any(String) }));
+
+      // the stored hash is now different, so the same link is refused
+      providerRepo.findOne.mockResolvedValue({ ...provider, passwordHash: 'new-hash' });
+      await request(app.getHttpServer())
+        .post('/api/auth/reset-password')
+        .send({ token, newPassword: 'Another@2026' })
+        .expect(400);
+    });
+
+    it('refuses a normal sign-in token as a reset token', async () => {
+      const signedIn = new JwtService({ secret: TEST_JWT_SECRET }).sign({ sub: 'prov-9', email: provider.email, userType: 'provider' });
+      providerRepo.findOne.mockResolvedValue({ ...provider });
+
+      await request(app.getHttpServer())
+        .post('/api/auth/reset-password')
+        .send({ token: signedIn, newPassword: 'Hacked@12345' })
+        .expect(400);
+      expect(providerRepo.update).not.toHaveBeenCalled();
     });
   });
 });

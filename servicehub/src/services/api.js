@@ -284,16 +284,14 @@ export function loginWithGoogle(credential) {
   })
 }
 
+// userType is optional: the backend finds the account by email when it is left out
 export function forgotPassword(
   email,
   userType
 ) {
   return request('/auth/forgot-password', {
     method: 'POST',
-    body: {
-      email,
-      userType
-    }
+    body: userType ? { email, userType } : { email }
   })
 }
 
@@ -816,6 +814,56 @@ export function activateAdmin(adminId) {
 
 export function changeMyAdminPassword(currentPassword, newPassword) {
   return request('/admins/me/password', { method: 'POST', body: { currentPassword, newPassword }, auth: true })
+}
+
+// ---------- Messages with the admin team ----------
+// Separate from the booking chat below: a customer or provider talking to
+// the ServiceHub admins. No approval step, because one side is an admin.
+
+export async function getSupportMessages() {
+  return resultArray(await request('/support/messages', { auth: true }))
+}
+
+export function sendSupportMessage(message) {
+  return request('/support/messages', { method: 'POST', body: { message }, auth: true })
+}
+
+export async function getSupportUnread() {
+  const res = await request('/support/unread', { auth: true })
+  return Number(res?.unread || 0)
+}
+
+// admin inbox
+export async function getSupportThreads() {
+  return resultArray(await request('/support/threads', { auth: true }))
+}
+
+export async function getSupportThreadMessages(userType, userId) {
+  return resultArray(
+    await request(`/support/threads/${encodeURIComponent(userType)}/${encodeURIComponent(userId)}/messages`, { auth: true })
+  )
+}
+
+export function sendSupportReply(userType, userId, message) {
+  return request(`/support/threads/${encodeURIComponent(userType)}/${encodeURIComponent(userId)}/messages`, {
+    method: 'POST',
+    body: { message },
+    auth: true
+  })
+}
+
+// ---------- Customer account ----------
+
+export function updateCustomerProfile({ name, address }) {
+  return request('/customers/profile', { method: 'PUT', body: { name, address }, auth: true })
+}
+
+export function changeCustomerPassword({ currentPassword, newPassword }) {
+  return request('/customers/change-password', { method: 'PUT', body: { currentPassword, newPassword }, auth: true })
+}
+
+export function closeCustomerAccount(password) {
+  return request('/customers/account', { method: 'DELETE', body: { password }, auth: true })
 }
 
 // ---------- Chat approval ----------

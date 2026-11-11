@@ -134,6 +134,46 @@ describe('ReviewsService', () => {
     });
   });
 
+  // the admin team hears about a new review, and the customer hears the decision
+  describe('notifications', () => {
+    it('tells the admin team a review is waiting, saying when there was no booking', async () => {
+      const notifier = { notify: jest.fn() };
+      service = new ReviewsService(reviewRepo, bookingRepo, providerRepo, mailService, notifier as any);
+      providerRepo.findOne.mockResolvedValue({ providerId: 'prov-1' });
+      reviewRepo.findOne.mockResolvedValue(null);
+      reviewRepo.save.mockImplementation(async (r: any) => r);
+
+      await service.create('cust-1', { providerId: 'prov-1', rating: 2, comment: 'never came' } as any);
+
+      expect(notifier.notify).toHaveBeenCalledWith(
+        'Review waiting for approval',
+        'A customer wrote a 2/5 review (no booking). Approve or reject it on the Review approvals page.',
+        'never came',
+      );
+    });
+
+    it('emails the customer when their review is approved or rejected', async () => {
+      mailService.sendReviewDecision = jest.fn();
+      const review = () => ({
+        reviewId: 'rev-1',
+        providerId: 'prov-1',
+        status: ReviewStatus.PENDING,
+        customer: { name: 'Nusrat', email: 'n@x.com' },
+        provider: { providerId: 'prov-1', providerName: 'Karim Uddin' },
+      });
+
+      reviewRepo.findOne.mockResolvedValue(review());
+      await service.approve('rev-1');
+      reviewRepo.findOne.mockResolvedValue(review());
+      await service.reject('rev-1');
+
+      expect(mailService.sendReviewDecision.mock.calls).toEqual([
+        ['n@x.com', 'Nusrat', 'Karim Uddin', true],
+        ['n@x.com', 'Nusrat', 'Karim Uddin', false],
+      ]);
+    });
+  });
+
   // reviews about a provider without a booking
   describe('create without a booking', () => {
     const dto: any = { providerId: 'prov-1', rating: 4, comment: 'fixed my neighbour\'s tap, very tidy' };

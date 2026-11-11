@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -15,6 +16,8 @@ import {
 import { ChatMessage } from './entities/chat-message.entity';
 import { SendChatMessageDto } from './dto';
 import { CurrentUserData } from '../../common/decorators/current-user.decorator';
+import { MailService } from '../mail/mail.service';
+import { AdminNotifierService } from '../mail/admin-notifier.service';
 
 // What the endpoints return. Built by hand instead of returning entities so
 // related customer/provider rows (and their password hashes) never leak out.
@@ -51,6 +54,9 @@ export class ChatService {
     private messageRepository: Repository<ChatMessage>,
     @InjectRepository(Booking)
     private bookingRepository: Repository<Booking>,
+    // emails are an extra: the chat works the same without them
+    @Optional() private mailService?: MailService,
+    @Optional() private adminNotifier?: AdminNotifierService,
   ) {}
 
   // ---------- Approvals ----------
@@ -82,7 +88,14 @@ export class ChatService {
     approval.reviewedAt = null;
 
     const saved = await this.approvalRepository.save(approval);
-    return this.toApprovalView(saved, booking);
+    const view = this.toApprovalView(saved, booking);
+
+    // tell the admin team there is a chat waiting for approval
+    await this.adminNotifier?.notify(
+      'Chat request waiting for approval',
+      `${role === 'customer' ? view.customerName || 'A customer' : view.providerName || 'A provider'} asked to open chat on ${view.serviceName || 'a booking'}. Approve or reject it on the Chat approvals page.`,
+    );
+    return view;
   }
 
   // Admin approves or rejects. Rejecting an approved chat closes it again:
@@ -105,7 +118,27 @@ export class ChatService {
     approval.reviewedAt = new Date();
 
     const saved = await this.approvalRepository.save(approval);
-    return this.toApprovalView(saved, approval.booking);
+    const view = this.toApprovalView(saved, approval.booking);
+    await this.emailChatDecision(approval.booking, view, status === 'approved');
+    return view;
+  }
+
+  // lets the customer and the provider know the admin's decision. an email
+  // problem never undoes the decision
+  private async emailChatDecision(booking: Booking | null, view: ChatApprovalView, approved: boolean): Promise<void> {
+    if (!this.mailService || !booking) return;
+    try {
+      const customer = booking.customer;
+      const provider = booking.providerService?.provider;
+      if (customer?.email) {
+        await this.mailService.sendChatDecision(customer.email, customer.name, view.serviceName || '', approved);
+      }
+      if (provider?.email) {
+        await this.mailService.sendChatDecision(provider.email, provider.providerName, view.serviceName || '', approved);
+      }
+    } catch (error) {
+      console.error('Failed to send chat decision email:', error);
+    }
   }
 
   // Admins see every approval; customers and providers see the ones on their

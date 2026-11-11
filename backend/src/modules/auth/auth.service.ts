@@ -5,6 +5,7 @@ import {
   BadRequestException,
   NotFoundException,
   ServiceUnavailableException,
+  Optional,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -28,6 +29,7 @@ import {
   AuthResponseDto,
 } from './dto';
 import { MailService } from '../mail/mail.service';
+import { AdminNotifierService } from '../mail/admin-notifier.service';
 import { SmsService } from '../sms/sms.service';
 
 const PHONE_VERIFICATION_TTL_MS = 10 * 60 * 1000;
@@ -56,6 +58,7 @@ export class AuthService {
     private configService: ConfigService,
     private mailService: MailService,
     private smsService: SmsService,
+    @Optional() private adminNotifier?: AdminNotifierService,
   ) {}
 
   // Register Customer
@@ -136,6 +139,12 @@ export class AuthService {
 
     // Send welcome email
     await this.mailService.sendProviderWelcomeEmail(provider.email, provider.providerName);
+
+    // tell the admin team there is an application to check. never throws
+    await this.adminNotifier?.notify(
+      'New provider application',
+      `${provider.providerName} applied to join as a provider. Approve or reject them on the Service providers page.`,
+    );
 
     return this.generateTokens(provider.providerId, provider.email, 'provider', provider);
   }
@@ -494,86 +503,98 @@ export class AuthService {
   }
 
   // Forgot Password
-  async forgotPassword(email: string, userType: UserTypeDto): Promise<void> {
-    let user: Customer | ServiceProvider | Admin | null = null;
-    let userId: string;
-    let userName: string;
+  //
+  // userType is optional: without it we look the email up as a customer, then
+  // a provider, then an admin, the same way sign-in finds the account.
+  async forgotPassword(email: string, userType?: UserTypeDto): Promise<void> {
+    const types = userType
+      ? [userType]
+      : [UserTypeDto.CUSTOMER, UserTypeDto.PROVIDER, UserTypeDto.ADMIN];
 
-    switch (userType) {
-      case UserTypeDto.CUSTOMER:
-        user = await this.customerRepository.findOne({ where: { email } });
-        if (user) {
-          userId = user.customerId;
-          userName = user.name;
-        }
-        break;
-      case UserTypeDto.PROVIDER:
-        user = await this.providerRepository.findOne({ where: { email } });
-        if (user) {
-          userId = user.providerId;
-          userName = user.providerName;
-        }
-        break;
-      case UserTypeDto.ADMIN:
-        user = await this.adminRepository.findOne({ where: { email } });
-        if (user) {
-          userId = user.id;
-          userName = user.name;
-        }
-        break;
+    for (const type of types) {
+      const account = await this.findResetAccount(type, { email });
+      if (account) {
+        const resetToken = this.jwtService.sign(
+          { sub: account.id, email, userType: type, purpose: 'reset' },
+          { secret: this.resetSecret(account.passwordHash), expiresIn: '1h' },
+        );
+        await this.mailService.sendPasswordResetEmail(email, account.name, resetToken);
+        return;
+      }
     }
-
-    if (!user) {
-      // Don't reveal if user exists or not
-      return;
-    }
-
-    // Generate reset token (valid for 1 hour)
-    const resetToken = this.jwtService.sign(
-      { sub: userId!, email, userType },
-      {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-        expiresIn: '1h',
-      },
-    );
-
-    // Send reset email
-    await this.mailService.sendPasswordResetEmail(email, userName!, resetToken);
+    // Don't reveal whether the email exists
   }
 
   // Reset Password
+  //
+  // The reset token is signed with its own secret built from the login secret
+  // and the account's current password hash. So a login token can never be
+  // used as a reset token, and a reset token stops working once it has been
+  // used, because the password hash changes.
   async resetPassword(token: string, newPassword: string): Promise<void> {
     try {
-      const payload = this.jwtService.verify(token, {
-        secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-      });
+      const claimed = this.jwtService.decode(token) as
+        | { sub?: string; userType?: UserTypeDto; purpose?: string }
+        | null;
+      if (!claimed?.sub || claimed.purpose !== 'reset' || !claimed.userType) {
+        throw new Error('not a reset token');
+      }
+
+      const account = await this.findResetAccount(claimed.userType, { id: claimed.sub });
+      if (!account) throw new Error('account not found');
+
+      const payload = this.jwtService.verify(token, { secret: this.resetSecret(account.passwordHash) });
+      if (payload.purpose !== 'reset' || payload.sub !== account.id) {
+        throw new Error('token does not match');
+      }
 
       const passwordHash = await bcrypt.hash(newPassword, 10);
-
-      switch (payload.userType) {
-        case 'customer':
-          await this.customerRepository.update(
-            { customerId: payload.sub },
-            { passwordHash },
-          );
+      switch (claimed.userType) {
+        case UserTypeDto.CUSTOMER:
+          await this.customerRepository.update({ customerId: account.id }, { passwordHash });
           break;
-        case 'provider':
-          await this.providerRepository.update(
-            { providerId: payload.sub },
-            { passwordHash },
-          );
+        case UserTypeDto.PROVIDER:
+          await this.providerRepository.update({ providerId: account.id }, { passwordHash });
           break;
-        case 'admin':
-          await this.adminRepository.update(
-            { id: payload.sub },
-            { passwordHash },
-          );
+        case UserTypeDto.ADMIN:
+          await this.adminRepository.update({ id: account.id }, { passwordHash });
           break;
-        default:
-          throw new BadRequestException('Invalid user type');
       }
     } catch (error) {
       throw new BadRequestException('Invalid or expired reset token');
+    }
+  }
+
+  private resetSecret(passwordHash: string | null | undefined): string {
+    return `${this.configService.get<string>('JWT_ACCESS_SECRET')}:password-reset:${passwordHash ?? ''}`;
+  }
+
+  // finds the account a reset is for, by email (request) or id (reset)
+  private async findResetAccount(
+    type: UserTypeDto,
+    by: { email?: string; id?: string },
+  ): Promise<{ id: string; name: string; passwordHash: string } | null> {
+    switch (type) {
+      case UserTypeDto.CUSTOMER: {
+        const c = await this.customerRepository.findOne({
+          where: by.email ? { email: by.email } : { customerId: by.id },
+        });
+        return c ? { id: c.customerId, name: c.name, passwordHash: c.passwordHash } : null;
+      }
+      case UserTypeDto.PROVIDER: {
+        const p = await this.providerRepository.findOne({
+          where: by.email ? { email: by.email } : { providerId: by.id },
+        });
+        return p ? { id: p.providerId, name: p.providerName, passwordHash: p.passwordHash } : null;
+      }
+      case UserTypeDto.ADMIN: {
+        const a = await this.adminRepository.findOne({
+          where: by.email ? { email: by.email } : { id: by.id },
+        });
+        return a ? { id: a.id, name: a.name, passwordHash: a.passwordHash } : null;
+      }
+      default:
+        return null;
     }
   }
 

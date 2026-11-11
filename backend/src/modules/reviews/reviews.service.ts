@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ForbiddenException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
@@ -12,6 +13,7 @@ import { Booking } from '../bookings/entities/booking.entity';
 import { ServiceProvider } from '../providers/entities/service-provider.entity';
 import { CreateReviewDto, UpdateReviewDto } from './dto';
 import { MailService } from '../mail/mail.service';
+import { AdminNotifierService } from '../mail/admin-notifier.service';
 
 // what GET /reviews sends back for each review on the public page
 export interface PublicReview {
@@ -36,6 +38,9 @@ export class ReviewsService {
     @InjectRepository(ServiceProvider)
     private providerRepository: Repository<ServiceProvider>,
     private mailService: MailService,
+    // emails the admin team about reviews waiting for approval. optional so
+    // the service still works where it isn't provided
+    @Optional() private adminNotifier?: AdminNotifierService,
   ) {}
 
   // any signed-in customer can review: either one of their own bookings, or
@@ -57,7 +62,14 @@ export class ReviewsService {
 
     // it isn't public yet, so the provider's rating and the email to the
     // provider both wait until an admin approves it (see approve below)
-    return this.reviewRepository.save(review);
+    const saved = await this.reviewRepository.save(review);
+
+    await this.adminNotifier?.notify(
+      'Review waiting for approval',
+      `A customer wrote a ${dto.rating}/5 review${bookingId ? '' : ' (no booking)'}. Approve or reject it on the Review approvals page.`,
+      dto.comment,
+    );
+    return saved;
   }
 
   // one of the customer's bookings, finished or not (for example a provider
@@ -144,7 +156,23 @@ export class ReviewsService {
     if (review.provider) {
       await this.mailService.sendNewReviewNotification(saved, review.provider);
     }
+    await this.emailReviewDecision(review, true);
     return saved;
+  }
+
+  // tells the customer what happened to their review
+  private async emailReviewDecision(review: Review, approved: boolean): Promise<void> {
+    if (!review.customer?.email) return;
+    try {
+      await this.mailService.sendReviewDecision(
+        review.customer.email,
+        review.customer.name,
+        review.provider?.providerName || '',
+        approved,
+      );
+    } catch (error) {
+      console.error('Failed to send review decision email:', error);
+    }
   }
 
   async reject(reviewId: string): Promise<Review> {
@@ -155,6 +183,7 @@ export class ReviewsService {
     const saved = await this.reviewRepository.save(review);
     // a rejected review no longer counts towards the rating
     if (wasApproved) await this.updateProviderRating(review.providerId);
+    await this.emailReviewDecision(review, false);
     return saved;
   }
 

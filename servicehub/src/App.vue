@@ -455,6 +455,9 @@ function normalizeBooking(booking) {
     location: booking.address || 'Rajshahi',
     customerLocation: booking.customer?.address || 'Rajshahi',
     preferredDate: booking.date,
+    // the backend stores 10:30 as 10:30:00. this was never mapped, so the
+    // tracking page always said "To be confirmed"
+    preferredTime: booking.time ? String(booking.time).slice(0, 5) : '',
     createdAt: booking.createdAt,
     budget: Number(booking.totalAmount || 0),
     customerId: booking.customerId,
@@ -769,8 +772,8 @@ async function signInWithGoogle({ credential }) {
 
 async function requestPasswordReset({ email }) {
   try {
-    // Temporary customer fallback while the API still expects userType.
-    await api.forgotPassword(email, 'customer')
+    // the backend finds the account by email, whatever kind it is
+    await api.forgotPassword(email)
     alert('If an account exists with this email, a password reset link has been sent.')
   } catch (err) {
     alert(err.message || 'Could not request password reset.')
@@ -941,6 +944,17 @@ async function toggleProviderService({ id, active }) {
     alert(err.message || 'Could not update service.')
   }
 }
+// the customer saved their details in Settings
+function onCustomerProfileUpdated(updated) {
+  signedInUser.value = { ...signedInUser.value, ...normalizeUser({ ...updated, customerId: signedInUser.value.id }, 'customer') }
+}
+
+// the customer closed their account: sign out and say so
+function onAccountClosed() {
+  signOut()
+  alert('Your account is closed and your details have been removed.')
+}
+
 async function updateProviderProfile(payload) {
   try {
     const res = await api.updateProviderProfile({
@@ -1060,7 +1074,7 @@ async function updateBlockRequest({ id, status }) {
       <CustomerDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'customer'"
         :customer="signedInUser" :requests="requests" :chat-approvals="chatApprovals"
         @request-another="goTo('services')" @view-tracking="openTracking" @request-chat="requestChat"
-        @refresh-chat="refreshChatData" />
+        @refresh-chat="refreshChatData" @profile-updated="onCustomerProfileUpdated" @account-closed="onAccountClosed" />
 
       <ProviderDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'provider'"
         :current-user="signedInUser" :requests="requests" :chat-approvals="chatApprovals"
