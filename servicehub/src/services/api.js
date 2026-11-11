@@ -284,16 +284,14 @@ export function loginWithGoogle(credential) {
   })
 }
 
+// userType is optional: the backend finds the account by email when it is left out
 export function forgotPassword(
   email,
   userType
 ) {
   return request('/auth/forgot-password', {
     method: 'POST',
-    body: {
-      email,
-      userType
-    }
+    body: userType ? { email, userType } : { email }
   })
 }
 

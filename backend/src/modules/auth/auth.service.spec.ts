@@ -45,6 +45,7 @@ describe('AuthService', () => {
     jwtService = {
       sign: jest.fn(() => 'fake-jwt-token'),
       verify: jest.fn(),
+      decode: jest.fn(),
     };
     configService = {
       get: jest.fn((key: string, fallback?: string) => fallback || 'test-secret'),
@@ -889,8 +890,10 @@ describe('AuthService', () => {
   describe('forgotPassword', () => {
     it('quietly does nothing when the email doesnt exist (no user enumeration)', async () => {
       customerRepo.findOne.mockResolvedValue(null);
+      providerRepo.findOne.mockResolvedValue(null);
+      adminRepo.findOne.mockResolvedValue(null);
 
-      await service.forgotPassword('ghost@example.com', UserTypeDto.CUSTOMER);
+      await service.forgotPassword('ghost@example.com');
 
       expect(mailService.sendPasswordResetEmail).not.toHaveBeenCalled();
     });
@@ -900,16 +903,35 @@ describe('AuthService', () => {
         customerId: 'cust-1',
         email: 'test@example.com',
         name: 'Test Customer',
+        passwordHash: 'hash-1',
       });
 
       await service.forgotPassword('test@example.com', UserTypeDto.CUSTOMER);
 
-      expect(mailService.sendPasswordResetEmail).toHaveBeenCalled();
+      expect(mailService.sendPasswordResetEmail).toHaveBeenCalledWith('test@example.com', 'Test Customer', 'fake-jwt-token');
+    });
+
+    it('finds a provider or admin by email when no account type is given', async () => {
+      customerRepo.findOne.mockResolvedValue(null);
+      providerRepo.findOne.mockResolvedValue(null);
+      adminRepo.findOne.mockResolvedValue({ id: 'adm-1', email: 'boss@example.com', name: 'Boss', passwordHash: 'hash-a' });
+
+      await service.forgotPassword('boss@example.com');
+
+      expect(mailService.sendPasswordResetEmail).toHaveBeenCalledWith('boss@example.com', 'Boss', 'fake-jwt-token');
+      const [payload, options] = jwtService.sign.mock.calls.at(-1);
+      expect(payload).toMatchObject({ sub: 'adm-1', userType: 'admin', purpose: 'reset' });
+      // signed with its own secret that includes the current password hash,
+      // not the plain login secret
+      expect(options.secret).toContain('password-reset');
+      expect(options.secret).toContain('hash-a');
     });
   });
 
   describe('resetPassword', () => {
     it('throws BadRequestException for a bad or expired token', async () => {
+      jwtService.decode.mockReturnValue({ sub: 'cust-1', userType: 'customer', purpose: 'reset' });
+      customerRepo.findOne.mockResolvedValue({ customerId: 'cust-1', passwordHash: 'hash-1' });
       jwtService.verify.mockImplementation(() => {
         throw new Error('jwt expired');
       });
@@ -917,17 +939,37 @@ describe('AuthService', () => {
       await expect(service.resetPassword('expired-token', 'NewPassword@1')).rejects.toThrow(
         BadRequestException,
       );
+      expect(customerRepo.update).not.toHaveBeenCalled();
     });
 
-    it('updates the customer password when the token is valid', async () => {
-      jwtService.verify.mockReturnValue({ sub: 'cust-1', userType: 'customer' });
+    it('refuses a normal login token (it has no reset purpose)', async () => {
+      jwtService.decode.mockReturnValue({ sub: 'cust-1', userType: 'customer' });
+
+      await expect(service.resetPassword('login-token', 'NewPassword@1')).rejects.toThrow(BadRequestException);
+      expect(jwtService.verify).not.toHaveBeenCalled();
+      expect(customerRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('updates the customer password when the token is valid, checking it against the current password', async () => {
+      jwtService.decode.mockReturnValue({ sub: 'cust-1', userType: 'customer', purpose: 'reset' });
+      customerRepo.findOne.mockResolvedValue({ customerId: 'cust-1', passwordHash: 'hash-1' });
+      jwtService.verify.mockReturnValue({ sub: 'cust-1', userType: 'customer', purpose: 'reset' });
 
       await service.resetPassword('good-token', 'NewPassword@1');
 
-      expect(customerRepo.update).toHaveBeenCalled();
-      // and it should update by the right customer id
+      expect(jwtService.verify.mock.calls[0][1].secret).toContain('hash-1');
       const [where] = customerRepo.update.mock.calls[0];
       expect(where).toEqual({ customerId: 'cust-1' });
+    });
+
+    it('resets a provider password too', async () => {
+      jwtService.decode.mockReturnValue({ sub: 'prov-1', userType: 'provider', purpose: 'reset' });
+      providerRepo.findOne.mockResolvedValue({ providerId: 'prov-1', passwordHash: 'hash-p' });
+      jwtService.verify.mockReturnValue({ sub: 'prov-1', userType: 'provider', purpose: 'reset' });
+
+      await service.resetPassword('good-token', 'NewPassword@1');
+
+      expect(providerRepo.update.mock.calls[0][0]).toEqual({ providerId: 'prov-1' });
     });
   });
 });

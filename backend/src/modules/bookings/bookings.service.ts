@@ -210,8 +210,9 @@ export class BookingsService {
   ): Promise<Booking> {
     const booking = await this.findById(bookingId);
 
-    // Verify this booking belongs to provider's service
-    if (booking.providerService.providerId !== providerId) {
+    // Verify this booking belongs to provider's service. A booking with no
+    // provider yet belongs to nobody, so refuse it instead of crashing
+    if (booking.providerService?.providerId !== providerId) {
       throw new ForbiddenException('You can only update your own bookings');
     }
 

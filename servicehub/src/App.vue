@@ -772,8 +772,8 @@ async function signInWithGoogle({ credential }) {
 
 async function requestPasswordReset({ email }) {
   try {
-    // Temporary customer fallback while the API still expects userType.
-    await api.forgotPassword(email, 'customer')
+    // the backend finds the account by email, whatever kind it is
+    await api.forgotPassword(email)
     alert('If an account exists with this email, a password reset link has been sent.')
   } catch (err) {
     alert(err.message || 'Could not request password reset.')

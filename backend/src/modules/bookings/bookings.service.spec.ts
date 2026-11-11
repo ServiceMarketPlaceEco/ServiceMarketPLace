@@ -230,6 +230,15 @@ describe('BookingsService', () => {
       expect(mailService.sendBookingStatusUpdate).toHaveBeenCalled();
     });
 
+    it('refuses (403, not a crash) when the booking has no provider yet', async () => {
+      bookingRepo.findOne.mockResolvedValue({ ...bookingWith(BookingStatus.PENDING), providerService: null });
+
+      await expect(
+        service.updateStatusByProvider('prov-1', 'b-1', 'confirmed'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(bookingRepo.save).not.toHaveBeenCalled();
+    });
+
     it('blocks skipping straight from pending to completed', async () => {
       // has to go pending -> confirmed -> in_progress -> completed
       bookingRepo.findOne.mockResolvedValue(bookingWith(BookingStatus.PENDING));

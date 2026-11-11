@@ -35,6 +35,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
+    // a password reset token is never a login, even if someone tries one
+    if ((payload as any).purpose) {
+      throw new UnauthorizedException('Invalid token');
+    }
     let user: Customer | ServiceProvider | Admin | null = null;
 
     switch (payload.userType) {

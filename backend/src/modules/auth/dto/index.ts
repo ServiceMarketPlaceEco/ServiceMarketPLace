@@ -148,9 +148,11 @@ export class ForgotPasswordDto {
   @IsEmail()
   email: string;
 
-  @ApiProperty({ enum: UserTypeDto, example: 'customer' })
+  // optional: without it the backend finds the account by email
+  @ApiPropertyOptional({ enum: UserTypeDto, example: 'customer' })
+  @IsOptional()
   @IsEnum(UserTypeDto)
-  userType: UserTypeDto;
+  userType?: UserTypeDto;
 }
 
 export class ResetPasswordDto {

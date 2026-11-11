@@ -99,7 +99,7 @@ describe('AuthService account recovery and role sign-in', () => {
       await service.forgotPassword('p@x.com', UserTypeDto.PROVIDER);
 
       expect(jwtService.sign).toHaveBeenCalledWith(
-        { sub: 'prov-1', email: 'p@x.com', userType: UserTypeDto.PROVIDER },
+        { sub: 'prov-1', email: 'p@x.com', userType: UserTypeDto.PROVIDER, purpose: 'reset' },
         expect.objectContaining({ expiresIn: '1h' }),
       );
       expect(mailService.sendPasswordResetEmail).toHaveBeenCalledWith('p@x.com', 'Rajshahi Cleaners', 'signed-token');
@@ -113,9 +113,8 @@ describe('AuthService account recovery and role sign-in', () => {
       expect(mailService.sendPasswordResetEmail).toHaveBeenCalledWith('a@x.com', 'Site Admin', 'signed-token');
     });
 
-    it('only looks in the table for the account type it was given', async () => {
-      // This is why the frontend sending "customer" for everyone means providers
-      // and admins never get a reset email (see the QA report).
+    it('only looks in the table for the account type it was given, when one is given', async () => {
+      // the app no longer sends a type; see the next test
       customerRepo.findOne.mockResolvedValue(null);
       providerRepo.findOne.mockResolvedValue({ providerId: 'prov-1', providerName: 'P' });
 
@@ -124,6 +123,15 @@ describe('AuthService account recovery and role sign-in', () => {
       expect(providerRepo.findOne).not.toHaveBeenCalled();
       expect(mailService.sendPasswordResetEmail).not.toHaveBeenCalled();
     });
+
+    it('finds a provider by email when no account type is given', async () => {
+      customerRepo.findOne.mockResolvedValue(null);
+      providerRepo.findOne.mockResolvedValue({ providerId: 'prov-1', providerName: 'P' });
+
+      await service.forgotPassword('p@x.com');
+
+      expect(mailService.sendPasswordResetEmail).toHaveBeenCalledWith('p@x.com', 'P', 'signed-token');
+    });
   });
 
   describe('resetPassword for each account type', () => {
@@ -131,7 +139,9 @@ describe('AuthService account recovery and role sign-in', () => {
       ['provider', () => providerRepo, { providerId: 'prov-1' }, 'prov-1'],
       ['admin', () => adminRepo, { id: 'admin-1' }, 'admin-1'],
     ])('saves a hashed new password for a %s', async (userType, repo, where, sub) => {
-      jwtService.verify.mockReturnValue({ sub, userType });
+      jwtService.decode = jest.fn().mockReturnValue({ sub, userType, purpose: 'reset' });
+      repo().findOne.mockResolvedValue({ ...where, passwordHash: 'old-hash' });
+      jwtService.verify.mockReturnValue({ sub, userType, purpose: 'reset' });
 
       await service.resetPassword('good-token', 'NewPass@2');
 
@@ -141,7 +151,8 @@ describe('AuthService account recovery and role sign-in', () => {
     });
 
     it('rejects a token with an unknown account type', async () => {
-      jwtService.verify.mockReturnValue({ sub: 'x', userType: 'hacker' });
+      jwtService.decode = jest.fn().mockReturnValue({ sub: 'x', userType: 'hacker', purpose: 'reset' });
+      jwtService.verify.mockReturnValue({ sub: 'x', userType: 'hacker', purpose: 'reset' });
 
       await expect(service.resetPassword('token', 'NewPass@2')).rejects.toThrow(BadRequestException);
       expect(customerRepo.update).not.toHaveBeenCalled();
