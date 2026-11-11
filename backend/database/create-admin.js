@@ -14,8 +14,9 @@
  * This is how the first admin is made on a live server: the production
  * database setup (`npm run db:setup -- --production`) creates no accounts,
  * and the seeded admin@servicehub.com / Admin@123 is for local development
- * only. The app has no screen for managing admins, so these commands are
- * the way to do it.
+ * only. After the first admin, the Admin accounts page in the admin
+ * dashboard can add and switch off admins too, and these commands are
+ * the way back in if every admin is locked out.
  *
  * For scripts, the answers can come from ADMIN_NAME, ADMIN_EMAIL,
  * ADMIN_PASSWORD and ADMIN_ROLE instead of the prompts. Prefer the prompts:

@@ -439,8 +439,11 @@ Only deploy commits that passed CI (the green tick on GitHub).
 
 ## 12. Admin accounts
 
-The app has no screen for managing admins, so it's done with these commands
-on the server, from `/opt/servicehub/app/backend`, as the `servicehub` user
+The first admin has to be made with a command on the server. After that, a
+super admin can add admins, switch them off or on, and change their own
+password on the **Admin accounts** page of the admin dashboard. The commands
+below still work, and are the way back in if every admin is locked out. Run
+them from `/opt/servicehub/app/backend`, as the `servicehub` user
 (`sudo -u servicehub npm run ...`). Each one asks for the admin's email.
 
 | Task | Command |

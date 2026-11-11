@@ -18,7 +18,8 @@ config uses them. Run `npm install` and the app commands inside `backend/` and
 **Documentation**
 
 - This README: a working copy on your own computer (below).
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): production deployment, the first admin account, backups and restore.
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): production deployment by hand, the first admin account, backups and restore.
+- [deploy/DEPLOY.md](deploy/DEPLOY.md): the same with Docker, in one command.
 - [backend/README.md](backend/README.md): API endpoints and schema.
 - [docs/HANDOVER.md](docs/HANDOVER.md): handover status against the client's reviews, and open questions.
 
@@ -105,11 +106,14 @@ it does not exist, and runs these scripts in order:
 | 3 | `backend/database/migrations/002_add_username_login.sql` | Username sign-in + the phone_verifications table |
 | 4 | `backend/database/migrations/003_add_service_image.sql` | `image_url` photo column on services |
 | 5 | `backend/database/migrations/004_add_phone_verification_attempts.sql` | `failed_attempts` on phone_verifications, so a code locks after 5 wrong guesses |
-| 6 | `backend/database/seeds/001_seed_data.sql` | General service categories |
-| 7 | `backend/database/seeds/002_rajshahi_services_seed.sql` | Rajshahi service catalog |
-| 8 | `backend/database/seeds/003_moderation_test_seed.sql` | Test accounts and reviews for the moderation workflow *(development only)* |
-| 9 | `backend/database/seeds/004_service_images_seed.sql` | Photos for the seeded services |
-| 10 | `backend/database/seeds/005_demo_accounts_seed.sql` | Default admin + a demo provider with prices *(development only)* |
+| 6 | `backend/database/migrations/005_add_chat.sql` | Chat approvals and messages between customers and providers |
+| 7 | `backend/database/migrations/006_add_review_approval.sql` | Approval status on reviews (pending, approved, rejected) |
+| 8 | `backend/database/migrations/007_reviews_without_booking.sql` | Lets a review be about a provider without a booking |
+| 9 | `backend/database/seeds/001_seed_data.sql` | General service categories |
+| 10 | `backend/database/seeds/002_rajshahi_services_seed.sql` | Rajshahi service catalog |
+| 11 | `backend/database/seeds/003_moderation_test_seed.sql` | Test accounts and reviews for the moderation workflow *(development only)* |
+| 12 | `backend/database/seeds/004_service_images_seed.sql` | Photos for the seeded services |
+| 13 | `backend/database/seeds/005_demo_accounts_seed.sql` | Default admin + a demo provider with prices *(development only)* |
 
 Expected output:
 
@@ -119,13 +123,16 @@ Running database/migrations/001_add_provider_location.sql
 Running database/migrations/002_add_username_login.sql
 Running database/migrations/003_add_service_image.sql
 Running database/migrations/004_add_phone_verification_attempts.sql
+Running database/migrations/005_add_chat.sql
+Running database/migrations/006_add_review_approval.sql
+Running database/migrations/007_reviews_without_booking.sql
 Running database/seeds/001_seed_data.sql
 Running database/seeds/002_rajshahi_services_seed.sql
 Running database/seeds/003_moderation_test_seed.sql
 Running database/seeds/004_service_images_seed.sql
 Running database/seeds/005_demo_accounts_seed.sql
 
-Done. Database `servicehub` has 11 tables.
+Done. Database `servicehub` has 13 tables.
 ```
 
 Seeds marked *development only* create accounts whose passwords are listed in
@@ -150,6 +157,9 @@ mysql -u root -p servicehub < database/migrations/001_add_provider_location.sql
 mysql -u root -p servicehub < database/migrations/002_add_username_login.sql
 mysql -u root -p servicehub < database/migrations/003_add_service_image.sql
 mysql -u root -p servicehub < database/migrations/004_add_phone_verification_attempts.sql
+mysql -u root -p servicehub < database/migrations/005_add_chat.sql
+mysql -u root -p servicehub < database/migrations/006_add_review_approval.sql
+mysql -u root -p servicehub < database/migrations/007_reviews_without_booking.sql
 mysql -u root -p servicehub < database/seeds/001_seed_data.sql
 mysql -u root -p servicehub < database/seeds/002_rajshahi_services_seed.sql
 mysql -u root -p servicehub < database/seeds/003_moderation_test_seed.sql
@@ -171,11 +181,14 @@ mysql -u root -p servicehub < database/seeds/005_demo_accounts_seed.sql
    3. `backend/database/migrations/002_add_username_login.sql`
    4. `backend/database/migrations/003_add_service_image.sql`
    5. `backend/database/migrations/004_add_phone_verification_attempts.sql`
-   6. `backend/database/seeds/001_seed_data.sql`
-   7. `backend/database/seeds/002_rajshahi_services_seed.sql`
-   8. `backend/database/seeds/003_moderation_test_seed.sql`
-   9. `backend/database/seeds/004_service_images_seed.sql`
-   10. `backend/database/seeds/005_demo_accounts_seed.sql`
+   6. `backend/database/migrations/005_add_chat.sql`
+   7. `backend/database/migrations/006_add_review_approval.sql`
+   8. `backend/database/migrations/007_reviews_without_booking.sql`
+   9. `backend/database/seeds/001_seed_data.sql`
+   10. `backend/database/seeds/002_rajshahi_services_seed.sql`
+   11. `backend/database/seeds/003_moderation_test_seed.sql`
+   12. `backend/database/seeds/004_service_images_seed.sql`
+   13. `backend/database/seeds/005_demo_accounts_seed.sql`
 
 </details>
 
@@ -237,6 +250,47 @@ the sign-in page shows "This user has not been signed up".
    - `servicehub/.env`: `VITE_GOOGLE_CLIENT_ID=<client id>`
 
 Without a client ID the button is shown disabled with a "not configured" note.
+
+## 9. Phone codes by SMS (Twilio)
+
+Customer signup sends a 6-digit code to the customer's phone. On your laptop you
+don't need anything: leave the `TWILIO_*` values blank and the code is printed in
+the backend terminal as `[phone-verification] code for ...: 123456`.
+
+To send real texts (needed on the live server):
+
+1. Create an account at [twilio.com](https://www.twilio.com) and get a phone number.
+2. From the Twilio Console, put these in `backend/.env` and restart the backend:
+   - `TWILIO_ACCOUNT_SID=` (starts with AC)
+   - `TWILIO_AUTH_TOKEN=`
+   - `TWILIO_FROM=` (your Twilio number, like +1...)
+3. `SMS_DEFAULT_COUNTRY_CODE` is added in front of local numbers (`+880` for
+   Bangladesh, `+61` if you are testing with an Australian number).
+
+A Twilio trial account can only text numbers you have verified in the Twilio
+Console, and the message starts with "Sent from your Twilio trial account".
+
+## 10. Email
+
+The backend emails customers when they sign up, reset a password, send a
+request, and when their booking is confirmed, started, finished or cancelled.
+Providers get an email when a review about them is approved.
+
+On your laptop leave the Mailtrap values in `backend/.env`: Mailtrap catches the
+emails so nobody real receives them. On the live server put a real SMTP
+provider in the `MAIL_*` settings (see `backend/.env.example` for examples).
+The live server checks the email login when it starts and logs
+`Email is ready` or the reason it failed.
+
+## 11. Putting it on a server (Docker)
+
+`docker-compose.yml` runs the database, the API and the website together on one
+server, with optional HTTPS. The steps are in [deploy/DEPLOY.md](deploy/DEPLOY.md).
+
+```bash
+cp .env.docker.example .env      # fill in the values
+docker compose up -d --build
+```
 
 ## Troubleshooting
 

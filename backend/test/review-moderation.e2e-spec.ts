@@ -70,6 +70,7 @@ describe('Review moderation endpoints (integration)', () => {
     // review repo one that returns a sensible average
     reviewRepo.createQueryBuilder.mockReturnValue({
       where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
       getRawOne: jest.fn().mockResolvedValue({ avgRating: '4.0', totalReviews: '2' }),
@@ -91,7 +92,7 @@ describe('Review moderation endpoints (integration)', () => {
         { provide: getRepositoryToken(ServiceProvider), useValue: providerRepo },
         {
           provide: MailService,
-          useValue: { sendReviewNotification: jest.fn() },
+          useValue: { sendReviewNotification: jest.fn(), sendNewReviewNotification: jest.fn() },
         },
       ],
     }).compile();
@@ -180,6 +181,77 @@ describe('Review moderation endpoints (integration)', () => {
         .post('/api/reviews/moderation/ghost/keep')
         .set('Authorization', `Bearer ${adminToken()}`)
         .expect(404);
+    });
+  });
+
+  // every new review waits here until an admin approves or rejects it
+  describe('review approval', () => {
+    const REVIEW_ID = '7d1f2c3a-1111-4222-8333-944455556666';
+
+    it('lists the reviews waiting for approval', async () => {
+      reviewRepo.find.mockResolvedValue([{ reviewId: REVIEW_ID, status: 'pending', rating: 2 }]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/reviews/moderation/pending')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .expect(200);
+
+      expect(res.body).toHaveLength(1);
+      expect(reviewRepo.find.mock.calls[0][0].where).toEqual({ status: 'pending' });
+    });
+
+    it('approves a review', async () => {
+      reviewRepo.findOne.mockResolvedValue({ reviewId: REVIEW_ID, providerId: 'prov-1', status: 'pending' });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/reviews/moderation/${REVIEW_ID}/approve`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .expect(200);
+
+      expect(res.body).toEqual({ reviewId: REVIEW_ID, status: 'approved' });
+      expect(providerRepo.update).toHaveBeenCalledWith('prov-1', { rating: 4, totalReviews: 2 });
+    });
+
+    it('rejects a review', async () => {
+      reviewRepo.findOne.mockResolvedValue({ reviewId: REVIEW_ID, providerId: 'prov-1', status: 'pending' });
+
+      const res = await request(app.getHttpServer())
+        .post(`/api/reviews/moderation/${REVIEW_ID}/reject`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .expect(200);
+
+      expect(res.body).toEqual({ reviewId: REVIEW_ID, status: 'rejected' });
+      expect(reviewRepo.remove).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 for a review that does not exist', async () => {
+      reviewRepo.findOne.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .post(`/api/reviews/moderation/${REVIEW_ID}/approve`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .expect(404);
+    });
+
+    it('keeping a flagged review that was pending also approves it', async () => {
+      reviewRepo.findOne.mockResolvedValue({ reviewId: REVIEW_ID, providerId: 'prov-1', status: 'pending' });
+
+      await request(app.getHttpServer())
+        .post(`/api/reviews/moderation/${REVIEW_ID}/keep`)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .expect(200);
+
+      expect(reviewRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'approved' }));
+    });
+
+    it('does not let a customer approve reviews', async () => {
+      customerRepo.findOne.mockResolvedValueOnce({ customerId: 'cust-1', isActive: true, isBlocked: false });
+
+      await request(app.getHttpServer())
+        .post(`/api/reviews/moderation/${REVIEW_ID}/approve`)
+        .set('Authorization', `Bearer ${customerToken()}`)
+        .expect(403);
+      expect(reviewRepo.save).not.toHaveBeenCalled();
     });
   });
 

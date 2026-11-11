@@ -1,26 +1,35 @@
 <script setup>
 // public reviews page + the "Write a review" form
 //
-// reviews are tied to a finished booking now. before this the form let
-// anyone (even guests) pick any service and type any name, but the backend
-// only accepts a review from a signed in customer for one of their own
-// completed bookings, so every submit failed (H6 in the qa report). it also
-// means every review on the page comes from someone who really used the
-// service, which is the whole point of the fake review checks on the admin side.
+// reviews are tied to one of the customer's own bookings. before this the
+// form let anyone (even guests) pick any service and type any name, so every
+// submit failed (H6 in the qa report).
+//
+// any signed-in customer can review: one of their bookings that has a
+// provider (finished or not, so a no-show can be reported too), or any
+// approved provider without a booking. every review waits for an admin to
+// approve it before it shows on this page, and "Your reviews" shows the
+// customer where each of theirs is up to.
 import { computed, reactive, ref } from 'vue'
+import { formatStatus } from '../../data/services'
 
 const props = defineProps({
   reviews: { type: Array, default: () => [] },
-  // finished bookings this customer hasnt reviewed yet (worked out in App.vue)
+  // bookings with a provider this customer hasnt reviewed yet (worked out in App.vue)
   reviewableBookings: { type: Array, default: () => [] },
+  // approved providers, for a review without a booking
+  reviewableProviders: { type: Array, default: () => [] },
+  // this customer's reviews with pending / approved / rejected status
+  myReviews: { type: Array, default: () => [] },
   signedInUser: { type: Object, default: null },
 })
 
 const emit = defineEmits(['submit-review', 'sign-in'])
 const showReviewForm = ref(false)
 
+// target is 'booking:<id>' or 'provider:<id>'
 const form = reactive({
-  bookingId: '',
+  target: '',
   rating: 5,
   comment: '',
 })
@@ -33,16 +42,42 @@ const averageRating = computed(() => {
   return (total / props.reviews.length).toFixed(1)
 })
 
-// what goes in the booking dropdown, eg "Home Cleaning · rajshahi cleaners · 2026-11-02"
+// what goes in the booking dropdown, eg "Home Cleaning · rajshahi cleaners · 2026-11-02 · Completed"
 function bookingLabel(booking) {
-  return [booking.serviceTitle, booking.providerName, booking.preferredDate]
+  return [booking.serviceTitle, booking.providerName, booking.preferredDate, formatStatus(booking.status)]
     .filter(Boolean)
     .join(' · ')
 }
 
+const REVIEW_STATUS = {
+  pending: 'Waiting for approval',
+  approved: 'Published',
+  rejected: 'Not approved'
+}
+
+function reviewStatusLabel(status) {
+  return REVIEW_STATUS[status] || status
+}
+
+// providers this customer can still review without a booking: one review
+// each, but a rejected one can be written again
+const otherProviders = computed(() => {
+  const done = new Set(
+    props.myReviews
+      .filter(review => !review.bookingId && review.status !== 'rejected')
+      .map(review => review.provider?.providerId)
+  )
+  return props.reviewableProviders
+    .filter(provider => !done.has(provider.providerId))
+    .slice()
+    .sort((a, b) => String(a.providerName).localeCompare(String(b.providerName)))
+})
+
+const nothingToReview = computed(() => !props.reviewableBookings.length && !otherProviders.value.length)
+
 function openForm() {
   // pick the booking straight away when theres only one to choose from
-  form.bookingId = props.reviewableBookings.length === 1 ? props.reviewableBookings[0].id : ''
+  form.target = props.reviewableBookings.length === 1 ? `booking:${props.reviewableBookings[0].id}` : ''
   showReviewForm.value = true
 }
 
@@ -52,15 +87,16 @@ function goToSignIn() {
 }
 
 function submitReview() {
-  if (!form.bookingId || !form.comment.trim()) return
+  if (!form.target || !form.comment.trim()) return
 
+  const [kind, id] = form.target.split(':')
   emit('submit-review', {
-    bookingId: form.bookingId,
+    ...(kind === 'booking' ? { bookingId: id } : { providerId: id }),
     rating: Number(form.rating),
     comment: form.comment.trim(),
   })
 
-  form.bookingId = ''
+  form.target = ''
   form.rating = 5
   form.comment = ''
   showReviewForm.value = false
@@ -73,7 +109,7 @@ function submitReview() {
       <div>
         <p class="eyebrow">ServiceHub reviews</p>
         <h2>Real experiences from the Rajshahi community</h2>
-        <p>Every review comes from a customer after a completed booking.</p>
+        <p>Every review comes from a customer's own booking and is checked by our team before it appears.</p>
       </div>
       <button class="primary" type="button" @click="openForm">
         Write a review
@@ -92,9 +128,21 @@ function submitReview() {
       </article>
       <article class="clean-card">
         <strong>Verified</strong>
-        <small>From completed bookings</small>
+        <small>Checked by our team</small>
       </article>
     </div>
+
+    <section v-if="isCustomer && myReviews.length" class="clean-card my-reviews" aria-labelledby="my-reviews-title">
+      <h3 id="my-reviews-title">Your reviews</h3>
+      <article v-for="review in myReviews" :key="review.reviewId" class="my-review-row">
+        <div>
+          <strong>{{ review.booking?.serviceName || 'General review' }}<template v-if="review.provider?.providerName"> ·
+              {{ review.provider.providerName }}</template></strong>
+          <small>{{ review.rating }}/5 · {{ review.comment }}</small>
+        </div>
+        <span class="status-pill" :class="`review-${review.status}`">{{ reviewStatusLabel(review.status) }}</span>
+      </article>
+    </section>
 
     <div class="review-list">
       <article v-for="review in reviews" :key="review.id" class="clean-card review-card">
@@ -124,7 +172,7 @@ function submitReview() {
           <button class="icon-close" type="button" aria-label="Close" @click="showReviewForm = false">×</button>
           <p class="eyebrow">Share your experience</p>
           <h2 id="review-form-title">Sign in to write a review</h2>
-          <p>Reviews come from customers who have finished a booking, so please sign in first.</p>
+          <p>Reviews come from customers about their own bookings, so please sign in first.</p>
           <div class="form-actions">
             <button class="secondary" type="button" @click="showReviewForm = false">Cancel</button>
             <button class="primary" type="button" @click="goToSignIn">Sign in</button>
@@ -137,20 +185,20 @@ function submitReview() {
           <button class="icon-close" type="button" aria-label="Close" @click="showReviewForm = false">×</button>
           <p class="eyebrow">Share your experience</p>
           <h2 id="review-form-title">Only customers can write reviews</h2>
-          <p>Reviews are left by customers after a completed booking.</p>
+          <p>Reviews are left by customers about their bookings.</p>
           <div class="form-actions">
             <button class="primary" type="button" @click="showReviewForm = false">OK</button>
           </div>
         </div>
 
-        <!-- customer, but nothing finished to review yet -->
-        <div v-else-if="!reviewableBookings.length" class="modal-card review-form review-notice" role="dialog"
+        <!-- customer, but no booking with a provider to review yet -->
+        <div v-else-if="nothingToReview" class="modal-card review-form review-notice" role="dialog"
           aria-modal="true" aria-labelledby="review-form-title">
           <button class="icon-close" type="button" aria-label="Close" @click="showReviewForm = false">×</button>
           <p class="eyebrow">Share your experience</p>
-          <h2 id="review-form-title">No finished bookings to review</h2>
-          <p>You can write a review once one of your bookings is completed. Bookings you have already reviewed
-            are not shown.</p>
+          <h2 id="review-form-title">Nothing to review right now</h2>
+          <p>You have already reviewed every provider and booking you can. Bookings and providers you have already
+            reviewed are not shown.</p>
           <div class="form-actions">
             <button class="primary" type="button" @click="showReviewForm = false">OK</button>
           </div>
@@ -171,12 +219,20 @@ function submitReview() {
           </div>
 
           <label>
-            Booking
-            <select v-model="form.bookingId" required>
-              <option disabled value="">Choose a finished booking</option>
-              <option v-for="booking in reviewableBookings" :key="booking.id" :value="booking.id">
-                {{ bookingLabel(booking) }}
-              </option>
+            Who are you reviewing?
+            <select v-model="form.target" required>
+              <option disabled value="">Choose a booking or a provider</option>
+              <optgroup v-if="reviewableBookings.length" label="Your bookings">
+                <option v-for="booking in reviewableBookings" :key="booking.id" :value="`booking:${booking.id}`">
+                  {{ bookingLabel(booking) }}
+                </option>
+              </optgroup>
+              <optgroup v-if="otherProviders.length" label="Any provider (no booking)">
+                <option v-for="provider in otherProviders" :key="provider.providerId"
+                  :value="`provider:${provider.providerId}`">
+                  {{ provider.providerName }}
+                </option>
+              </optgroup>
             </select>
           </label>
 
@@ -195,6 +251,8 @@ function submitReview() {
             Review
             <textarea v-model="form.comment" rows="5" required placeholder="Describe your experience..."></textarea>
           </label>
+
+          <p class="muted review-approval-note">An admin checks every review before it appears on the website.</p>
 
           <div class="form-actions">
             <button class="secondary" type="button" @click="showReviewForm = false">Cancel</button>

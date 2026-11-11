@@ -256,6 +256,12 @@ export function registerCustomer(payload) {
   })
 }
 
+// approved providers anyone can see (the backend never lists unapproved
+// ones). the reviews page uses it so a customer can review any provider
+export async function getApprovedProviders() {
+  return resultArray(await request('/providers'))
+}
+
 export function registerProvider(payload) {
   return request('/auth/register/provider', {
     method: 'POST',
@@ -524,7 +530,8 @@ export async function getPublicReviews() {
   return resultArray(result)
 }
 
-// only signed in customers can review, and only a completed booking.
+// only signed in customers can review, any of their bookings once a provider
+// is assigned. it is saved as pending until an admin approves it.
 // payload is { bookingId, rating, comment }. auth: true was missing before,
 // so even signed in customers got "Unauthorized" (H6 in the qa report)
 export function createReview(payload) {
@@ -668,6 +675,25 @@ export function updateReportStatus(
   )
 }
 
+// the signed in customer's reviews with pending / approved / rejected status
+export async function getMyReviews() {
+  return resultArray(await request('/reviews/mine', { auth: true }))
+}
+
+// ---------- Review approval (admin) ----------
+
+export async function getPendingReviews() {
+  return resultArray(await request('/reviews/moderation/pending', { auth: true }))
+}
+
+export function approveReview(reviewId) {
+  return request(`/reviews/moderation/${encodeURIComponent(reviewId)}/approve`, { method: 'POST', auth: true })
+}
+
+export function rejectReview(reviewId) {
+  return request(`/reviews/moderation/${encodeURIComponent(reviewId)}/reject`, { method: 'POST', auth: true })
+}
+
 // ---------- Review moderation ----------
 
 export function scanReviews() {
@@ -767,6 +793,29 @@ export function aiScreenAccount(account) {
       auth: true
     }
   )
+}
+
+// ---------- Admin accounts ----------
+
+export async function getAdmins() {
+  return resultArray(await request('/admins', { auth: true }))
+}
+
+// role is 'admin' or 'super_admin' (only a super admin can make another one)
+export function createAdmin({ name, email, password, role }) {
+  return request('/admins', { method: 'POST', body: { name, email, password, role }, auth: true })
+}
+
+export function deactivateAdmin(adminId) {
+  return request(`/admins/${encodeURIComponent(adminId)}/deactivate`, { method: 'POST', auth: true })
+}
+
+export function activateAdmin(adminId) {
+  return request(`/admins/${encodeURIComponent(adminId)}/activate`, { method: 'POST', auth: true })
+}
+
+export function changeMyAdminPassword(currentPassword, newPassword) {
+  return request('/admins/me/password', { method: 'POST', body: { currentPassword, newPassword }, auth: true })
 }
 
 // ---------- Chat approval ----------

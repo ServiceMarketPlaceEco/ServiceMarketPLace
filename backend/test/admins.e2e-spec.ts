@@ -8,6 +8,7 @@ import { INestApplication } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as request from 'supertest';
+import * as bcrypt from 'bcrypt';
 
 import { AdminsController } from '../src/modules/admins/admins.controller';
 import { AdminsService } from '../src/modules/admins/admins.service';
@@ -184,6 +185,93 @@ describe('Admin endpoints (integration)', () => {
       expect(res.body.totalCustomers).toBe(25);
       expect(res.body.totalProviders).toBe(8);
       expect(res.body.totalRevenue).toBe(12500.5);
+    });
+  });
+
+  // ---------- admin accounts ----------
+
+  describe('admin accounts', () => {
+    // the signed in admin and the accounts they manage, looked up by id
+    function signInAs(role: AdminRole, others: Record<string, any> = {}) {
+      const passwordHashPromise = bcrypt.hash('Admin@123', 4);
+      adminRepo.findOne.mockImplementation(async ({ where }: any) => {
+        if (where?.id === 'me') return { id: 'me', email: 'me@x.com', role, isActive: true, passwordHash: await passwordHashPromise };
+        if (where?.email) return null;
+        return others[where?.id] ?? null;
+      });
+      return signTestToken({ sub: 'me', email: 'me@x.com', userType: 'admin' });
+    }
+
+    it('changes your own password', async () => {
+      const token = signInAs(AdminRole.SUPER_ADMIN);
+
+      await request(app.getHttpServer())
+        .post('/api/admins/me/password')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ currentPassword: 'Admin@123', newPassword: 'Brand@New2026' })
+        .expect(200);
+
+      expect(adminRepo.save).toHaveBeenCalled();
+    });
+
+    it('refuses a weak new password', async () => {
+      const token = signInAs(AdminRole.SUPER_ADMIN);
+
+      await request(app.getHttpServer())
+        .post('/api/admins/me/password')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ currentPassword: 'Admin@123', newPassword: 'password' })
+        .expect(400);
+    });
+
+    it('refuses switching off your own account', async () => {
+      const token = signInAs(AdminRole.SUPER_ADMIN);
+      adminRepo.count.mockResolvedValue(3);
+
+      const res = await request(app.getHttpServer())
+        .post('/api/admins/me/deactivate')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      expect(res.body.message).toContain('your own account');
+    });
+
+    it('lets a super admin switch off the seeded admin when another super admin exists', async () => {
+      const token = signInAs(AdminRole.SUPER_ADMIN, { seeded: { id: 'seeded', role: AdminRole.SUPER_ADMIN, isActive: true } });
+      adminRepo.count.mockResolvedValue(2);
+      adminRepo.save.mockImplementation(async (a: any) => a);
+
+      const res = await request(app.getHttpServer())
+        .post('/api/admins/seeded/deactivate')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      expect(res.body.isActive).toBe(false);
+    });
+
+    it('does not let a normal admin create a super admin', async () => {
+      const token = signInAs(AdminRole.ADMIN);
+
+      await request(app.getHttpServer())
+        .post('/api/admins')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Boss', email: 'boss@x.com', password: 'Strong@Pass1', role: 'super_admin' })
+        .expect(403);
+      expect(adminRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('creates an admin without sending the password hash back', async () => {
+      const token = signInAs(AdminRole.SUPER_ADMIN);
+      adminRepo.save.mockImplementation(async (a: any) => ({ ...a, id: 'new-1' }));
+
+      const res = await request(app.getHttpServer())
+        .post('/api/admins')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Rahima', email: 'rahima@x.com', password: 'Strong@Pass1', role: 'super_admin' })
+        .expect(201);
+
+      expect(res.body.id).toBe('new-1');
+      expect(res.body.passwordHash).toBeUndefined();
     });
   });
 

@@ -79,30 +79,33 @@ describe('ReviewsPage', () => {
     expect(document.body.querySelector('textarea')).toBeNull()
   })
 
-  it('tells a customer with nothing finished that they have nothing to review yet', async () => {
+  it('tells a customer who has reviewed everything that there is nothing left to review', async () => {
     const wrapper = mountPage({ signedInUser: customer, reviewableBookings: [] })
     await openForm(wrapper)
 
-    expect(modal().textContent).toContain('No finished bookings to review')
+    expect(modal().textContent).toContain('Nothing to review right now')
     expect(document.body.querySelector('textarea')).toBeNull()
   })
 
-  it('lets a customer pick one of their finished bookings and sends just the booking, rating and comment', async () => {
+  it('lets a customer pick one of their bookings and sends just the booking, rating and comment', async () => {
     const wrapper = mountPage({
       signedInUser: customer,
-      reviewableBookings: [finishedBooking(), finishedBooking({ id: 'b-2', serviceTitle: 'AC Repair', providerName: 'Cool Air' })]
+      reviewableBookings: [
+        finishedBooking(),
+        finishedBooking({ id: 'b-2', serviceTitle: 'AC Repair', providerName: 'Cool Air', status: 'assigned-to-provider' })
+      ]
     })
     await openForm(wrapper)
 
     const select = document.body.querySelector('select')
     const options = [...select.options].map(o => o.textContent.trim())
     expect(options).toEqual([
-      'Choose a finished booking',
-      'Plumbing · Rahim Plumbing Services · 2026-10-01',
-      'AC Repair · Cool Air · 2026-10-01'
+      'Choose a booking or a provider',
+      'Plumbing · Rahim Plumbing Services · 2026-10-01 · Completed',
+      'AC Repair · Cool Air · 2026-10-01 · Assigned to provider'
     ])
 
-    select.value = 'b-2'
+    select.value = 'booking:b-2'
     select.dispatchEvent(new Event('change'))
     const rating = document.body.querySelectorAll('select')[1]
     rating.value = '4'
@@ -120,11 +123,82 @@ describe('ReviewsPage', () => {
     expect(modal()).toBeNull()
   })
 
+  it('shows the customer their own reviews and where each one is up to', async () => {
+    const wrapper = mountPage({
+      signedInUser: customer,
+      myReviews: [
+        { reviewId: 'r-1', status: 'pending', rating: 2, comment: 'never came', booking: { serviceName: 'Plumbing' } },
+        { reviewId: 'r-2', status: 'approved', rating: 5, comment: 'great', booking: { serviceName: 'AC Repair' } },
+        { reviewId: 'r-3', status: 'rejected', rating: 1, comment: 'x', booking: { serviceName: 'Cleaning' } }
+      ]
+    })
+
+    const text = wrapper.find('.my-reviews').text()
+    expect(text).toContain('Waiting for approval')
+    expect(text).toContain('Published')
+    expect(text).toContain('Not approved')
+  })
+
+  it('tells the customer an admin checks reviews before they appear', async () => {
+    const wrapper = mountPage({ signedInUser: customer, reviewableBookings: [finishedBooking()] })
+    await openForm(wrapper)
+
+    expect(modal().textContent).toContain('An admin checks every review before it appears')
+  })
+
   it('picks the booking for them when there is only one', async () => {
     const wrapper = mountPage({ signedInUser: customer, reviewableBookings: [finishedBooking()] })
     await openForm(wrapper)
 
-    expect(document.body.querySelector('select').value).toBe('b-1')
+    expect(document.body.querySelector('select').value).toBe('booking:b-1')
+  })
+
+  it('lets a customer review any approved provider without a booking', async () => {
+    const wrapper = mountPage({
+      signedInUser: customer,
+      reviewableProviders: [
+        { providerId: 'p-2', providerName: 'Rajshahi Cleaners' },
+        { providerId: 'p-1', providerName: 'Cool Air' }
+      ]
+    })
+    await openForm(wrapper)
+
+    const select = document.body.querySelector('select')
+    const group = select.querySelector('optgroup')
+    expect(group.label).toBe('Any provider (no booking)')
+    expect([...group.querySelectorAll('option')].map(o => o.textContent.trim())).toEqual(['Cool Air', 'Rajshahi Cleaners'])
+
+    select.value = 'provider:p-2'
+    select.dispatchEvent(new Event('change'))
+    const comment = document.body.querySelector('textarea')
+    comment.value = 'Cleaned my office, very thorough'
+    comment.dispatchEvent(new Event('input'))
+    document.body.querySelector('form').dispatchEvent(new Event('submit'))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.emitted('submit-review')).toEqual([[{ providerId: 'p-2', rating: 5, comment: 'Cleaned my office, very thorough' }]])
+  })
+
+  it('hides providers the customer already reviewed without a booking, unless it was rejected', async () => {
+    const wrapper = mountPage({
+      signedInUser: customer,
+      reviewableProviders: [
+        { providerId: 'p-1', providerName: 'Cool Air' },
+        { providerId: 'p-2', providerName: 'Rajshahi Cleaners' },
+        { providerId: 'p-3', providerName: 'Quick Fix' }
+      ],
+      myReviews: [
+        { reviewId: 'r-1', bookingId: null, status: 'pending', provider: { providerId: 'p-1' } },
+        { reviewId: 'r-2', bookingId: null, status: 'rejected', provider: { providerId: 'p-2' } },
+        { reviewId: 'r-3', bookingId: 'b-9', status: 'approved', provider: { providerId: 'p-3' } }
+      ]
+    })
+    await openForm(wrapper)
+
+    const names = [...document.body.querySelectorAll('select option')].map(o => o.textContent.trim())
+    expect(names).not.toContain('Cool Air')
+    expect(names).toContain('Rajshahi Cleaners')
+    expect(names).toContain('Quick Fix')
   })
 
   it('does not submit without a comment', async () => {

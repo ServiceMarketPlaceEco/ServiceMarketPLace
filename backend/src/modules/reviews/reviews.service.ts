@@ -6,9 +6,9 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Review } from './entities/review.entity';
-import { Booking, BookingStatus } from '../bookings/entities/booking.entity';
+import { IsNull, Not, Repository } from 'typeorm';
+import { Review, ReviewStatus } from './entities/review.entity';
+import { Booking } from '../bookings/entities/booking.entity';
 import { ServiceProvider } from '../providers/entities/service-provider.entity';
 import { CreateReviewDto, UpdateReviewDto } from './dto';
 import { MailService } from '../mail/mail.service';
@@ -21,7 +21,8 @@ export interface PublicReview {
   createdAt: Date;
   name: string;
   role: 'customer';
-  serviceTitle: string;
+  // null for a review about a provider without a booking
+  serviceTitle: string | null;
   providerName: string;
 }
 
@@ -37,10 +38,34 @@ export class ReviewsService {
     private mailService: MailService,
   ) {}
 
+  // any signed-in customer can review: either one of their own bookings, or
+  // any approved provider without a booking. every review is saved as
+  // pending, so nothing shows on the site until an admin approves it
   async create(customerId: string, dto: CreateReviewDto): Promise<Review> {
-    // Verify booking exists and belongs to customer
+    const { bookingId, providerId } = dto.bookingId
+      ? await this.reviewTargetFromBooking(customerId, dto.bookingId)
+      : await this.reviewTargetFromProvider(customerId, dto.providerId);
+
+    const review = this.reviewRepository.create({
+      bookingId,
+      customerId,
+      providerId,
+      rating: dto.rating,
+      comment: dto.comment,
+      status: ReviewStatus.PENDING,
+    });
+
+    // it isn't public yet, so the provider's rating and the email to the
+    // provider both wait until an admin approves it (see approve below)
+    return this.reviewRepository.save(review);
+  }
+
+  // one of the customer's bookings, finished or not (for example a provider
+  // who never turned up), as long as a provider was given the job.
+  // one review per booking
+  private async reviewTargetFromBooking(customerId: string, bookingId: string) {
     const booking = await this.bookingRepository.findOne({
-      where: { bookingId: dto.bookingId, customerId },
+      where: { bookingId, customerId },
       relations: ['providerService', 'providerService.provider'],
     });
 
@@ -48,39 +73,109 @@ export class ReviewsService {
       throw new NotFoundException('Booking not found');
     }
 
-    // Check booking is completed
-    if (booking.status !== BookingStatus.COMPLETED) {
-      throw new BadRequestException('Can only review completed bookings');
+    if (!booking.providerService) {
+      throw new BadRequestException('You can review this booking once a provider has been assigned');
     }
 
-    // Check if already reviewed
-    const existingReview = await this.reviewRepository.findOne({
-      where: { bookingId: dto.bookingId },
-    });
-
+    const existingReview = await this.reviewRepository.findOne({ where: { bookingId } });
     if (existingReview) {
       throw new ConflictException('You have already reviewed this booking');
     }
 
-    const providerId = booking.providerService.providerId;
+    return { bookingId, providerId: booking.providerService.providerId };
+  }
 
-    const review = this.reviewRepository.create({
-      bookingId: dto.bookingId,
-      customerId,
-      providerId,
-      rating: dto.rating,
-      comment: dto.comment,
+  // a provider the customer hasn't booked through the site. only approved,
+  // active providers can be reviewed, and one review per customer per
+  // provider, so nobody can pile reviews onto the same provider. a rejected
+  // review doesn't count, so the customer can try again
+  private async reviewTargetFromProvider(customerId: string, providerId?: string) {
+    if (!providerId) {
+      throw new BadRequestException('Choose a booking or a provider to review');
+    }
+
+    const provider = await this.providerRepository.findOne({
+      where: { providerId, isVerified: true, isActive: true, isBlocked: false },
     });
+    if (!provider) {
+      throw new NotFoundException('Provider not found');
+    }
 
-    const savedReview = await this.reviewRepository.save(review);
+    const existingReview = await this.reviewRepository.findOne({
+      where: { customerId, providerId, bookingId: IsNull(), status: Not(ReviewStatus.REJECTED) },
+    });
+    if (existingReview) {
+      throw new ConflictException('You have already reviewed this provider');
+    }
 
-    // Update provider's average rating
-    await this.updateProviderRating(providerId);
+    return { bookingId: null, providerId };
+  }
 
-    // Send review notification to provider
-    await this.mailService.sendNewReviewNotification(savedReview, booking.providerService.provider);
+  // ---------- admin approval ----------
 
-    return savedReview;
+  // the queue on the admin Reviews page, oldest first so nothing waits forever
+  async findPending(): Promise<Review[]> {
+    return this.reviewRepository.find({
+      where: { status: ReviewStatus.PENDING },
+      relations: ['customer', 'provider', 'booking'],
+      order: { createdAt: 'ASC' },
+      select: {
+        reviewId: true,
+        bookingId: true,
+        rating: true,
+        comment: true,
+        status: true,
+        createdAt: true,
+        customer: { customerId: true, name: true },
+        provider: { providerId: true, providerName: true },
+        booking: { bookingId: true, serviceName: true, status: true, date: true },
+      },
+    });
+  }
+
+  async approve(reviewId: string): Promise<Review> {
+    const review = await this.findById(reviewId);
+    review.status = ReviewStatus.APPROVED;
+    review.moderatedAt = new Date();
+    const saved = await this.reviewRepository.save(review);
+
+    await this.updateProviderRating(review.providerId);
+    // now that it's public, let the provider know
+    if (review.provider) {
+      await this.mailService.sendNewReviewNotification(saved, review.provider);
+    }
+    return saved;
+  }
+
+  async reject(reviewId: string): Promise<Review> {
+    const review = await this.findById(reviewId);
+    const wasApproved = review.status === ReviewStatus.APPROVED;
+    review.status = ReviewStatus.REJECTED;
+    review.moderatedAt = new Date();
+    const saved = await this.reviewRepository.save(review);
+    // a rejected review no longer counts towards the rating
+    if (wasApproved) await this.updateProviderRating(review.providerId);
+    return saved;
+  }
+
+  // the customer's own reviews with their status, so they can see which are
+  // still waiting for approval
+  async findMine(customerId: string): Promise<Review[]> {
+    return this.reviewRepository.find({
+      where: { customerId },
+      relations: ['provider', 'booking'],
+      order: { createdAt: 'DESC' },
+      select: {
+        reviewId: true,
+        bookingId: true,
+        rating: true,
+        comment: true,
+        status: true,
+        createdAt: true,
+        provider: { providerId: true, providerName: true },
+        booking: { bookingId: true, serviceName: true },
+      },
+    });
   }
 
   // the public reviews page. before this there was no GET /reviews at all, so
@@ -94,6 +189,7 @@ export class ReviewsService {
   async findPublic(limit = 50): Promise<PublicReview[]> {
     const reviews = await this.reviewRepository.find({
       where: {
+        status: ReviewStatus.APPROVED,
         provider: { isVerified: true, isBlocked: false },
         customer: { isBlocked: false },
       },
@@ -110,24 +206,26 @@ export class ReviewsService {
       name: review.customer?.name || 'ServiceHub customer',
       // only customers can write reviews (CustomerGuard on POST /reviews)
       role: 'customer',
-      serviceTitle: review.booking?.providerService?.service?.serviceName || 'Service',
+      // null for a review about a provider without a booking
+      serviceTitle: review.booking?.providerService?.service?.serviceName || null,
       providerName: review.provider?.providerName || '',
     }));
   }
 
   // which of this customers bookings already have a review. the reviews page
-  // uses it so the form only offers finished bookings they havent reviewed yet
+  // uses it so the form only offers bookings they havent reviewed yet
+  // (reviews about a provider without a booking have no booking id)
   async findReviewedBookingIds(customerId: string): Promise<string[]> {
     const reviews = await this.reviewRepository.find({
-      where: { customerId },
+      where: { customerId, bookingId: Not(IsNull()) },
       select: { bookingId: true },
     });
-    return reviews.map((review) => review.bookingId);
+    return reviews.map((review) => review.bookingId).filter((id): id is string => Boolean(id));
   }
 
   async findByProvider(providerId: string): Promise<Review[]> {
     return this.reviewRepository.find({
-      where: { providerId },
+      where: { providerId, status: ReviewStatus.APPROVED },
       relations: ['customer', 'booking', 'booking.providerService', 'booking.providerService.service'],
       order: { createdAt: 'DESC' },
       select: {
@@ -170,6 +268,9 @@ export class ReviewsService {
     if (dto.comment !== undefined) {
       review.comment = dto.comment;
     }
+    // an edited review is checked again before it shows
+    review.status = ReviewStatus.PENDING;
+    review.moderatedAt = null;
 
     const updatedReview = await this.reviewRepository.save(review);
 
@@ -197,6 +298,7 @@ export class ReviewsService {
     const result = await this.reviewRepository
       .createQueryBuilder('review')
       .where('review.providerId = :providerId', { providerId })
+      .andWhere('review.status = :approved', { approved: ReviewStatus.APPROVED })
       .select('AVG(review.rating)', 'avgRating')
       .addSelect('COUNT(review.reviewId)', 'totalReviews')
       .getRawOne();

@@ -19,6 +19,7 @@ import FooterSection from './components/User/FooterSection.vue'
 import AIChatbot from './components/AI/AIChatbot.vue'
 import LandingHighlights from './components/User/LandingHighlights.vue'
 import ReviewsPage from './components/User/ReviewsPage.vue'
+import LegalPage from './components/User/LegalPage.vue'
 
 // Backend service icons can be converted to readable category labels when a
 // separate category field is not returned.
@@ -78,6 +79,10 @@ const providerServices = ref([])
 const providerReviews = ref([])
 // booking ids the signed in customer has already reviewed (see ReviewsPage)
 const reviewedBookingIds = ref([])
+// the signed in customer's own reviews with their approval status
+const myReviews = ref([])
+// approved providers, so a customer can review one they haven't booked here
+const reviewableProviders = ref([])
 
 // Customer phone verification state. The pending registration is kept only in
 // memory until the code is confirmed, so its password is never stored locally.
@@ -301,7 +306,9 @@ function goTo(page) {
     'services',
     'request',
     'dashboard',
-    'tracking'
+    'tracking',
+    'privacy',
+    'terms'
   ]
 
   if (!validPages.includes(targetPage)) {
@@ -392,7 +399,8 @@ async function loadPublicReviews() {
       name: review.username || review.name || review.customer?.name || 'ServiceHub user',
       role: review.userType || review.role || 'guest',
       serviceId: review.serviceId,
-      serviceTitle: review.serviceTitle || review.service?.serviceName || 'Service',
+      // reviews about a provider without a booking have no service
+      serviceTitle: review.serviceTitle || review.service?.serviceName || 'General review',
       providerName: review.providerName || '',
       rating: Number(review.rating || 0),
       comment: review.comment || '',
@@ -477,6 +485,8 @@ async function refreshBookings() {
       // if this one fails the form just offers every finished booking, and the
       // backend still stops a second review with "already reviewed"
       reviewedBookingIds.value = await api.getMyReviewedBookingIds().catch(() => [])
+      myReviews.value = await api.getMyReviews().catch(() => [])
+      reviewableProviders.value = await api.getApprovedProviders().catch(() => [])
     }
     else if (signedInUser.value.role === 'provider') raw = await api.getProviderBookings()
     else raw = await api.getAllBookings()
@@ -789,27 +799,33 @@ function openRequest(service) {
   currentPage.value = 'request'
 }
 
-// a review is always about one finished booking. the backend works out the
-// provider from the booking, so we only send what the customer chose
+// a review is always about one of the customer's bookings. the backend works
+// out the provider from the booking, so we only send what the customer chose.
+// it is saved as pending and only shows publicly once an admin approves it
+// any signed-in customer can review: one of their bookings (bookingId), or a
+// provider they haven't booked here (providerId). either way it waits for an
+// admin to approve it before it shows
 async function submitReview(review) {
   try {
     await api.createReview({
-      bookingId: review.bookingId,
+      ...(review.bookingId ? { bookingId: review.bookingId } : { providerId: review.providerId }),
       rating: Number(review.rating),
       comment: review.comment
     })
-    reviewedBookingIds.value = [...reviewedBookingIds.value, review.bookingId]
-    await loadPublicReviews()
+    if (review.bookingId) reviewedBookingIds.value = [...reviewedBookingIds.value, review.bookingId]
+    myReviews.value = await api.getMyReviews().catch(() => myReviews.value)
+    alert('Thank you! Your review will appear once an admin has approved it.')
   } catch (err) {
     alert(err.message || 'Could not submit review.')
   }
 }
 
-// finished bookings the customer can still review
+// any booking with a provider assigned, finished or not (for example a
+// provider who never turned up), that the customer hasn't reviewed yet
 const reviewableBookings = computed(() =>
   signedInUser.value?.role === 'customer'
     ? requests.value.filter(request =>
-      request.status === 'completed' && !reviewedBookingIds.value.includes(request.id))
+      request.providerServiceId && !reviewedBookingIds.value.includes(request.id))
     : []
 )
 
@@ -1027,8 +1043,10 @@ async function updateBlockRequest({ id, status }) {
         @request-service="openRequest" />
 
       <HowItWorksPage v-else-if="currentPage === 'how'" />
+      <LegalPage v-else-if="currentPage === 'privacy' || currentPage === 'terms'" :page="currentPage" />
       <ReviewsPage v-else-if="currentPage === 'reviews'" :reviews="reviews"
-        :reviewable-bookings="reviewableBookings" :signed-in-user="signedInUser"
+        :reviewable-bookings="reviewableBookings" :reviewable-providers="reviewableProviders" :my-reviews="myReviews"
+        :signed-in-user="signedInUser"
         @submit-review="submitReview" @sign-in="goTo('signin')" />
       <SignInPage v-else-if="currentPage === 'signin'" :google-error="googleSignInError" @sign-in="signIn"
         @google-sign-in="signInWithGoogle" @go-register="goTo('register')" @forgot-password="requestPasswordReset"
@@ -1053,7 +1071,8 @@ async function updateBlockRequest({ id, status }) {
         @toggle-service="toggleProviderService" @update-profile="updateProviderProfile"
         @change-password="changeProviderPassword" />
 
-      <AdminDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'admin'" :accounts="accounts"
+      <AdminDashboard v-else-if="currentPage === 'dashboard' && signedInUser?.role === 'admin'" :current-user="signedInUser"
+        :accounts="accounts"
         :requests="requests" :chat-approvals="chatApprovals" :block-requests="blockRequests" :theme="theme"
         @toggle-theme="toggleTheme" @sign-out="signOut" @go-home="goTo('home')" @approve-provider="approveProvider"
         @reject-provider="rejectProvider" @activate-provider="activateProvider" @block-customer="blockCustomer"

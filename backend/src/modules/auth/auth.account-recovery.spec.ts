@@ -20,6 +20,7 @@ const mockRepo = () => ({
 
 describe('AuthService account recovery and role sign-in', () => {
   let service: AuthService;
+  let smsService: { isConfigured: jest.Mock; send: jest.Mock };
   let customerRepo: any;
   let providerRepo: any;
   let adminRepo: any;
@@ -38,6 +39,7 @@ describe('AuthService account recovery and role sign-in', () => {
     mailService = { sendPasswordResetEmail: jest.fn() };
     const configService = { get: jest.fn((key: string, fallback?: string) => fallback || 'test-secret') };
 
+    smsService = { isConfigured: jest.fn().mockReturnValue(false), send: jest.fn() };
     service = new AuthService(
       customerRepo,
       providerRepo,
@@ -47,6 +49,7 @@ describe('AuthService account recovery and role sign-in', () => {
       jwtService,
       configService as any,
       mailService,
+      smsService as any,
     );
   });
 

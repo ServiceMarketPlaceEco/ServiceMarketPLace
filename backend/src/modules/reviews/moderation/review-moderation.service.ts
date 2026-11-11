@@ -11,7 +11,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Review } from '../entities/review.entity';
+import { Review, ReviewStatus } from '../entities/review.entity';
 import { Customer } from '../../customers/entities/customer.entity';
 import { Booking, BookingStatus } from '../../bookings/entities/booking.entity';
 import { ReviewsService } from '../reviews.service';
@@ -57,12 +57,15 @@ export class ReviewModerationService {
   }
 
   // admin looked at a flagged review and decided its actually genuine.
-  // we dont delete anything - just confirm it exists and report it kept.
-  // (once you add a `status` column to reviews, set it to 'approved' here.)
+  // keeping it also approves it, so a flagged review that was still waiting
+  // for approval goes live too
   async keepReview(reviewId: string): Promise<{ reviewId: string; kept: boolean }> {
     const review = await this.reviewRepository.findOne({ where: { reviewId } });
     if (!review) {
       throw new NotFoundException('Review not found');
+    }
+    if (review.status !== ReviewStatus.APPROVED) {
+      await this.reviewsService.approve(reviewId);
     }
     return { reviewId, kept: true };
   }

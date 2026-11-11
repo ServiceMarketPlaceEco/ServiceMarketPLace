@@ -471,3 +471,37 @@ test('30. admin can set a service photo from the dashboard', async ({ page }) =>
   await page.getByRole('row', { name: /AC Repair/ }).getByRole('button', { name: 'Save' }).click()
   await expect.poll(() => sent?.body.imageUrl).toBeNull()
 })
+
+// ---------- review approval ----------
+
+test('31. the admin can approve a review waiting for approval', async ({ page }) => {
+  await mockAdminApi(page)
+  await page.route('**/api/auth/login', route => route.fulfill({ json: MOCK_ADMIN_LOGIN }))
+  let approved = ''
+  await page.route('**/api/reviews/moderation/pending', route => route.fulfill({
+    json: approved ? [] : [{
+      reviewId: 'rev-1',
+      rating: 2,
+      comment: 'Arrived an hour late',
+      createdAt: '2026-10-29T03:00:00.000Z',
+      customer: { name: 'Test Customer' },
+      provider: { providerName: 'Rajshahi Cleaners' },
+      booking: { serviceName: 'Home Cleaning', status: 'confirmed' }
+    }]
+  }))
+  await page.route('**/api/reviews/moderation/rev-1/approve', route => {
+    approved = 'rev-1'
+    return route.fulfill({ json: { reviewId: 'rev-1', status: 'approved' } })
+  })
+
+  await signInAs(page, 'admin@servicehub.local')
+
+  await page.getByRole('button', { name: /Review\s+approvals/ }).click()
+  const row = page.locator('.review-row', { hasText: 'Arrived an hour late' })
+  // shows the job was never finished, so the admin can judge the review
+  await expect(row).toContainText('Booking not started')
+  await row.getByRole('button', { name: 'Approve' }).click()
+
+  await expect(page.locator('.review-row', { hasText: 'Arrived an hour late' })).toHaveCount(0)
+  expect(approved).toBe('rev-1')
+})

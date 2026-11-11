@@ -48,8 +48,8 @@ describe('BookingsService', () => {
       expect(result.status).toBe(BookingStatus.PENDING);
       // no provider picked yet so no amount either
       expect(result.totalAmount).toBeNull();
-      // no provider means no confirmation email yet
-      expect(mailService.sendBookingConfirmation).not.toHaveBeenCalled();
+      // the customer still gets a "we received your request" email
+      expect(mailService.sendBookingConfirmation).toHaveBeenCalledWith(expect.anything(), null, null);
     });
 
     it('creates a booking against a real provider service and grabs the price', async () => {

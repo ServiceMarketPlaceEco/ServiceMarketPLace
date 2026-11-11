@@ -128,35 +128,121 @@ describe('MailService', () => {
     expect(console.error).toHaveBeenCalledWith('Error sending email:', expect.any(Error));
   });
 
-  // These booking and payment emails are not built yet: they only write a log
-  // line. The tests pin that down so it is obvious when real emails are added.
-  describe('booking and payment notifications (log only for now)', () => {
-    const booking = { bookingId: 'BK-1' } as any;
+  // booking emails go to the customer on the booking
+  describe('booking emails', () => {
+    const booking = (overrides: any = {}) =>
+      ({
+        bookingId: 'BK-1',
+        serviceName: 'Plumbing',
+        date: '2026-11-12',
+        time: '10:30:00',
+        customer: { name: 'Nusrat', email: 'nusrat@example.com' },
+        providerService: { provider: { providerName: 'Karim Uddin' } },
+        ...overrides,
+      }) as any;
 
-    it('logs a booking confirmation without sending an email', async () => {
-      await service.sendBookingConfirmation(booking, {} as any, {} as any);
-      expect(console.log).toHaveBeenCalledWith('Booking confirmation would be sent for booking BK-1');
-      expect(sendMail).not.toHaveBeenCalled();
+    it('tells the customer their request arrived', async () => {
+      await service.sendBookingConfirmation(booking(), null, null);
+
+      expect(sentEmail().to).toBe('nusrat@example.com');
+      expect(sentEmail().subject).toBe('We received your ServiceHub request');
+      expect(sentEmail().html).toContain('Plumbing');
+      expect(sentEmail().html).toContain('2026-11-12 at 10:30');
     });
 
     it.each([
-      [BookingStatus.PENDING, 'Your booking is pending confirmation.'],
-      [BookingStatus.CONFIRMED, 'Great news! Your booking has been confirmed.'],
-      [BookingStatus.IN_PROGRESS, 'Your service is now in progress.'],
-      [BookingStatus.COMPLETED, 'Your service has been completed. Please leave a review!'],
-      [BookingStatus.CANCELLED, 'Your booking has been cancelled.'],
-    ])('logs the right status message for %s', async (status, message) => {
-      await service.sendBookingStatusUpdate(booking, status);
-      expect(console.log).toHaveBeenCalledWith(`Booking status update: BK-1 - ${message}`);
+      [BookingStatus.CONFIRMED, 'Your ServiceHub booking is confirmed', 'Great news! Your booking has been confirmed.'],
+      [BookingStatus.IN_PROGRESS, 'Your ServiceHub job has started', 'Your service is now in progress.'],
+      [BookingStatus.COMPLETED, 'Your ServiceHub job is complete', 'Your service has been completed. Please leave a review!'],
+      [BookingStatus.CANCELLED, 'Your ServiceHub booking was cancelled', 'Your booking has been cancelled.'],
+    ])('emails the customer when the booking becomes %s', async (status, subject, message) => {
+      await service.sendBookingStatusUpdate(booking(), status);
+
+      expect(sentEmail().subject).toBe(subject);
+      expect(sentEmail().html).toContain(message);
+    });
+
+    it('names the provider once one is assigned', async () => {
+      await service.sendBookingStatusUpdate(booking(), BookingStatus.CONFIRMED);
+
+      expect(sentEmail().html).toContain('<strong>Karim Uddin</strong>');
+    });
+
+    it('sends a cancellation as a cancelled status email', async () => {
+      await service.sendBookingCancellation(booking());
+
+      expect(sentEmail().subject).toBe('Your ServiceHub booking was cancelled');
+    });
+
+    it('skips customers without an email, or with the made-up .local one', async () => {
+      await service.sendBookingConfirmation(booking({ customer: undefined }));
+      await service.sendBookingStatusUpdate(booking({ customer: { name: 'A', email: 'a.b@servicehub.local' } }), BookingStatus.CONFIRMED);
+
       expect(sendMail).not.toHaveBeenCalled();
     });
 
-    it('logs a cancellation and a payment confirmation', async () => {
-      await service.sendBookingCancellation(booking);
-      await service.sendPaymentConfirmation({ paymentId: 'PAY-1' } as any, booking);
-      expect(console.log).toHaveBeenCalledWith('Booking cancellation email would be sent for booking BK-1');
+    it('does not let text from users add HTML to an email', async () => {
+      await service.sendBookingConfirmation(
+        booking({ serviceName: '<a href="http://evil.test">Click</a>', customer: { name: '<b>x</b>', email: 'n@example.com' } }),
+      );
+
+      expect(sentEmail().html).not.toContain('<a href="http://evil.test">');
+      expect(sentEmail().html).toContain('&lt;a href=&quot;http://evil.test&quot;&gt;');
+      expect(sentEmail().html).toContain('Hello &lt;b&gt;x&lt;/b&gt;');
+    });
+
+    it('still only logs the payment confirmation (payments are simulated)', async () => {
+      await service.sendPaymentConfirmation({ paymentId: 'PAY-1' } as any, booking());
+
       expect(console.log).toHaveBeenCalledWith('Payment confirmation would be sent for payment PAY-1');
       expect(sendMail).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('real email providers', () => {
+    it('uses TLS from the start on port 465', () => {
+      createTransport.mockClear();
+      new MailService(config({ MAIL_PORT: 465 }));
+      expect(createTransport).toHaveBeenCalledWith(expect.objectContaining({ port: 465, secure: true }));
+    });
+
+    it('can be forced to TLS with MAIL_SECURE=true', () => {
+      createTransport.mockClear();
+      new MailService(config({ MAIL_SECURE: 'true' }));
+      expect(createTransport).toHaveBeenCalledWith(expect.objectContaining({ secure: true }));
+    });
+
+    it('checks the email login at startup on the live server', async () => {
+      const verify = jest.fn().mockResolvedValue(true);
+      createTransport.mockReturnValueOnce({ sendMail, verify } as any);
+      const live = new MailService(config({ NODE_ENV: 'production', MAIL_HOST: 'smtp-relay.brevo.com' }));
+      jest.spyOn((live as any).logger, 'log').mockImplementation(() => undefined);
+
+      await live.onModuleInit();
+
+      expect(verify).toHaveBeenCalled();
+    });
+
+    it('warns at startup when the live server still uses Mailtrap', async () => {
+      const verify = jest.fn();
+      createTransport.mockReturnValueOnce({ sendMail, verify } as any);
+      const live = new MailService(config({ NODE_ENV: 'production', MAIL_HOST: 'smtp.mailtrap.io' }));
+      const warn = jest.spyOn((live as any).logger, 'warn').mockImplementation(() => undefined);
+
+      await live.onModuleInit();
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('not a real email provider'));
+      expect(verify).not.toHaveBeenCalled();
+    });
+
+    it('does not check anything on a laptop', async () => {
+      const verify = jest.fn();
+      createTransport.mockReturnValueOnce({ sendMail, verify } as any);
+      const local = new MailService(config({ NODE_ENV: 'development' }));
+
+      await local.onModuleInit();
+
+      expect(verify).not.toHaveBeenCalled();
     });
   });
 });

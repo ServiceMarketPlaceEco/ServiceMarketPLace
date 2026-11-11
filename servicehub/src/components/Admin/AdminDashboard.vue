@@ -1,9 +1,11 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { formatStatus, serviceImageSrc } from '../../data/services'
 import * as api from '../../services/api'
+import AdminAccounts from './AdminAccounts.vue'
 
 const props = defineProps({
+  currentUser: { type: Object, default: null },
   accounts: { type: Array, default: () => [] },
   requests: { type: Array, default: () => [] },
   chatApprovals: { type: Array, default: () => [] },
@@ -59,7 +61,57 @@ async function loadCatalogServices() {
   }
 }
 
-watch(activeView, view => { if (view === 'services') loadCatalogServices() })
+watch(activeView, view => {
+  if (view === 'services') loadCatalogServices()
+  if (view === 'approvals') loadPendingReviews()
+})
+
+// ---------- Review approvals ----------
+// every new review waits here until an admin approves or rejects it
+const pendingReviews = ref([])
+const pendingLoading = ref(false)
+const pendingError = ref('')
+const pendingBusy = ref({})
+
+async function loadPendingReviews() {
+  pendingLoading.value = true
+  pendingError.value = ''
+  try {
+    pendingReviews.value = await api.getPendingReviews()
+  } catch (err) {
+    pendingError.value = err.message || 'Could not load the reviews waiting for approval'
+  } finally {
+    pendingLoading.value = false
+  }
+}
+
+async function decideReview(review, decision) {
+  pendingBusy.value = { ...pendingBusy.value, [review.reviewId]: true }
+  pendingError.value = ''
+  try {
+    if (decision === 'approve') await api.approveReview(review.reviewId)
+    else await api.rejectReview(review.reviewId)
+    pendingReviews.value = pendingReviews.value.filter(r => r.reviewId !== review.reviewId)
+  } catch (err) {
+    pendingError.value = err.message || 'Could not save your decision. Please try again.'
+  } finally {
+    pendingBusy.value = { ...pendingBusy.value, [review.reviewId]: false }
+  }
+}
+
+// a review can be about a booking (any state) or about a provider with no booking
+function bookingStateLabel(review) {
+  if (!review.booking) return 'No booking'
+  return {
+    pending: 'Booking not assigned',
+    confirmed: 'Booking not started',
+    in_progress: 'Booking in progress',
+    completed: 'Booking completed',
+    cancelled: 'Booking cancelled'
+  }[review.booking.status] || 'Booking'
+}
+
+onMounted(loadPendingReviews)
 
 async function saveServiceImage(service) {
   const imageUrl = String(imageDrafts.value[service.serviceId] || '').trim()
@@ -264,7 +316,10 @@ function assignProvider(request) {
         <button :class="{ active: activeView === 'services' }" @click="activeView = 'services'">Services</button>
         <button :class="{ active: activeView === 'requests' }" @click="activeView = 'requests'">Requests</button>
         <button :class="{ active: activeView === 'chat' }" @click="activeView = 'chat'">Chat approvals</button>
+        <button :class="{ active: activeView === 'approvals' }" @click="activeView = 'approvals'">Review
+          approvals<span v-if="pendingReviews.length" class="tab-badge">{{ pendingReviews.length }}</span></button>
         <button :class="{ active: activeView === 'blocks' }" @click="activeView = 'blocks'">Block requests</button>
+        <button :class="{ active: activeView === 'admins' }" @click="activeView = 'admins'">Admin accounts</button>
         <button :class="{ active: activeView === 'moderation' }" @click="activeView = 'moderation'">Review
           moderation</button>
       </nav>
@@ -281,7 +336,7 @@ function assignProvider(request) {
       <header class="ops-topbar">
         <div>
           <h1>{{ activeView === 'dashboard' ? 'Admin dashboard' : activeView }}</h1>
-          <p>Manage users, provider approvals, request assignment and chat approval.</p>
+          <p>Manage users, provider approvals, request assignment, chat approval and review approval.</p>
         </div><input v-model="searchTerm" placeholder="Search admin workspace..." />
       </header>
 
@@ -538,6 +593,45 @@ function assignProvider(request) {
             </table>
           </div>
         </section>
+      </template>
+
+      <template v-if="activeView === 'approvals'">
+        <section class="ops-panel">
+          <div class="panel-heading">
+            <h2>Reviews waiting for approval</h2>
+            <button class="secondary small" :disabled="pendingLoading" @click="loadPendingReviews">
+              {{ pendingLoading ? 'Loading...' : 'Refresh' }}
+            </button>
+          </div>
+          <p class="muted">
+            New reviews only show on the website after you approve them. Any signed-in customer can review any
+            provider, with or without a booking, so check whether there was a booking before deciding.
+          </p>
+          <p v-if="pendingError" class="error-text">{{ pendingError }}</p>
+          <div v-if="!pendingLoading && pendingReviews.length === 0" class="empty-state">
+            No reviews are waiting for approval.
+          </div>
+          <article v-for="review in pendingReviews" :key="review.reviewId" class="review-row expanded">
+            <div>
+              <strong>{{ review.customer?.name || 'Customer' }} about {{ review.provider?.providerName || 'provider'
+              }}</strong>
+              <small>{{ review.booking?.serviceName ? review.booking.serviceName + ' · ' : '' }}{{
+                bookingStateLabel(review) }} · {{ review.rating }}/5 · {{ new Date(review.createdAt).toLocaleDateString()
+                }}</small>
+              <p>{{ review.comment || 'No comment' }}</p>
+            </div>
+            <div class="row-actions">
+              <button class="secondary small" :disabled="pendingBusy[review.reviewId]"
+                @click="decideReview(review, 'reject')">Reject</button>
+              <button class="success small" :disabled="pendingBusy[review.reviewId]"
+                @click="decideReview(review, 'approve')">Approve</button>
+            </div>
+          </article>
+        </section>
+      </template>
+
+      <template v-if="activeView === 'admins'">
+        <AdminAccounts :current-user-id="currentUser?.id || ''" />
       </template>
 
       <template v-if="activeView === 'blocks'">

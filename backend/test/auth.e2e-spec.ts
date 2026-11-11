@@ -15,6 +15,7 @@ import { Admin } from '../src/modules/admins/entities/admin.entity';
 import { RefreshToken } from '../src/modules/auth/entities/refresh-token.entity';
 import { PhoneVerification } from '../src/modules/auth/entities/phone-verification.entity';
 import { MailService } from '../src/modules/mail/mail.service';
+import { SmsService } from '../src/modules/sms/sms.service';
 import { mockRepo, testConfigService, applyMainConfig, TEST_JWT_SECRET } from './test-helpers';
 
 describe('Auth endpoints (integration)', () => {
@@ -50,6 +51,7 @@ describe('Auth endpoints (integration)', () => {
         { provide: getRepositoryToken(RefreshToken), useValue: refreshRepo },
         { provide: getRepositoryToken(PhoneVerification), useValue: phoneVerificationRepo },
         { provide: MailService, useValue: mailService },
+        { provide: SmsService, useValue: { isConfigured: () => false, send: jest.fn() } },
       ],
     }).compile();
 

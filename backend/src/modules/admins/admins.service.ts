@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -14,6 +16,7 @@ import { Payment } from '../payments/entities/payment.entity';
 import { Review } from '../reviews/entities/review.entity';
 import { BlockReport, ReportStatus } from '../reports/entities/block-report.entity';
 import { CreateAdminDto, UpdateAdminDto, AdminDashboardStatsDto } from './dto';
+import { AdminRole } from './entities/admin.entity';
 
 @Injectable()
 export class AdminsService {
@@ -34,7 +37,16 @@ export class AdminsService {
     private reportRepository: Repository<BlockReport>,
   ) {}
 
-  async create(createAdminDto: CreateAdminDto): Promise<Admin> {
+  // only a super admin can hand out super admin, or change or switch off a
+  // super admin. otherwise any admin could give themselves full control
+  private assertCanManage(actingRole: string | undefined, targetRole: AdminRole | undefined): void {
+    if (targetRole === AdminRole.SUPER_ADMIN && actingRole !== AdminRole.SUPER_ADMIN) {
+      throw new ForbiddenException('Only a super admin can manage super admin accounts');
+    }
+  }
+
+  async create(createAdminDto: CreateAdminDto, actingRole?: string): Promise<Admin> {
+    this.assertCanManage(actingRole, createAdminDto.role);
     const existingAdmin = await this.adminRepository.findOne({
       where: { email: createAdminDto.email },
     });
@@ -53,7 +65,9 @@ export class AdminsService {
     });
 
     const savedAdmin = await this.adminRepository.save(admin);
-    return savedAdmin;
+    // never send the password hash back
+    const { passwordHash: _hidden, ...safe } = savedAdmin;
+    return safe as Admin;
   }
 
   async findAll(): Promise<Admin[]> {
@@ -81,8 +95,10 @@ export class AdminsService {
     });
   }
 
-  async update(id: string, updateAdminDto: UpdateAdminDto): Promise<Admin> {
+  async update(id: string, updateAdminDto: UpdateAdminDto, actingRole?: string): Promise<Admin> {
     const admin = await this.findOne(id);
+    this.assertCanManage(actingRole, admin.role);
+    this.assertCanManage(actingRole, updateAdminDto.role);
 
     if (updateAdminDto.email && updateAdminDto.email !== admin.email) {
       const existingAdmin = await this.adminRepository.findOne({
@@ -97,16 +113,61 @@ export class AdminsService {
     return this.adminRepository.save(admin);
   }
 
-  async deactivate(id: string): Promise<Admin> {
+  // switching off an admin signs them out straight away (the login check
+  // looks at isActive on every request). two rules stop the site being left
+  // with nobody who can manage it
+  async deactivate(id: string, actingAdminId?: string, actingRole?: string): Promise<Admin> {
     const admin = await this.findOne(id);
+    this.assertCanManage(actingRole, admin.role);
+
+    if (actingAdminId && id === actingAdminId) {
+      throw new BadRequestException("You can't switch off your own account. Ask another admin to do it.");
+    }
+
+    if (admin.isActive) {
+      const activeAdmins = await this.adminRepository.count({ where: { isActive: true } });
+      if (activeAdmins <= 1) {
+        throw new BadRequestException('This is the last active admin, so it has to stay on');
+      }
+      if (admin.role === AdminRole.SUPER_ADMIN) {
+        const activeSuperAdmins = await this.adminRepository.count({
+          where: { isActive: true, role: AdminRole.SUPER_ADMIN },
+        });
+        if (activeSuperAdmins <= 1) {
+          throw new BadRequestException(
+            'This is the last active super admin. Make another admin a super admin first, so someone can still manage admins.',
+          );
+        }
+      }
+    }
+
     admin.isActive = false;
     return this.adminRepository.save(admin);
   }
 
-  async activate(id: string): Promise<Admin> {
+  async activate(id: string, actingRole?: string): Promise<Admin> {
     const admin = await this.findOne(id);
+    this.assertCanManage(actingRole, admin.role);
     admin.isActive = true;
     return this.adminRepository.save(admin);
+  }
+
+  // the signed in admin changes their own password, for example to replace
+  // the seeded admin's well-known one
+  async changeOwnPassword(adminId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const admin = await this.adminRepository.findOne({ where: { id: adminId } });
+    if (!admin) {
+      throw new NotFoundException('Admin not found');
+    }
+    const ok = await bcrypt.compare(currentPassword, admin.passwordHash);
+    if (!ok) {
+      throw new BadRequestException('Your current password is not right');
+    }
+    if (currentPassword === newPassword) {
+      throw new BadRequestException('Choose a password that is different from the current one');
+    }
+    admin.passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.adminRepository.save(admin);
   }
 
   async getDashboardStats(): Promise<AdminDashboardStatsDto> {
