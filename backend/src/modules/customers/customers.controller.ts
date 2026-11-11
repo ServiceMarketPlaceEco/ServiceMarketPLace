@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { CustomersService } from './customers.service';
-import { UpdateCustomerProfileDto, ChangePasswordDto, CustomerResponseDto } from './dto';
+import { UpdateCustomerProfileDto, ChangePasswordDto, CustomerResponseDto, CloseAccountDto } from './dto';
 import { JwtAuthGuard, CustomerGuard } from '../auth/guards';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
 import { BookingsService } from '../bookings/bookings.service';
@@ -64,10 +64,12 @@ export class CustomersController {
 
   @Delete('account')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Deactivate customer account' })
-  @ApiResponse({ status: 200, description: 'Account deactivated' })
-  async deactivateAccount(@CurrentUser() user: CurrentUserData) {
-    await this.customersService.deactivateAccount(user.userId);
-    return { message: 'Account deactivated successfully' };
+  @ApiOperation({ summary: 'Close your account and remove your personal details' })
+  @ApiResponse({ status: 200, description: 'Account closed' })
+  @ApiResponse({ status: 400, description: 'A job is confirmed or in progress' })
+  @ApiResponse({ status: 401, description: 'Wrong password' })
+  async closeAccount(@CurrentUser() user: CurrentUserData, @Body() dto: CloseAccountDto) {
+    await this.customersService.closeAccount(user.userId, dto.password);
+    return { message: 'Account closed' };
   }
 }

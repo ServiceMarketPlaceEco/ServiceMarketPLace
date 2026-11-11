@@ -4,7 +4,7 @@
 // The repo is mocked so I don't need a database for any of it.
 // Run with: npm test
 
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { CustomersService } from './customers.service';
 
@@ -17,10 +17,66 @@ const mockRepo = () => ({
 describe('CustomersService', () => {
   let service: CustomersService;
   let repo: any;
+  let bookingRepo: any;
 
   beforeEach(() => {
-    repo = mockRepo();
-    service = new CustomersService(repo);
+    repo = { ...mockRepo(), update: jest.fn(async () => undefined) };
+    bookingRepo = { count: jest.fn(async () => 0), update: jest.fn(async () => undefined) };
+    service = new CustomersService(repo, bookingRepo);
+  });
+
+  // the customer closes their own account from Settings
+  describe('closeAccount', () => {
+    const withPassword = async () => ({ customerId: 'c-1', passwordHash: await bcrypt.hash('Right@Pass1', 4) });
+
+    it('removes the personal details and switches the account off', async () => {
+      repo.findOne.mockResolvedValue(await withPassword());
+
+      await service.closeAccount('c-1', 'Right@Pass1');
+
+      const [id, changes] = repo.update.mock.calls[0];
+      expect(id).toBe('c-1');
+      expect(changes).toMatchObject({
+        name: 'Closed account',
+        username: null,
+        email: 'closed-c-1@servicehub.local',
+        phone: null,
+        address: null,
+        isActive: false,
+      });
+      // the old password no longer works
+      expect(await bcrypt.compare('Right@Pass1', changes.passwordHash)).toBe(false);
+    });
+
+    it('cancels requests nobody has picked up yet', async () => {
+      repo.findOne.mockResolvedValue(await withPassword());
+
+      await service.closeAccount('c-1', 'Right@Pass1');
+
+      expect(bookingRepo.update).toHaveBeenCalledWith({ customerId: 'c-1', status: 'pending' }, { status: 'cancelled' });
+    });
+
+    it('refuses with the wrong password and changes nothing', async () => {
+      repo.findOne.mockResolvedValue(await withPassword());
+
+      await expect(service.closeAccount('c-1', 'wrong')).rejects.toThrow(UnauthorizedException);
+      expect(repo.update).not.toHaveBeenCalled();
+      expect(bookingRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('waits while a job is confirmed or in progress', async () => {
+      repo.findOne.mockResolvedValue(await withPassword());
+      bookingRepo.count.mockResolvedValue(1);
+
+      await expect(service.closeAccount('c-1', 'Right@Pass1')).rejects.toThrow(BadRequestException);
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 for an account that does not exist', async () => {
+      repo.findOne.mockResolvedValue(null);
+
+      await expect(service.closeAccount('ghost', 'x')).rejects.toThrow(NotFoundException);
+    });
   });
 
   describe('findById', () => {

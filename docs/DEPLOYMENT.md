@@ -303,6 +303,7 @@ nginx (the `www-data` user) needs to read `servicehub/dist`. If the site shows
 
 - [ ] `https://servicehub.example.com` loads with a valid padlock, and `http://` redirects to it.
 - [ ] `https://servicehub.example.com/api/services` returns the service list as JSON.
+- [ ] `https://servicehub.example.com/api/health` returns `{"status":"ok","database":"up"}`. Add this address to an uptime monitor.
 - [ ] `https://servicehub.example.com/api/docs` returns 404 (Swagger is off).
 - [ ] You can sign in with the admin you created in step 5.
 - [ ] `admin@servicehub.com` / `Admin@123` does **not** work.
@@ -459,12 +460,16 @@ and its password is published in the README.
 
 ## 13. Known limitations at launch
 
-These need a decision from the client before go-live:
-
 | Area | Current state | What's needed |
 |---|---|---|
-| **Customer sign-up (SMS)** | Sign-up in the app sends a 6-digit code to the customer's phone, but **no SMS provider is connected**. In production the code isn't shown or logged, so **customers can't finish signing up in the app**. Google sign-in only works for accounts that already exist. | Choose an SMS provider (e.g. Twilio, or a local Bangladeshi gateway) and connect it in `sendPhoneVerification()` in `backend/src/modules/auth/auth.service.ts`. This is a blocker for a public launch. |
-| **Phone check isn't enforced by the API** | `POST /api/auth/register/customer` accepts sign-ups without a `phoneVerificationToken`. Only the app's sign-up form requires the code. | Once SMS works, make the token required in the API. |
-| **Payments** | The payments module records payments against bookings. No payment gateway (card, bKash, etc.) is integrated. | Decide whether launch is cash-only or which gateway to integrate. |
-| **Password reset email** | The email shows a reset token that the user pastes into the "Forgot password" form. The button in the email only opens the site; it doesn't fill the token in. | Works as is. Optionally make the link open the reset form with the token filled in. |
-| **Docker** | No Dockerfile or compose file is provided; this guide installs directly on the server. | Optional. |
+| **Customer sign-up (SMS)** | Sign-up sends a 6-digit code by text through Twilio. Without the three `TWILIO_*` settings no text is sent, and in production customers cannot finish signing up. | Create a Twilio account (or swap in a local Bangladeshi gateway in `backend/src/modules/sms/sms.service.ts`) and fill in the settings. See README section 9. |
+| **Phone check isn't enforced by the API** | `POST /api/auth/register/customer` accepts sign-ups without a `phoneVerificationToken`. Only the app's sign-up form requires the code. | Optional: make the token required in the API. |
+| **Payments** | The payments module records payments against bookings. No payment gateway (card, bKash, etc.) is integrated. Customers pay the provider directly. | Kept as is on purpose: payment in Bangladesh works differently, so the client decides later whether to add a local gateway. |
+| **AI chatbot and voice search** | Tested by the team with their own OpenAI keys. No key is included. | The client creates their own OpenAI key and puts it in `OPENAI_API_KEY`. OpenAI charges for use. Without a key the chatbot answers that it is unavailable and the rest of the site works. |
+| **Admin work is manual** | Admins assign providers, approve chats and approve reviews by hand. Admins get an email when something is waiting. | A design choice. Automatic matching could be added later. |
+| **Chat updates** | Chats check for new messages every 5 seconds, they are not instant. There are no phone push notifications, only email. | Fine at launch size. |
+| **Privacy Policy and Terms** | Drafts with [square brackets] to fill in. | The business fills them in and has them checked. See `deploy/DEPLOY.md` step 4. |
+| **Password reset email** | The email shows a reset token that the user pastes into the "Forgot password" form. | Works as is. |
+| **Load** | Tested on a development machine only (see `deploy/DEPLOY.md`). | Repeat on the live server before a big launch. |
+
+Docker is supported as an alternative to this guide: see `deploy/DEPLOY.md`.

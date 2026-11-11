@@ -109,11 +109,12 @@ it does not exist, and runs these scripts in order:
 | 6 | `backend/database/migrations/005_add_chat.sql` | Chat approvals and messages between customers and providers |
 | 7 | `backend/database/migrations/006_add_review_approval.sql` | Approval status on reviews (pending, approved, rejected) |
 | 8 | `backend/database/migrations/007_reviews_without_booking.sql` | Lets a review be about a provider without a booking |
-| 9 | `backend/database/seeds/001_seed_data.sql` | General service categories |
-| 10 | `backend/database/seeds/002_rajshahi_services_seed.sql` | Rajshahi service catalog |
-| 11 | `backend/database/seeds/003_moderation_test_seed.sql` | Test accounts and reviews for the moderation workflow *(development only)* |
-| 12 | `backend/database/seeds/004_service_images_seed.sql` | Photos for the seeded services |
-| 13 | `backend/database/seeds/005_demo_accounts_seed.sql` | Default admin + a demo provider with prices *(development only)* |
+| 9 | `backend/database/migrations/008_add_support_chat.sql` | Messages between the admin team and a customer or provider |
+| 10 | `backend/database/seeds/001_seed_data.sql` | General service categories |
+| 11 | `backend/database/seeds/002_rajshahi_services_seed.sql` | Rajshahi service catalog |
+| 12 | `backend/database/seeds/003_moderation_test_seed.sql` | Test accounts and reviews for the moderation workflow *(development only)* |
+| 13 | `backend/database/seeds/004_service_images_seed.sql` | Photos for the seeded services |
+| 14 | `backend/database/seeds/005_demo_accounts_seed.sql` | Default admin + a demo provider with prices *(development only)* |
 
 Expected output:
 
@@ -126,6 +127,7 @@ Running database/migrations/004_add_phone_verification_attempts.sql
 Running database/migrations/005_add_chat.sql
 Running database/migrations/006_add_review_approval.sql
 Running database/migrations/007_reviews_without_booking.sql
+Running database/migrations/008_add_support_chat.sql
 Running database/seeds/001_seed_data.sql
 Running database/seeds/002_rajshahi_services_seed.sql
 Running database/seeds/003_moderation_test_seed.sql
@@ -160,6 +162,7 @@ mysql -u root -p servicehub < database/migrations/004_add_phone_verification_att
 mysql -u root -p servicehub < database/migrations/005_add_chat.sql
 mysql -u root -p servicehub < database/migrations/006_add_review_approval.sql
 mysql -u root -p servicehub < database/migrations/007_reviews_without_booking.sql
+mysql -u root -p servicehub < database/migrations/008_add_support_chat.sql
 mysql -u root -p servicehub < database/seeds/001_seed_data.sql
 mysql -u root -p servicehub < database/seeds/002_rajshahi_services_seed.sql
 mysql -u root -p servicehub < database/seeds/003_moderation_test_seed.sql
@@ -184,6 +187,7 @@ mysql -u root -p servicehub < database/seeds/005_demo_accounts_seed.sql
    6. `backend/database/migrations/005_add_chat.sql`
    7. `backend/database/migrations/006_add_review_approval.sql`
    8. `backend/database/migrations/007_reviews_without_booking.sql`
+   9. `backend/database/migrations/008_add_support_chat.sql`
    9. `backend/database/seeds/001_seed_data.sql`
    10. `backend/database/seeds/002_rajshahi_services_seed.sql`
    11. `backend/database/seeds/003_moderation_test_seed.sql`
@@ -275,6 +279,27 @@ Console, and the message starts with "Sent from your Twilio trial account".
 The backend emails customers when they sign up, reset a password, send a
 request, and when their booking is confirmed, started, finished or cancelled.
 Providers get an email when a review about them is approved.
+
+Admins get an email when something is waiting for them: a new request, a
+provider application, a review to approve, a chat to approve, or a message
+sent to the admin team. Customers and providers get an email when an admin
+replies to them, opens or closes their chat, or decides on a review. These
+go to every active admin account, so use real email addresses for admins.
+An email problem never stops the action itself.
+
+### Messages to the admin team
+
+Customers (**Message admin** on their dashboard) and providers (**Messages**)
+can write to the admin team, and admins answer from **Messages** in the admin
+workspace, where they can also start a conversation with anyone. This is
+separate from the customer and provider chat on a booking, which an admin
+has to approve first.
+
+### Health check
+
+`GET /api/health` answers `{"status":"ok","database":"up"}` when the API and
+the database are both working, and 503 when the database is down. Point an
+uptime monitor at it.
 
 On your laptop leave the Mailtrap values in `backend/.env`: Mailtrap catches the
 emails so nobody real receives them. On the live server put a real SMTP

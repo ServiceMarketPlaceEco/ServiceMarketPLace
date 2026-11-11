@@ -151,6 +151,62 @@ describe('ChatService', () => {
     });
   });
 
+  // emails are an extra on top of the chat: the admin team hears about a
+  // new request, and both sides hear the decision
+  describe('notifications', () => {
+    let mail: any;
+    let notifier: any;
+
+    beforeEach(() => {
+      mail = { sendChatDecision: jest.fn() };
+      notifier = { notify: jest.fn() };
+      service = new ChatService(approvalRepo, messageRepo, bookingRepo, mail, notifier);
+    });
+
+    it('tells the admin team about a new chat request', async () => {
+      approvalRepo.findOne.mockResolvedValue(null);
+
+      await service.requestApproval(customer, 'bk-1');
+
+      expect(notifier.notify).toHaveBeenCalledWith(
+        'Chat request waiting for approval',
+        expect.stringContaining('Rahim asked to open chat on Home Cleaning'),
+      );
+    });
+
+    it('does not email again when the request already exists', async () => {
+      approvalRepo.findOne.mockResolvedValue({ id: 'ap-1', bookingId: 'bk-1', status: ChatApprovalStatus.PENDING });
+
+      await service.requestApproval(customer, 'bk-1');
+
+      expect(notifier.notify).not.toHaveBeenCalled();
+    });
+
+    it('emails the customer and the provider when the admin approves', async () => {
+      const b: any = booking();
+      b.customer = { ...b.customer, email: 'rahim@x.com' };
+      b.providerService.provider = { ...b.providerService.provider, email: 'karim@x.com' };
+      approvalRepo.findOne.mockResolvedValue({ id: 'ap-1', bookingId: 'bk-1', status: ChatApprovalStatus.PENDING, booking: b });
+
+      await service.reviewApproval('admin-1', 'ap-1', 'approved');
+
+      expect(mail.sendChatDecision).toHaveBeenCalledWith('rahim@x.com', 'Rahim', 'Home Cleaning', true);
+      expect(mail.sendChatDecision).toHaveBeenCalledWith('karim@x.com', 'Karim Services', 'Home Cleaning', true);
+    });
+
+    it('still saves the decision when the email fails', async () => {
+      const b: any = booking();
+      b.customer = { ...b.customer, email: 'rahim@x.com' };
+      approvalRepo.findOne.mockResolvedValue({ id: 'ap-1', bookingId: 'bk-1', status: ChatApprovalStatus.PENDING, booking: b });
+      mail.sendChatDecision.mockRejectedValue(new Error('smtp down'));
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const result = await service.reviewApproval('admin-1', 'ap-1', 'rejected');
+
+      expect(result.status).toBe(ChatApprovalStatus.REJECTED);
+    });
+  });
+
   describe('listApprovals', () => {
     it('filters to the customer\'s own bookings', async () => {
       const qb = fakeQb([{ id: 'ap-1', bookingId: 'bk-1', status: 'pending', booking: booking() }]);

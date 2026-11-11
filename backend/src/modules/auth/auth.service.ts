@@ -5,6 +5,7 @@ import {
   BadRequestException,
   NotFoundException,
   ServiceUnavailableException,
+  Optional,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -28,6 +29,7 @@ import {
   AuthResponseDto,
 } from './dto';
 import { MailService } from '../mail/mail.service';
+import { AdminNotifierService } from '../mail/admin-notifier.service';
 import { SmsService } from '../sms/sms.service';
 
 const PHONE_VERIFICATION_TTL_MS = 10 * 60 * 1000;
@@ -56,6 +58,7 @@ export class AuthService {
     private configService: ConfigService,
     private mailService: MailService,
     private smsService: SmsService,
+    @Optional() private adminNotifier?: AdminNotifierService,
   ) {}
 
   // Register Customer
@@ -136,6 +139,12 @@ export class AuthService {
 
     // Send welcome email
     await this.mailService.sendProviderWelcomeEmail(provider.email, provider.providerName);
+
+    // tell the admin team there is an application to check. never throws
+    await this.adminNotifier?.notify(
+      'New provider application',
+      `${provider.providerName} applied to join as a provider. Approve or reject them on the Service providers page.`,
+    );
 
     return this.generateTokens(provider.providerId, provider.email, 'provider', provider);
   }

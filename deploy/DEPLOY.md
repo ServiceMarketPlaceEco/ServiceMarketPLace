@@ -86,7 +86,8 @@ automatically on an existing database, so run it by hand, for example:
 
 ```bash
 for f in backend/database/migrations/006_add_review_approval.sql \
-         backend/database/migrations/007_reviews_without_booking.sql; do
+         backend/database/migrations/007_reviews_without_booking.sql \
+         backend/database/migrations/008_add_support_chat.sql; do
   docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' < "$f"
 done
 ```
@@ -95,21 +96,66 @@ Every migration is safe to run twice.
 
 ## Backups
 
-Daily backup (add it to cron):
+`deploy/backup.sh` saves a compressed copy of the database in `./backups` and
+deletes copies older than 30 days:
 
 ```bash
-docker compose exec -T db sh -c 'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' \
-  > servicehub-$(date +%F).sql
+sh deploy/backup.sh
 ```
 
-Restore into the running database:
+To run it every night at 2am, run `crontab -e` and add this line (change the
+path to where the code is):
+
+```
+0 2 * * * cd /opt/servicehub && sh deploy/backup.sh >> backups/backup.log 2>&1
+```
+
+Restore a backup into the running database:
 
 ```bash
-docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' \
-  < servicehub-2026-11-06.sql
+gunzip -c backups/servicehub-2026-11-12-0200.sql.gz | \
+  docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
 ```
 
-Keep copies somewhere other than the server.
+Copy the `backups` folder somewhere other than the server (another computer
+or cloud storage). Restore one backup into a test database before launch so
+you know it works.
+
+## Monitoring
+
+`https://your-domain/api/health` returns `{"status":"ok","database":"up"}`
+when the site and its database are working, and an error (503) when the
+database is down. Docker uses the same address to restart the API if it stops
+answering.
+
+Add that address to a free uptime monitor such as UptimeRobot or Better Stack
+and it will email you when the site goes down. `docker compose logs -f backend`
+shows what the API is doing.
+
+## How much traffic it handles
+
+A short load test was run on 12 November 2026 against a development machine
+(2 CPU cores, 8 GB memory, API and database on the same machine, rate limits
+raised for the test). Each run lasted 20 seconds.
+
+| Page | People at once | Requests per second | Average wait | Slowest 1% | Failed |
+|---|---|---|---|---|---|
+| Service list | 50 | about 1,010 | 49 ms | 93 ms | 0 |
+| Provider list | 50 | about 1,010 | 49 ms | 79 ms | 0 |
+| Reviews | 50 | about 250 | 199 ms | 267 ms | 0 |
+| Admin messages (signed in) | 50 | about 490 | 101 ms | 159 ms | 0 |
+| Service list | 200 | about 820 | 242 ms | 382 ms | 0 |
+
+This is far more than a new local marketplace needs, but it is not a test of
+the real server or the real internet connection. Repeat it on the live server
+before a big launch:
+
+```bash
+npx autocannon -c 50 -d 20 https://your-domain/api/services
+```
+
+Each visitor is limited to 120 requests a minute (`RATE_LIMIT`), so run the
+test from the server itself or raise the limit while testing.
 
 ## Useful commands
 

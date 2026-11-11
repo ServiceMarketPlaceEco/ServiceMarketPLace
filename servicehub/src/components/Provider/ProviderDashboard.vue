@@ -1,8 +1,9 @@
 <script setup>
-import { computed, reactive, ref, onBeforeUnmount } from 'vue'
+import { computed, reactive, ref, onBeforeUnmount, onMounted } from 'vue'
 import { formatStatus } from '../../data/services'
 import * as api from '../../services/api'
 import ChatPanel from '../Chat/ChatPanel.vue'
+import SupportChat from '../Support/SupportChat.vue'
 
 const props = defineProps({
   currentUser: { type: Object, default: null },
@@ -15,6 +16,23 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['accept-request', 'decline-request', 'status-change', 'request-chat', 'refresh-chat', 'block-request', 'sign-out', 'go-home', 'toggle-theme', 'add-service', 'toggle-service', 'update-profile', 'change-password'])
+
+// unread messages from the admin team, shown on the Messages button
+const adminUnread = ref(0)
+let adminUnreadTimer = null
+async function checkAdminUnread() {
+  if (document.hidden) return
+  try {
+    adminUnread.value = await api.getSupportUnread()
+  } catch {
+    // the badge is a nice-to-have, so a failed check keeps the old number
+  }
+}
+onMounted(() => {
+  checkAdminUnread()
+  adminUnreadTimer = window.setInterval(checkAdminUnread, 20000)
+})
+onBeforeUnmount(() => window.clearInterval(adminUnreadTimer))
 
 const activeView = ref('dashboard')
 const searchTerm = ref('')
@@ -169,7 +187,8 @@ function savePassword() {
         <button :class="{ active: activeView === 'dashboard' }" @click="activeView = 'dashboard'">Dashboard</button>
         <button :class="{ active: activeView === 'services' }" @click="activeView = 'services'">My services</button>
         <button :class="{ active: activeView === 'requests' }" @click="activeView = 'requests'">Requests</button>
-        <button :class="{ active: activeView === 'messages' }" @click="activeView = 'messages'">Messages</button>
+        <button :class="{ active: activeView === 'messages' }" @click="activeView = 'messages'">Messages<span
+            v-if="adminUnread" class="tab-badge">{{ adminUnread }}</span></button>
         <button :class="{ active: activeView === 'reviews' }" @click="activeView = 'reviews'">Reviews</button>
         <button :class="{ active: activeView === 'settings' }" @click="activeView = 'settings'">Settings</button>
       </nav>
@@ -268,7 +287,8 @@ function savePassword() {
             <div>
               <h3>{{ request.serviceTitle }}</h3>
               <p>{{ request.customerName }}<span v-if="request.customerPhone"> · {{ request.customerPhone }}</span> · {{
-                request.location }} · {{ request.preferredDate }}</p><small>{{
+                request.location }} · {{ request.preferredDate }}<span v-if="request.preferredTime"> at {{
+                  request.preferredTime }}</span></p><small>{{
                   request.details }}</small><small v-if="request.needsUpfrontPayment">Bank payment required: {{
                   request.bankName }} · {{ request.accountName }}</small>
             </div><strong>৳{{ request.budget }}</strong><span class="status-pill"
@@ -308,6 +328,11 @@ function savePassword() {
               :approval="chatApprovalFor(chatRequest.id)" @request-chat="emit('request-chat', $event)"
               @refresh-chat="emit('refresh-chat')" />
           </div>
+        </section>
+
+        <section class="ops-panel">
+          <h2>ServiceHub admin</h2>
+          <SupportChat role="provider" @read="adminUnread = 0" />
         </section>
       </template>
 

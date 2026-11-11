@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsNumber, IsEmail, MinLength, Matches } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsEmail, MinLength, Matches, IsNotEmpty } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateCustomerProfileDto {
@@ -39,6 +39,13 @@ export class ChangePasswordDto {
     message: 'Password must contain uppercase, lowercase, and number/special character',
   })
   newPassword: string;
+}
+
+export class CloseAccountDto {
+  @ApiProperty({ description: 'Your current password, to confirm it is really you' })
+  @IsString()
+  @IsNotEmpty({ message: 'Enter your password to close your account' })
+  password: string;
 }
 
 export class CustomerResponseDto {

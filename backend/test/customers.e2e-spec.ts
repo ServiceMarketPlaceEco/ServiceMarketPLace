@@ -290,24 +290,56 @@ describe('Customer endpoints (integration)', () => {
   });
 
   describe('DELETE /api/customers/account', () => {
-    it('deactivates the account rather than deleting the row', async () => {
-      const customer: any = {
-        customerId: 'cust-1',
-        isActive: true,
-        isBlocked: false,
-      };
-      customerRepo.findOne.mockResolvedValue(customer);
-      const token = signTestToken({ sub: 'cust-1', email: 'c@x.com', userType: 'customer' });
+    const signedIn = async () => {
+      const passwordHash = await bcrypt.hash('Right@Pass1', 4);
+      customerRepo.findOne.mockResolvedValue({ customerId: 'cust-1', isActive: true, isBlocked: false, passwordHash });
+      customerRepo.update = jest.fn(async () => undefined);
+      bookingRepo.count = jest.fn(async () => 0);
+      bookingRepo.update = jest.fn(async () => undefined);
+      return signTestToken({ sub: 'cust-1', email: 'c@x.com', userType: 'customer' });
+    };
+
+    it('closes the account and removes the personal details, keeping the row', async () => {
+      const token = await signedIn();
 
       await request(app.getHttpServer())
         .delete('/api/customers/account')
         .set('Authorization', `Bearer ${token}`)
+        .send({ password: 'Right@Pass1' })
         .expect(200);
 
-      expect(customer.isActive).toBe(false);
-      // Nothing should actually be deleted. The booking history needs to survive
-      // so the admin can still see it.
+      expect(customerRepo.update).toHaveBeenCalledWith(
+        'cust-1',
+        expect.objectContaining({ name: 'Closed account', phone: null, isActive: false }),
+      );
+      // Nothing is deleted. The booking history needs to survive so the admin
+      // and the provider can still see it.
       expect(customerRepo.remove).not.toHaveBeenCalled();
+    });
+
+    it('needs the password (400 without, 401 when wrong)', async () => {
+      const token = await signedIn();
+
+      await request(app.getHttpServer()).delete('/api/customers/account').set('Authorization', `Bearer ${token}`).expect(400);
+      await request(app.getHttpServer())
+        .delete('/api/customers/account')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ password: 'guess' })
+        .expect(401);
+      expect(customerRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses while a job is confirmed or in progress (400)', async () => {
+      const token = await signedIn();
+      bookingRepo.count = jest.fn(async () => 1);
+
+      const res = await request(app.getHttpServer())
+        .delete('/api/customers/account')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ password: 'Right@Pass1' })
+        .expect(400);
+
+      expect(res.body.message).toContain('confirmed or in progress');
     });
   });
 });

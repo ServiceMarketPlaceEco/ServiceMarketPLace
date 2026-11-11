@@ -1,8 +1,9 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { formatStatus, serviceImageSrc } from '../../data/services'
 import * as api from '../../services/api'
 import AdminAccounts from './AdminAccounts.vue'
+import AdminInbox from '../Support/AdminInbox.vue'
 
 const props = defineProps({
   currentUser: { type: Object, default: null },
@@ -111,7 +112,26 @@ function bookingStateLabel(review) {
   }[review.booking.status] || 'Booking'
 }
 
-onMounted(loadPendingReviews)
+// ---------- Messages with customers and providers ----------
+// unread count for the Messages button. the inbox reports its own count
+// while it is open; otherwise this checks every 20 seconds
+const supportUnread = ref(0)
+let supportTimer = null
+async function checkSupportUnread() {
+  if (document.hidden || activeView.value === 'messages') return
+  try {
+    supportUnread.value = await api.getSupportUnread()
+  } catch {
+    // the badge is a nice-to-have, so a failed check keeps the old number
+  }
+}
+
+onMounted(() => {
+  loadPendingReviews()
+  checkSupportUnread()
+  supportTimer = window.setInterval(checkSupportUnread, 20000)
+})
+onBeforeUnmount(() => window.clearInterval(supportTimer))
 
 async function saveServiceImage(service) {
   const imageUrl = String(imageDrafts.value[service.serviceId] || '').trim()
@@ -316,6 +336,8 @@ function assignProvider(request) {
         <button :class="{ active: activeView === 'services' }" @click="activeView = 'services'">Services</button>
         <button :class="{ active: activeView === 'requests' }" @click="activeView = 'requests'">Requests</button>
         <button :class="{ active: activeView === 'chat' }" @click="activeView = 'chat'">Chat approvals</button>
+        <button :class="{ active: activeView === 'messages' }" @click="activeView = 'messages'">Messages<span
+            v-if="supportUnread" class="tab-badge">{{ supportUnread }}</span></button>
         <button :class="{ active: activeView === 'approvals' }" @click="activeView = 'approvals'">Review
           approvals<span v-if="pendingReviews.length" class="tab-badge">{{ pendingReviews.length }}</span></button>
         <button :class="{ active: activeView === 'blocks' }" @click="activeView = 'blocks'">Block requests</button>
@@ -531,7 +553,8 @@ function assignProvider(request) {
                   <td>{{ request.customerName }}</td>
                   <td>{{ providerName(request.providerId) }}<small>{{ formatStatus(request.providerStatus) }}</small>
                   </td>
-                  <td>{{ request.preferredDate }}<small>{{ request.location }}</small></td>
+                  <td>{{ request.preferredDate }}<span v-if="request.preferredTime"> {{ request.preferredTime
+                      }}</span><small>{{ request.location }}</small></td>
                   <td>{{ request.budget || 0 }}৳</td>
                   <td><span class="status-pill" :class="request.needsUpfrontPayment ? 'pending' : 'active'">{{
                     request.needsUpfrontPayment ? 'bank upfront' : 'after service' }}</span><small
@@ -593,6 +616,10 @@ function assignProvider(request) {
             </table>
           </div>
         </section>
+      </template>
+
+      <template v-if="activeView === 'messages'">
+        <AdminInbox :accounts="accounts" @unread="supportUnread = $event" />
       </template>
 
       <template v-if="activeView === 'approvals'">

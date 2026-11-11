@@ -116,8 +116,11 @@ test('the provider sees their customer chats in Messages', async ({ page }) => {
   await expect(page.getByText('Chat with Test Customer')).toBeVisible()
   await expect(page.locator('.chat-bubble-row:not(.mine)')).toContainText('Can you come at 10?')
 
-  await page.getByRole('textbox', { name: 'Message' }).fill('Yes, see you then')
-  await page.getByRole('button', { name: 'Send' }).click()
+  // the Messages page also has the chat with the admin team, so stay inside
+  // the customer chat panel
+  const chat = page.locator('.chat-panel')
+  await chat.getByRole('textbox', { name: 'Message' }).fill('Yes, see you then')
+  await chat.getByRole('button', { name: 'Send' }).click()
   await expect(page.locator('.chat-bubble-row.mine')).toContainText('Yes, see you then')
 })
 

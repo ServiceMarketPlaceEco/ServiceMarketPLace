@@ -17,6 +17,8 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { MailModule } from './modules/mail/mail.module';
 import { ChatbotModule } from './modules/chatbot/chatbot.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { SupportModule } from './modules/support/support.module';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
@@ -74,6 +76,8 @@ import { ChatModule } from './modules/chat/chat.module';
     MailModule,
     ChatbotModule,
     ChatModule,
+    SupportModule,
+    HealthModule,
   ],
   providers: [
     // every route goes through the rate limiter (see ThrottlerModule above)

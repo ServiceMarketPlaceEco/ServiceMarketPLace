@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
@@ -10,6 +11,7 @@ import { Booking, BookingStatus } from './entities/booking.entity';
 import { ProviderService } from '../providers/entities/provider-service.entity';
 import { CreateBookingDto, UpdateBookingDto, BookingQueryDto } from './dto';
 import { MailService } from '../mail/mail.service';
+import { AdminNotifierService } from '../mail/admin-notifier.service';
 
 @Injectable()
 export class BookingsService {
@@ -19,6 +21,8 @@ export class BookingsService {
     @InjectRepository(ProviderService)
     private providerServiceRepository: Repository<ProviderService>,
     private mailService: MailService,
+    // extra: bookings work the same without it
+    @Optional() private adminNotifier?: AdminNotifierService,
   ) {}
 
   async create(customerId: string, dto: CreateBookingDto): Promise<Booking> {
@@ -57,6 +61,12 @@ export class BookingsService {
     booking.serviceName = providerService?.service?.serviceName || dto.serviceName || null;
 
     const savedBooking = await this.bookingRepository.save(booking);
+
+    // tell the admin team there is a request to assign. never throws
+    await this.adminNotifier?.notify(
+      'New service request',
+      `A customer sent a request for ${booking.serviceName || 'a service'} on ${dto.date}. Assign a provider on the Requests page.`,
+    );
 
     // tell the customer we got the request. the email needs their address,
     // so load the booking again with the customer attached

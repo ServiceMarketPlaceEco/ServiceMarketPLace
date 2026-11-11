@@ -440,6 +440,17 @@ describe('AuthService', () => {
       expect(result.userType).toBe('provider');
     });
 
+    it('emails the admin team that a provider application is waiting', async () => {
+      const adminNotifier = { notify: jest.fn() };
+      (service as any).adminNotifier = adminNotifier;
+      providerRepo.findOne.mockResolvedValue(null);
+      providerRepo.save.mockImplementation(async (p: any) => ({ ...p, providerId: 'prov-1' }));
+
+      await service.registerProvider(dto);
+
+      expect(adminNotifier.notify).toHaveBeenCalledWith('New provider application', expect.stringContaining('Test Provider'));
+    });
+
     it('throws ConflictException for a duplicate provider email', async () => {
       providerRepo.findOne.mockResolvedValue({ providerId: 'existing' });
 
