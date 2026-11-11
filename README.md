@@ -336,7 +336,47 @@ numbered file (e.g. `backend/database/migrations/001_add_x.sql`) with the matchi
 same database the code expects. New seed files go in `backend/database/seeds/` with the
 next number.
 
+## Test it yourself (no coding needed)
+
+You can check that ServiceHub works without reading any code.
+[`docs/ServiceHub-Test-Checklist.xlsx`](docs/ServiceHub-Test-Checklist.xlsx)
+is a list of 31 things to try on the website, in order, as a visitor, a
+customer, an admin and a provider. Each row says what to click and what should
+happen, and has a box to mark Pass or Fail. The Summary tab counts the results.
+
+1. Use a test copy of the website (on a laptop, follow steps 1 to 6 above), so
+   test bookings and reviews never reach real customers.
+2. Sign in with the demo accounts from step 7, and make a customer account
+   yourself. Without Twilio, the 6-digit sign-up code shows in the backend
+   window instead of arriving by text.
+3. Work down the Checklist tab and mark each step. If a step fails, write what
+   you saw in Notes and send the file back to the team.
+
+Emails, text messages and AI Help only work once their settings are filled in
+(sections 9 and 10, and `OPENAI_API_KEY`). The User Manual's "Setting up
+ServiceHub for launch" section explains each one in plain steps.
+
 ## Running the tests
+
+### What the automatic tests are
+
+Besides the checklist above, there are 910 automatic tests: small programs that
+use each part of ServiceHub the way a person would and check it gives the right
+answer. They run on GitHub every time someone changes the code, so a mistake
+shows up before it reaches the website. The full list, with a plain description
+of each test and the problems found while testing, is in
+[`docs/ServiceHub-Test-Register.xlsx`](docs/ServiceHub-Test-Register.xlsx).
+
+| Part | Tests | What they check |
+|---|---|---|
+| Backend unit tests | 505 | Each rule on its own, such as "a review waits for admin approval" |
+| Backend integration tests | 275 | The website's requests to the server, including who is allowed to do what |
+| Frontend unit tests | 86 | Each screen on its own, such as the chat box and the settings form |
+| Frontend browser tests | 44 | Whole journeys in a real browser, such as signing in and sending a message |
+
+All 910 passed on 12 November 2026, and the tests cover 97% of the backend code.
+
+### Running them yourself
 
 None of the tests need MySQL, an OpenAI key or the internet: the database, email and
 OpenAI calls are mocked.
