@@ -345,7 +345,12 @@ You can check that ServiceHub works without reading any code. Open
   visitor, a customer, an admin and a provider. Each row says what to click and
   what should happen, and has a box to mark Pass or Fail.
 - **Automatic checks** shows, in plain words, what the automatic tests check.
-- **Summary** counts the results of both.
+- **Developer checklist** lists what developers check when setting up a laptop,
+  before every pull request, before launch and after launch.
+- **Summary** counts the results.
+
+The Try it yourself steps were all run on 12 November 2026 on a local test
+copy and passed; the results and notes are filled in.
 
 1. Use a test copy of the website (on a laptop, follow steps 1 to 6 above), so
    test bookings and reviews never reach real customers.
@@ -363,22 +368,22 @@ ServiceHub for launch" section explains each one in plain steps.
 
 ### What the automatic tests are
 
-Besides trying it by hand, there are 910 automatic tests: small programs that
+Besides trying it by hand, there are 918 automatic tests: small programs that
 use each part of ServiceHub the way a person would and check it gives the right
 answer. They run on GitHub every time someone changes the code, so a mistake
 shows up before it reaches the website. The Automatic checks tab of
 [`docs/ServiceHub-Test-Register.xlsx`](docs/ServiceHub-Test-Register.xlsx)
-groups them into 96 plain checks, such as "Every review waits for an admin
+groups them into 97 plain checks, such as "Every review waits for an admin
 before it shows".
 
 | Part | Tests | What they check |
 |---|---|---|
-| Backend unit tests | 505 | Each rule on its own, such as "a review waits for admin approval" |
+| Backend unit tests | 509 | Each rule on its own, such as "a review waits for admin approval" |
 | Backend integration tests | 275 | The website's requests to the server, including who is allowed to do what |
-| Frontend unit tests | 86 | Each screen on its own, such as the chat box and the settings form |
+| Frontend unit tests | 90 | Each screen on its own, such as the chat box and the settings form |
 | Frontend browser tests | 44 | Whole journeys in a real browser, such as signing in and sending a message |
 
-All 910 passed on 12 November 2026, and the tests cover 97% of the backend code.
+All 918 passed on 12 November 2026, and the tests cover 97% of the backend code.
 
 ### Running them yourself
 

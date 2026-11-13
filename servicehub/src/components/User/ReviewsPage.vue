@@ -109,7 +109,7 @@ function submitReview() {
       <div>
         <p class="eyebrow">ServiceHub reviews</p>
         <h2>Real experiences from the Rajshahi community</h2>
-        <p>Every review comes from a customer's own booking and is checked by our team before it appears.</p>
+        <p>Every review comes from a signed-in customer and is checked by our team before it appears.</p>
       </div>
       <button class="primary" type="button" @click="openForm">
         Write a review
