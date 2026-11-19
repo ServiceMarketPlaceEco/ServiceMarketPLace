@@ -286,6 +286,14 @@ with any phone number, which makes fake accounts and fake reviews easy. Remove
 the line, or set it to `on`, before real customers use the site. Leaving it
 out keeps the code switched on.
 
+**Docker example is set to demo mode.** `.env.docker.example` already has
+`PHONE_VERIFICATION=off`, so a Docker site built from it skips the text code
+until you change it. Before going live, fill in the `TWILIO_*` settings and
+delete that line from your `.env`. When the backend starts with it off, its
+log says `PHONE_VERIFICATION=off: customers sign up without a text code`, so
+check the log after every deploy. `backend/.env.example` (no Docker) keeps
+the code switched on.
+
 ## 10. Email
 
 The backend emails customers when they sign up, reset a password, send a
