@@ -26,6 +26,11 @@ Fill in every value. For the passwords and the two JWT secrets, make long
 random values with `openssl rand -hex 32`. `.env` stays on the server and is
 never committed.
 
+The example file starts in demo mode: it has `PHONE_VERIFICATION=off`, so
+customers sign up without a text code. For a site with real customers, fill
+in the `TWILIO_*` settings and delete the `PHONE_VERIFICATION=off` line. See
+README section 9.
+
 ## 2. Start it
 
 Without HTTPS (for a first test, the site is on http://SERVER-IP):
