@@ -274,6 +274,18 @@ To send real texts (needed on the live server):
 A Twilio trial account can only text numbers you have verified in the Twilio
 Console, and the message starts with "Sent from your Twilio trial account".
 
+### Demo sites without Twilio
+
+For a demo server with no SMS provider, add `PHONE_VERIFICATION=off` to the
+settings file (`backend/.env`, or `.env` with Docker) and restart. Customers
+then sign up straight away, with no code screen, and the backend writes a
+warning in its log when it starts so nobody forgets it is switched off.
+
+Only use this for a demo. With it off, anyone can create customer accounts
+with any phone number, which makes fake accounts and fake reviews easy. Remove
+the line, or set it to `on`, before real customers use the site. Leaving it
+out keeps the code switched on.
+
 ## 10. Email
 
 The backend emails customers when they sign up, reset a password, send a
@@ -368,7 +380,7 @@ ServiceHub for launch" section explains each one in plain steps.
 
 ### What the automatic tests are
 
-Besides trying it by hand, there are 918 automatic tests: small programs that
+Besides trying it by hand, there are 925 automatic tests: small programs that
 use each part of ServiceHub the way a person would and check it gives the right
 answer. They run on GitHub every time someone changes the code, so a mistake
 shows up before it reaches the website. The Automatic checks tab of
@@ -378,12 +390,12 @@ before it shows".
 
 | Part | Tests | What they check |
 |---|---|---|
-| Backend unit tests | 509 | Each rule on its own, such as "a review waits for admin approval" |
-| Backend integration tests | 275 | The website's requests to the server, including who is allowed to do what |
-| Frontend unit tests | 90 | Each screen on its own, such as the chat box and the settings form |
-| Frontend browser tests | 44 | Whole journeys in a real browser, such as signing in and sending a message |
+| Backend unit tests | 513 | Each rule on its own, such as "a review waits for admin approval" |
+| Backend integration tests | 276 | The website's requests to the server, including who is allowed to do what |
+| Frontend unit tests | 91 | Each screen on its own, such as the chat box and the settings form |
+| Frontend browser tests | 45 | Whole journeys in a real browser, such as signing in and sending a message |
 
-All 918 passed on 12 November 2026, and the tests cover 97% of the backend code.
+All 925 passed on 19 November 2026, and the tests cover 97% of the backend code (measured on 12 November).
 
 ### Running them yourself
 

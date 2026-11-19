@@ -192,6 +192,49 @@ describe('AuthService', () => {
     });
   });
 
+  describe('PHONE_VERIFICATION setting (demo sites)', () => {
+    const withSetting = (value: string | undefined) =>
+      configService.get.mockImplementation((key: string, fallback?: string) =>
+        key === 'PHONE_VERIFICATION' ? value : fallback || 'test-secret',
+      );
+
+    it('keeps the text code required when the setting is left out', () => {
+      withSetting(undefined);
+      expect(service.getPhoneVerificationStatus()).toEqual({ required: true });
+    });
+
+    it('keeps it required for "on" or anything it does not recognise', () => {
+      for (const value of ['on', 'ON', 'yes', 'true', 'oof']) {
+        withSetting(value);
+        expect(service.isPhoneVerificationRequired()).toBe(true);
+      }
+    });
+
+    it('turns it off only for off, false, 0 or no, ignoring case and spaces', () => {
+      for (const value of ['off', 'OFF', ' off ', 'false', '0', 'no']) {
+        withSetting(value);
+        expect(service.getPhoneVerificationStatus()).toEqual({ required: false });
+      }
+    });
+
+    it('still creates a customer without a phone token when it is off', async () => {
+      withSetting('off');
+      customerRepo.findOne.mockResolvedValue(null);
+      customerRepo.save.mockImplementation(async (c: any) => ({ ...c, customerId: 'cust-demo' }));
+
+      await service.registerCustomer({
+        name: 'Rosemary Miyumo',
+        username: 'rosemary',
+        email: 'rosemary@example.com',
+        password: 'Rosemary@2026',
+        phone: '01755501234',
+        address: 'Boalia',
+      } as any);
+
+      expect(customerRepo.save).toHaveBeenCalledWith(expect.objectContaining({ username: 'rosemary', phone: '01755501234' }));
+    });
+  });
+
   describe('requestPhoneVerification / verifyPhoneCode', () => {
     it('rejects an email that is already registered, before creating a code', async () => {
       customerRepo.findOne.mockResolvedValue({ customerId: 'existing' });

@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
   HttpCode,
@@ -43,6 +44,13 @@ export class AuthController {
   @ApiResponse({ status: 409, description: 'Email already registered' })
   async registerProvider(@Body() dto: RegisterProviderDto): Promise<AuthResponseDto> {
     return this.authService.registerProvider(dto);
+  }
+
+  @Get('phone-verification/status')
+  @ApiOperation({ summary: 'Whether customers must confirm their phone with a text code to sign up' })
+  @ApiResponse({ status: 200, description: '{ required: true } normally; false when PHONE_VERIFICATION=off (demo sites only)' })
+  getPhoneVerificationStatus() {
+    return this.authService.getPhoneVerificationStatus();
   }
 
   @Post('phone-verification/request')
