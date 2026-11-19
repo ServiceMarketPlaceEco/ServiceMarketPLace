@@ -653,8 +653,45 @@ async function createAccount(user) {
     return
   }
 
+  // Demo sites can switch the text code off (PHONE_VERIFICATION=off on the
+  // server). If we cannot tell, we play safe and ask for the code as usual.
+  if (!(await isPhoneVerificationRequired())) {
+    await createCustomerWithoutCode(user)
+    return
+  }
+
   // The actual account is created only after the phone number is verified.
   await sendCustomerVerificationCode(user)
+}
+
+async function isPhoneVerificationRequired() {
+  try {
+    const status = await api.getPhoneVerificationStatus()
+    return status?.required !== false
+  } catch {
+    return true
+  }
+}
+
+// Only used when the phone check is switched off on a demo site
+async function createCustomerWithoutCode(user) {
+  customerVerificationBusy.value = true
+  try {
+    const res = await api.registerCustomer({
+      name: user.name,
+      username: user.username,
+      email: resolveCustomerEmail(user),
+      password: user.password || undefined,
+      phone: user.phone,
+      address: user.location,
+      authProvider: user.accountMethod || 'phone'
+    })
+    await applySession(res, 'customer')
+  } catch (err) {
+    alert(describePhoneVerificationError(err, user))
+  } finally {
+    customerVerificationBusy.value = false
+  }
 }
 
 async function verifyAndCreateCustomer() {

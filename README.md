@@ -274,6 +274,18 @@ To send real texts (needed on the live server):
 A Twilio trial account can only text numbers you have verified in the Twilio
 Console, and the message starts with "Sent from your Twilio trial account".
 
+### Demo sites without Twilio
+
+For a demo server with no SMS provider, add `PHONE_VERIFICATION=off` to the
+settings file (`backend/.env`, or `.env` with Docker) and restart. Customers
+then sign up straight away, with no code screen, and the backend writes a
+warning in its log when it starts so nobody forgets it is switched off.
+
+Only use this for a demo. With it off, anyone can create customer accounts
+with any phone number, which makes fake accounts and fake reviews easy. Remove
+the line, or set it to `on`, before real customers use the site. Leaving it
+out keeps the code switched on.
+
 ## 10. Email
 
 The backend emails customers when they sign up, reset a password, send a
@@ -336,7 +348,56 @@ numbered file (e.g. `backend/database/migrations/001_add_x.sql`) with the matchi
 same database the code expects. New seed files go in `backend/database/seeds/` with the
 next number.
 
+## Test it yourself (no coding needed)
+
+You can check that ServiceHub works without reading any code. Open
+[`docs/ServiceHub-Test-Register.xlsx`](docs/ServiceHub-Test-Register.xlsx):
+
+- **Try it yourself** lists 31 things to try on the website, in order, as a
+  visitor, a customer, an admin and a provider. Each row says what to click and
+  what should happen, and has a box to mark Pass or Fail.
+- **Automatic checks** shows, in plain words, what the automatic tests check.
+- **Developer checklist** lists what developers check when setting up a laptop,
+  before every pull request, before launch and after launch.
+- **Summary** counts the results.
+
+The Try it yourself steps were all run on 12 November 2026 on a local test
+copy and passed; the results and notes are filled in.
+
+1. Use a test copy of the website (on a laptop, follow steps 1 to 6 above), so
+   test bookings and reviews never reach real customers.
+2. Sign in with the demo accounts from step 7, and make a customer account
+   yourself. Without Twilio, the 6-digit sign-up code shows in the backend
+   window instead of arriving by text.
+3. Work down the Try it yourself tab and mark each step. If a step fails, write what
+   you saw in Notes and send the file back to the team.
+
+Emails, text messages and AI Help only work once their settings are filled in
+(sections 9 and 10, and `OPENAI_API_KEY`). The User Manual's "Setting up
+ServiceHub for launch" section explains each one in plain steps.
+
 ## Running the tests
+
+### What the automatic tests are
+
+Besides trying it by hand, there are 925 automatic tests: small programs that
+use each part of ServiceHub the way a person would and check it gives the right
+answer. They run on GitHub every time someone changes the code, so a mistake
+shows up before it reaches the website. The Automatic checks tab of
+[`docs/ServiceHub-Test-Register.xlsx`](docs/ServiceHub-Test-Register.xlsx)
+groups them into 97 plain checks, such as "Every review waits for an admin
+before it shows".
+
+| Part | Tests | What they check |
+|---|---|---|
+| Backend unit tests | 513 | Each rule on its own, such as "a review waits for admin approval" |
+| Backend integration tests | 276 | The website's requests to the server, including who is allowed to do what |
+| Frontend unit tests | 91 | Each screen on its own, such as the chat box and the settings form |
+| Frontend browser tests | 45 | Whole journeys in a real browser, such as signing in and sending a message |
+
+All 925 passed on 19 November 2026, and the tests cover 97% of the backend code (measured on 12 November).
+
+### Running them yourself
 
 None of the tests need MySQL, an OpenAI key or the internet: the database, email and
 OpenAI calls are mocked.

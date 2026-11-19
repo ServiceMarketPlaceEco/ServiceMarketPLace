@@ -217,6 +217,12 @@ function resultArray(result) {
 
 // ---------- Authentication ----------
 
+// whether customers must confirm their phone with a text code to sign up.
+// { required: false } only when the server has PHONE_VERIFICATION=off (demo sites)
+export function getPhoneVerificationStatus() {
+  return request('/auth/phone-verification/status')
+}
+
 export function requestCustomerPhoneVerification({
   phone,
   username,

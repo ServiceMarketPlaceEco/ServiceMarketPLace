@@ -6,6 +6,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
   Optional,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -59,7 +60,14 @@ export class AuthService {
     private mailService: MailService,
     private smsService: SmsService,
     @Optional() private adminNotifier?: AdminNotifierService,
-  ) {}
+  ) {
+    // make it obvious in the server log when the phone check is switched off
+    if (!this.isPhoneVerificationRequired()) {
+      new Logger('AuthService').warn(
+        'PHONE_VERIFICATION=off: customers sign up without a text code. Use this only on a demo site, never with real customers.',
+      );
+    }
+  }
 
   // Register Customer
   async registerCustomer(dto: RegisterCustomerDto): Promise<AuthResponseDto> {
@@ -157,6 +165,19 @@ export class AuthService {
   // username/email are optional and, when passed, are checked for conflicts
   // up front - so a taken username or email fails before the SMS round trip
   // instead of after the customer has already typed in the code.
+  // PHONE_VERIFICATION=off turns the sign-up text code off, so customers can
+  // sign up straight away. Only for a demo site without an SMS provider: with
+  // it off anyone can make customer accounts with any phone number. Anything
+  // other than off/false/0 (including leaving it out) keeps the check on.
+  isPhoneVerificationRequired(): boolean {
+    const value = String(this.configService.get<string>('PHONE_VERIFICATION') ?? '').trim().toLowerCase();
+    return !['off', 'false', '0', 'no'].includes(value);
+  }
+
+  getPhoneVerificationStatus(): { required: boolean } {
+    return { required: this.isPhoneVerificationRequired() };
+  }
+
   async requestPhoneVerification(
     phone: string,
     username?: string,

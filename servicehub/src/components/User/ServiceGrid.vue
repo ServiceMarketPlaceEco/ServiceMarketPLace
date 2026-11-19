@@ -14,14 +14,24 @@ const selectedCategory = ref('All')
 
 const categories = computed(() => ['All', ...new Set(props.services.map(service => service.category))])
 
-const filteredServices = computed(() => {
-  const query = searchQuery.value.toLowerCase().trim()
+// People type the job or the worker ("plumber", "cleaner", "electrician"),
+// but services are named after the job ("Plumbing", "Cleaning"). Cutting the
+// common endings off each word lets "plumber" find "Plumbing".
+function stem(word) {
+  const cut = word.replace(/(ians|ian|ers|er|ing|s)$/, '')
+  return cut.length >= 3 ? cut : word
+}
 
-  return props.services.filter(service => {
-    const matchesCategory = selectedCategory.value === 'All' || service.category === selectedCategory.value
-    const searchable = `${service.title} ${service.category} ${service.description}`.toLowerCase()
-    return matchesCategory && (!query || searchable.includes(query))
-  })
+const filteredServices = computed(() => {
+  const words = searchQuery.value.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).map(stem)
+  const inCategory = props.services.filter(service =>
+    selectedCategory.value === 'All' || service.category === selectedCategory.value)
+  if (!words.length) return inCategory
+
+  const text = service => `${service.title} ${service.category} ${service.description}`.toLowerCase()
+  // services that match every word first; if none do, any service matching one of them
+  const all = inCategory.filter(service => words.every(word => text(service).includes(word)))
+  return all.length ? all : inCategory.filter(service => words.some(word => text(service).includes(word)))
 })
 
 // VoiceSearch returns a user-checked transcript and selected service.

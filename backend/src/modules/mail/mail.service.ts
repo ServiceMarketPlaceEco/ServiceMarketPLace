@@ -379,6 +379,19 @@ export class MailService implements OnModuleInit {
     await this.sendMail(customer.email, subjects[newStatus], html);
   }
 
+  // sent to the provider when an admin gives them a job, so they do not have
+  // to keep checking their dashboard. booking.customer and
+  // booking.providerService.provider have to be loaded
+  async sendNewJobToProvider(booking: Booking): Promise<void> {
+    const provider = booking.providerService?.provider;
+    if (!provider?.email) return;
+    const lines = ['You have a new job on ServiceHub. Please check the details and start it from your dashboard when you are ready.'];
+    if (booking.customer?.name) lines.push(`Customer: <strong>${escapeHtml(booking.customer.name)}</strong>`);
+    if (booking.address) lines.push(`Address: ${escapeHtml(booking.address)}`);
+    const subject = 'You have a new ServiceHub job';
+    await this.sendMail(provider.email, subject, this.bookingEmail(subject, provider.providerName, lines, booking));
+  }
+
   async sendBookingCancellation(booking: Booking): Promise<void> {
     await this.sendBookingStatusUpdate(booking, BookingStatus.CANCELLED);
   }

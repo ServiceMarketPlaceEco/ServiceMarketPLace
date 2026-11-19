@@ -27,6 +27,7 @@ describe('BookingsService', () => {
       sendBookingConfirmation: jest.fn(),
       sendBookingCancellation: jest.fn(),
       sendBookingStatusUpdate: jest.fn(),
+      sendNewJobToProvider: jest.fn(),
     };
 
     service = new BookingsService(bookingRepo, providerServiceRepo, mailService);
@@ -322,6 +323,25 @@ describe('BookingsService', () => {
 
       const result = await service.updateStatusAdmin('b-1', 'Accepted');
       expect(result.status).toBe(BookingStatus.CONFIRMED);
+    });
+
+    it('emails the provider about a job they have just been given, and the customer about the change', async () => {
+      const booking = { bookingId: 'b-1', status: BookingStatus.PENDING, jobId: 'svc-1', totalAmount: null };
+      bookingRepo.findOne.mockResolvedValue(booking);
+      providerServiceRepo.findOne.mockResolvedValue({ id: 'ps-1', price: 800 });
+
+      await service.updateStatusAdmin('b-1', 'Accepted', 'prov-1');
+
+      expect(mailService.sendBookingStatusUpdate).toHaveBeenCalledWith(expect.anything(), BookingStatus.CONFIRMED);
+      expect(mailService.sendNewJobToProvider).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not email a provider when only the status changes', async () => {
+      bookingRepo.findOne.mockResolvedValue({ bookingId: 'b-1', status: BookingStatus.CONFIRMED });
+
+      await service.updateStatusAdmin('b-1', 'In Progress');
+
+      expect(mailService.sendNewJobToProvider).not.toHaveBeenCalled();
     });
 
     it('throws for a status string it doesnt recognise', async () => {

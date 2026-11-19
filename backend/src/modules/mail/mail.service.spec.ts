@@ -141,6 +141,24 @@ describe('MailService', () => {
         ...overrides,
       }) as any;
 
+    it('tells the provider about a new job, with the customer, address and time', async () => {
+      await service.sendNewJobToProvider(
+        booking({ address: 'House 12, Boalia', providerService: { provider: { providerName: 'Karim Uddin', email: 'karim@example.com' } } }),
+      );
+
+      expect(sentEmail().to).toBe('karim@example.com');
+      expect(sentEmail().subject).toBe('You have a new ServiceHub job');
+      expect(sentEmail().html).toContain('Hello Karim Uddin');
+      expect(sentEmail().html).toContain('Nusrat');
+      expect(sentEmail().html).toContain('House 12, Boalia');
+      expect(sentEmail().html).toContain('2026-11-12 at 10:30');
+    });
+
+    it('sends nothing when the provider has no email', async () => {
+      await service.sendNewJobToProvider(booking());
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
     it('tells the customer their request arrived', async () => {
       await service.sendBookingConfirmation(booking(), null, null);
 

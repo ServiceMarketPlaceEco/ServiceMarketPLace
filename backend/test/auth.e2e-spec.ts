@@ -68,6 +68,16 @@ describe('Auth endpoints (integration)', () => {
     jest.clearAllMocks();
   });
 
+  describe('GET /api/auth/phone-verification/status', () => {
+    it('says the text code is required by default, without signing in', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/auth/phone-verification/status')
+        .expect(200);
+
+      expect(res.body).toEqual({ required: true });
+    });
+  });
+
   describe('POST /api/auth/register/customer', () => {
     const validBody = {
       name: 'Test Customer',

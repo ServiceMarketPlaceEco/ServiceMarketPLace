@@ -23,6 +23,13 @@ describe('API service', () => {
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/auth/register/customer'), expect.objectContaining({ method: 'POST', body: JSON.stringify({ name: 'Jess' }) }))
   })
 
+  it('asks the server whether the phone code is needed, without signing in', async () => {
+    fetch.mockResolvedValue(response({ required: false }))
+    await expect(api.getPhoneVerificationStatus()).resolves.toEqual({ required: false })
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/auth/phone-verification/status'), expect.anything())
+    expect(fetch.mock.calls[0][1].method || 'GET').toBe('GET')
+  })
+
   it('adds the access token to protected requests', async () => {
     localStorage.setItem('servicehub-access-token', 'token123')
     fetch.mockResolvedValue(response([]))

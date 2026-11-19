@@ -342,7 +342,10 @@ export class BookingsService {
     // an email problem never stops the admin's change
     if (statusChanged) {
       try {
-        await this.mailService.sendBookingStatusUpdate(await this.findById(bookingId), newStatus);
+        const full = await this.findById(bookingId);
+        await this.mailService.sendBookingStatusUpdate(full, newStatus);
+        // and tell the provider about a job they have just been given
+        if (providerId) await this.mailService.sendNewJobToProvider(full);
       } catch (error) {
         console.error('Failed to send booking status email:', error);
       }

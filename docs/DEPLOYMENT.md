@@ -462,7 +462,7 @@ and its password is published in the README.
 
 | Area | Current state | What's needed |
 |---|---|---|
-| **Customer sign-up (SMS)** | Sign-up sends a 6-digit code by text through Twilio. Without the three `TWILIO_*` settings no text is sent, and in production customers cannot finish signing up. | Create a Twilio account (or swap in a local Bangladeshi gateway in `backend/src/modules/sms/sms.service.ts`) and fill in the settings. See README section 9. |
+| **Customer sign-up (SMS)** | Sign-up sends a 6-digit code by text through Twilio. Without the three `TWILIO_*` settings no text is sent, and in production customers cannot finish signing up. | Create a Twilio account (or swap in a local Bangladeshi gateway in `backend/src/modules/sms/sms.service.ts`) and fill in the settings. See README section 9. For a demo server only, `PHONE_VERIFICATION=off` lets customers sign up without the code. |
 | **Phone check isn't enforced by the API** | `POST /api/auth/register/customer` accepts sign-ups without a `phoneVerificationToken`. Only the app's sign-up form requires the code. | Optional: make the token required in the API. |
 | **Payments** | The payments module records payments against bookings. No payment gateway (card, bKash, etc.) is integrated. Customers pay the provider directly. | Kept as is on purpose: payment in Bangladesh works differently, so the client decides later whether to add a local gateway. |
 | **AI chatbot and voice search** | Tested by the team with their own OpenAI keys. No key is included. | The client creates their own OpenAI key and puts it in `OPENAI_API_KEY`. OpenAI charges for use. Without a key the chatbot answers that it is unavailable and the rest of the site works. |

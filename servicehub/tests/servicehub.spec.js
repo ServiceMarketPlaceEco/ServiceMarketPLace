@@ -117,6 +117,10 @@ async function mockApi(page) {
   await page.route('**/api/auth/register/customer', route =>
     route.fulfill({ json: MOCK_CUSTOMER_LOGIN })
   )
+  // the normal case: customers confirm their phone with a text code
+  await page.route('**/api/auth/phone-verification/status', route =>
+    route.fulfill({ json: { required: true } })
+  )
   await page.route('**/api/bookings/**', route => route.fulfill({ json: [] }))
   await page.route('**/api/bookings', route => route.fulfill({ json: [] }))
 }
@@ -311,6 +315,37 @@ test('21. filling the register form and confirming the SMS code creates the acco
   // The server-issued token, not the raw code, is what authorises the new account.
   expect(registerBody.phoneVerificationToken).toBe('phone-token-1')
   expect(registerBody.username).toBe('testcustomer')
+})
+
+test('21b. on a demo site with the phone check off, the register form creates the account straight away', async ({ page }) => {
+  await page.route('**/api/auth/phone-verification/status', route =>
+    route.fulfill({ json: { required: false } })
+  )
+  let codeRequested = false
+  await page.route('**/api/auth/phone-verification/request', route => {
+    codeRequested = true
+    return route.fulfill({ json: { verificationId: 'should-not-happen' } })
+  })
+  let registerBody = null
+  await page.route('**/api/auth/register/customer', route => {
+    registerBody = JSON.parse(route.request().postData() || '{}')
+    return route.fulfill({ json: MOCK_CUSTOMER_LOGIN })
+  })
+
+  await openRegister(page)
+  await page.getByPlaceholder('Example: Sam', { exact: true }).fill('Test Customer')
+  await page.getByPlaceholder('Example: sam24').fill('testcustomer')
+  await page.getByPlaceholder('Example: 01XXXXXXXXX').fill('01700000000')
+  await page.getByPlaceholder('Create a password').fill('Password@123')
+  await page.locator('.auth-card select').selectOption({ index: 1 })
+  await page.getByRole('button', { name: 'Create account' }).click()
+
+  // no code screen and no text: the account is made and the customer is signed in
+  await expect(page.locator('.account-pill')).toContainText('Test Customer')
+  await expect(page.getByRole('heading', { name: 'Check your phone' })).toHaveCount(0)
+  expect(codeRequested).toBe(false)
+  expect(registerBody.username).toBe('testcustomer')
+  expect(registerBody.phoneVerificationToken).toBeUndefined()
 })
 
 test('22. Become a provider opens the provider register page', async ({ page }) => {
